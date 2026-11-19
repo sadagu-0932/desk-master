@@ -1,0 +1,10 @@
+{
+	"schemaVersion": 1,
+	"id": "coreui-test",
+	"version": "1.0.0",
+	"name": "Core UI Test",
+	"environment": "*",
+	"entrypoints": {
+		"fabric-client-gametest": ["com.deskmaster.coreui.test.CoreUiClientTest"]
+	}
+}

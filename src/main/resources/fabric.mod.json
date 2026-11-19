@@ -1,0 +1,20 @@
+{
+	"schemaVersion": 1,
+	"id": "coreui",
+	"version": "${version}",
+	"name": "Core UI",
+	"description": "파츠를 붙여 확장하는 UI 시스템. 화면은 서버가 정의하고 클라이언트가 그린다.",
+	"authors": ["desk-master"],
+	"license": "MIT",
+	"environment": "*",
+	"entrypoints": {
+		"main": ["com.deskmaster.coreui.fabric.CoreUiMod"],
+		"client": ["com.deskmaster.coreui.client.CoreUiClient"]
+	},
+	"depends": {
+		"fabricloader": ">=0.20.1",
+		"minecraft": "~26.3",
+		"java": ">=25",
+		"fabric-api": "*"
+	}
+}
