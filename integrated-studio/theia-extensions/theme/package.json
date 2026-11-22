@@ -1,0 +1,16 @@
+{
+  "private": true,
+  "name": "integrated-studio-theme",
+  "version": "0.0.1",
+  "license": "UNLICENSED",
+  "files": ["lib", "src"],
+  "main": "lib/common/index.js",
+  "theiaExtensions": [ { "frontend": "lib/browser/theme-frontend-module" } ],
+  "dependencies": { "@theia/core": "1.77.0", "@theia/monaco": "1.77.0", "@fontsource/noto-sans-kr": "5.3.1", "@fontsource/jetbrains-mono": "5.3.0" },
+  "devDependencies": { "typescript": "~5.9.3", "rimraf": "6.1.4" },
+  "scripts": {
+    "build": "tsc -b",
+    "clean": "rimraf lib tsconfig.tsbuildinfo",
+    "watch": "tsc -w"
+  }
+}

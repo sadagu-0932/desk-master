@@ -1,0 +1,16 @@
+{
+  "private": true,
+  "name": "integrated-studio-resourcepack-editor",
+  "version": "0.0.1",
+  "license": "UNLICENSED",
+  "files": ["lib", "src"],
+  "main": "lib/common/index.js",
+  "theiaExtensions": [ { "frontend": "lib/browser/resourcepack-editor-frontend-module" } ],
+  "dependencies": { "@theia/core": "1.77.0", "@theia/filesystem": "1.77.0", "integrated-studio-launcher-core": "0.0.1" },
+  "devDependencies": { "typescript": "~5.9.3", "rimraf": "6.1.4" },
+  "scripts": {
+    "build": "tsc -b",
+    "clean": "rimraf lib tsconfig.tsbuildinfo",
+    "watch": "tsc -w"
+  }
+}

@@ -31,6 +31,10 @@
     }
   },
   "dependencies": {
+    "@theia/ai-chat": "1.77.0",
+    "@theia/ai-chat-ui": "1.77.0",
+    "@theia/ai-claude-code": "1.77.0",
+    "@theia/ai-core": "1.77.0",
     "@theia/bulk-edit": "1.77.0",
     "@theia/callhierarchy": "1.77.0",
     "@theia/console": "1.77.0",
@@ -57,7 +61,8 @@
     "@theia/task": "1.77.0",
     "@theia/terminal": "1.77.0",
     "@theia/vsx-registry": "1.77.0",
-    "@theia/workspace": "1.77.0"
+    "@theia/workspace": "1.77.0",
+    "integrated-studio-launcher-core": "0.0.1"
   },
   "devDependencies": {
     "@theia/cli": "1.77.0",

@@ -1,0 +1,1 @@
+{"root":["./src/browser/index.ts","./src/browser/instance-manager.ts","./src/browser/launcher-commands.ts","./src/browser/launcher-core-frontend-module.ts","./src/common/index.ts","./src/node/launcher-core-backend-module.ts","./src/node/sidecar-process.ts"],"version":"5.9.3"}

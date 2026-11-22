@@ -1,0 +1,301 @@
+import { inject, injectable, postConstruct } from '@theia/core/shared/inversify';
+import { Emitter } from '@theia/core/lib/common/event';
+import { MessageService } from '@theia/core/lib/common/message-service';
+import { Progress } from '@theia/core/lib/common/message-service-protocol';
+import { StorageService } from '@theia/core/lib/browser/storage-service';
+import { FileUri } from '@theia/core/lib/common/file-uri';
+import { WorkspaceService } from '@theia/workspace/lib/browser/workspace-service';
+import {
+    DEFAULT_USERNAME, GameVersion, Instance, LauncherClient, LauncherService, Loader, LogEvent, ProgressEvent,
+    ServerStartResult, StateEvent, WorkMode
+} from '../common';
+
+export interface RunState {
+    game: boolean;
+    server: boolean;
+}
+
+const TARGET_KEY = 'integrated-studio.runTarget';
+const MAX_LOG_LINES = 5000;
+
+/** 브라우저 쪽에서 백엔드 알림을 받아 InstanceManager로 넘긴다 */
+@injectable()
+export class LauncherClientImpl implements LauncherClient {
+    protected readonly emitter = new Emitter<{ method: string; params: unknown }>();
+    readonly onNotification = this.emitter.event;
+    onSidecarNotification(method: string, params: unknown): void {
+        this.emitter.fire({ method, params });
+    }
+}
+
+@injectable()
+export class InstanceManager {
+    @inject(LauncherService) protected readonly service: LauncherService;
+    @inject(LauncherClientImpl) protected readonly client: LauncherClientImpl;
+    @inject(MessageService) protected readonly messages: MessageService;
+    @inject(StorageService) protected readonly storage: StorageService;
+    @inject(WorkspaceService) protected readonly workspace: WorkspaceService;
+
+    protected _instances: Instance[] = [];
+    protected _running = new Map<string, RunState>();
+    protected _targetId: string | undefined;
+    protected _logs: LogEvent[] = [];
+    protected _progress = new Map<string, Progress>();
+    protected _workspaceInstanceId: string | undefined;
+    protected _ready: Promise<void>;
+    protected _error: string | undefined;
+
+    protected readonly onDidChangeEmitter = new Emitter<void>();
+    readonly onDidChange = this.onDidChangeEmitter.event;
+    protected readonly onLogEmitter = new Emitter<LogEvent>();
+    readonly onLog = this.onLogEmitter.event;
+    protected readonly onDidClearLogsEmitter = new Emitter<void>();
+    readonly onDidClearLogs = this.onDidClearLogsEmitter.event;
+    protected readonly onStateEmitter = new Emitter<StateEvent>();
+    readonly onState = this.onStateEmitter.event;
+
+    @postConstruct()
+    protected init(): void {
+        this.client.onNotification(n => this.handleNotification(n.method, n.params));
+        this._ready = this.load();
+        this.workspace.onWorkspaceChanged(() => { this.updateWorkspaceInstance(); this.fire(); });
+    }
+
+    protected async load(): Promise<void> {
+        this._targetId = await this.storage.getData<string>(TARGET_KEY);
+        await this.refresh();
+        try {
+            const running = await this.service.call<{ game: string[]; server: string[] }>('running');
+            running.game.forEach(id => this.setRunning(id, 'game', true));
+            running.server.forEach(id => this.setRunning(id, 'server', true));
+        } catch {
+            // 사이드카 오류는 refresh에서 이미 표시됨
+        }
+        this.fire();
+    }
+
+    get ready(): Promise<void> { return this._ready; }
+    get instances(): readonly Instance[] { return this._instances; }
+    get error(): string | undefined { return this._error; }
+    get logs(): readonly LogEvent[] { return this._logs; }
+
+    /** 작업 공간으로 열려 있는 인스턴스 → 없으면 실행 대상 선택기의 값 → 없으면 첫 번째 */
+    get current(): Instance | undefined {
+        return this.find(this._workspaceInstanceId) ?? this.target;
+    }
+    get target(): Instance | undefined {
+        return this.find(this._targetId) ?? this._instances[0];
+    }
+    get workspaceInstance(): Instance | undefined {
+        return this.find(this._workspaceInstanceId);
+    }
+
+    find(id: string | undefined): Instance | undefined {
+        return id ? this._instances.find(i => i.id === id) : undefined;
+    }
+
+    state(id: string | undefined): RunState {
+        return (id && this._running.get(id)) || { game: false, server: false };
+    }
+
+    isRunning(id: string | undefined): boolean {
+        return this.state(id).game;
+    }
+
+    async setTarget(id: string): Promise<void> {
+        this._targetId = id;
+        await this.storage.setData(TARGET_KEY, id);
+        this.fire();
+    }
+
+    async refresh(): Promise<void> {
+        try {
+            this._instances = await this.service.call<Instance[]>('list_instances');
+            this._error = undefined;
+        } catch (e) {
+            this._error = e instanceof Error ? e.message : String(e);
+        }
+        this.updateWorkspaceInstance();
+        this.fire();
+    }
+
+    protected updateWorkspaceInstance(): void {
+        const roots = this.workspace.tryGetRoots();
+        const rootPaths = roots.map(r => FileUri.fsPath(r.resource));
+        const norm = (p: string) => p.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+        const match = this._instances.find(i => rootPaths.some(r => norm(r) === norm(i.path)));
+        this._workspaceInstanceId = match?.id;
+        if (match && this._targetId !== match.id) {
+            this._targetId = match.id;
+            this.storage.setData(TARGET_KEY, match.id);
+        }
+    }
+
+    protected fire(): void {
+        this.onDidChangeEmitter.fire();
+    }
+
+    protected setRunning(id: string, source: 'game' | 'server', running: boolean): void {
+        const s = { ...this.state(id) };
+        s[source] = running;
+        this._running.set(id, s);
+    }
+
+    protected handleNotification(method: string, params: unknown): void {
+        switch (method) {
+            case 'log': {
+                const ev = params as LogEvent;
+                this._logs.push(ev);
+                if (this._logs.length > MAX_LOG_LINES) {
+                    this._logs.splice(0, this._logs.length - MAX_LOG_LINES);
+                }
+                this.onLogEmitter.fire(ev);
+                break;
+            }
+            case 'state': {
+                const ev = params as StateEvent;
+                this.setRunning(ev.id, ev.source, ev.running);
+                if (!ev.running && ev.exitCode !== undefined && ev.exitCode !== 0 && ev.source === 'game') {
+                    const name = this.find(ev.id)?.name ?? ev.id;
+                    this.messages.warn(`${name}이(가) 비정상 종료되었습니다(코드 ${ev.exitCode}). 게임 로그를 확인하세요.`);
+                }
+                this.onStateEmitter.fire(ev);
+                this.fire();
+                break;
+            }
+            case 'progress':
+                this.handleProgress(params as ProgressEvent);
+                break;
+            case 'sidecar_exit':
+                this._running.clear();
+                this.fire();
+                break;
+        }
+    }
+
+    protected async handleProgress(ev: ProgressEvent): Promise<void> {
+        const key = ev.id || ev.stage;
+        let progress = this._progress.get(key);
+        if (ev.done) {
+            progress?.cancel();
+            this._progress.delete(key);
+            return;
+        }
+        if (!progress) {
+            const name = this.find(ev.id)?.name;
+            progress = await this.messages.showProgress({ text: name ? `${name}: ${ev.text ?? ''}` : ev.text ?? '' });
+            this._progress.set(key, progress);
+        }
+        const work = ev.max ? { done: ev.value ?? 0, total: ev.max } : undefined;
+        progress.report({ message: ev.text, work });
+    }
+
+    protected closeProgress(id: string): void {
+        this._progress.get(id)?.cancel();
+        this._progress.delete(id);
+    }
+
+    clearLogs(): void {
+        this._logs = [];
+        this.onDidClearLogsEmitter.fire();
+    }
+
+    /** 앱 자체가 남기는 로그(빌드 등) */
+    log(id: string, line: string, level: LogEvent['level'] = 'info', source: LogEvent['source'] = 'studio'): void {
+        this.handleNotification('log', { id, line, level, source });
+    }
+
+    // ---------- 동작 ----------
+    listVersions(snapshots = false): Promise<GameVersion[]> {
+        return this.service.call<GameVersion[]>('list_versions', { snapshots });
+    }
+
+    async create(name: string, version: string, loader: Loader): Promise<Instance> {
+        const inst = await this.service.call<Instance>('create_instance', { name, version, loader });
+        await this.refresh();
+        await this.setTarget(inst.id);
+        return inst;
+    }
+
+    async install(id: string): Promise<Instance> {
+        try {
+            const inst = await this.service.call<Instance>('install', { id });
+            await this.refresh();
+            return inst;
+        } finally {
+            this.closeProgress(id);
+        }
+    }
+
+    async launch(id: string, username = DEFAULT_USERNAME): Promise<void> {
+        try {
+            await this.service.call('launch', { id, username });
+        } finally {
+            this.closeProgress(id);
+            await this.refresh();
+        }
+    }
+
+    async stop(id: string): Promise<void> {
+        await this.service.call('stop', { id });
+    }
+
+    async restart(id: string): Promise<void> {
+        if (this.isRunning(id)) {
+            const exited = new Promise<void>(resolve => {
+                const d = this.onState(ev => {
+                    if (ev.id === id && ev.source === 'game' && !ev.running) { d.dispose(); resolve(); }
+                });
+            });
+            await this.stop(id);
+            await exited;
+        }
+        await this.launch(id);
+    }
+
+    async rename(id: string, name: string): Promise<void> {
+        await this.service.call('rename_instance', { id, name });
+        await this.refresh();
+    }
+
+    async delete(id: string): Promise<void> {
+        await this.service.call('delete_instance', { id });
+        await this.refresh();
+    }
+
+    async setCcEnabled(id: string, enabled: boolean): Promise<void> {
+        await this.service.call('set_cc_enabled', { id, enabled });
+        await this.refresh();
+    }
+
+    async setWorkMode(id: string, mode: WorkMode): Promise<void> {
+        await this.service.call('set_work_mode', { id, mode });
+        await this.refresh();
+    }
+
+    serverStart(id: string, world?: string): Promise<ServerStartResult> {
+        return this.service.call<ServerStartResult>('server_start', { id, world });
+    }
+
+    serverStop(id: string): Promise<boolean> {
+        return this.service.call<boolean>('server_stop', { id });
+    }
+
+    serverCommand(id: string, command: string): Promise<boolean> {
+        return this.service.call<boolean>('server_command', { id, command });
+    }
+
+    call<T>(method: string, params?: object): Promise<T> {
+        return this.service.call<T>(method, params);
+    }
+
+    /** 그 인스턴스 폴더를 작업 공간으로 연다(같은 창) */
+    async openInWorkspace(id: string): Promise<void> {
+        const inst = this.find(id);
+        if (!inst) {
+            return;
+        }
+        await this.setTarget(id);
+        this.workspace.open(FileUri.create(inst.path), { preserveWindow: true });
+    }
+}
