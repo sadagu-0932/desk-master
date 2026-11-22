@@ -10,3 +10,4 @@ applications/electron/src-gen/
 applications/electron/plugins/
 *.tsbuildinfo
 scripts/e2e/out/
+build-python/

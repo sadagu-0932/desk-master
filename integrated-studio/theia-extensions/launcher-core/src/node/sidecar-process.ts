@@ -47,6 +47,18 @@ export function resolveDataDir(sidecarDir: string | undefined): string {
     return path.join(os.homedir(), '.integrated-studio', 'data');
 }
 
+/** 설치 파일에 Python을 함께 넣은 경우: resources/python/python.exe (패키지는 미리 설치돼 있음) */
+export function bundledPython(): string | undefined {
+    const resourcesPath = (process as { resourcesPath?: string }).resourcesPath;
+    if (!resourcesPath) {
+        return undefined;
+    }
+    const exe = process.platform === 'win32'
+        ? path.join(resourcesPath, 'python', 'python.exe')
+        : path.join(resourcesPath, 'python', 'bin', 'python3');
+    return fs.existsSync(exe) ? exe : undefined;
+}
+
 /** 사이드카 전용 가상환경 위치: 개발 중에는 sidecar/.venv, 패키징된 앱은 ~/.integrated-studio/venv */
 export function venvDir(sidecarDir: string, dataDir: string): string {
     return isPackagedSidecar(sidecarDir) ? path.join(path.dirname(dataDir), 'venv') : path.join(sidecarDir, '.venv');
@@ -107,10 +119,17 @@ export class SidecarProcess {
         return this.starting;
     }
 
-    /** INTEGRATED_STUDIO_PYTHON → 가상환경 → (없으면) 가상환경을 만들고 requirements.txt 설치 */
+    /**
+     * INTEGRATED_STUDIO_PYTHON → 설치 파일에 함께 넣은 Python(resources/python) →
+     * 가상환경 → (없으면) PC의 Python으로 가상환경을 만들고 requirements.txt 설치
+     */
     protected async ensurePython(): Promise<string> {
         if (process.env.INTEGRATED_STUDIO_PYTHON) {
             return process.env.INTEGRATED_STUDIO_PYTHON;
+        }
+        const bundled = bundledPython();
+        if (bundled) {
+            return bundled;
         }
         const dir = venvDir(this.sidecarDir!, this.dataDir);
         const py = venvPython(dir);

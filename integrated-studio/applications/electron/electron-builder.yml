@@ -25,11 +25,15 @@ extraResources:
       - "**/*"
       - "!.venv/**"
       - "!**/__pycache__/**"
+  # Python 포함판: CI가 build-python/ 에 임베디드 Python + 패키지를 넣는다. 비어 있으면 PC의 Python을 쓴다
+  - from: ../../build-python
+    to: python
+    filter:
+      - "**/*"
 win:
   target:
     - target: nsis
-    - target: zip
-  artifactName: 통합작업실-${version}-${arch}.${ext}
+  artifactName: IntegratedStudio-Setup-${version}.${ext}
 nsis:
   oneClick: false
   perMachine: false

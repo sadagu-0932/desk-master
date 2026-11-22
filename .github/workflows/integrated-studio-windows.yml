@@ -1,0 +1,102 @@
+# 통합 작업실 — Windows 설치 파일 만들기 (개인 사용, 배포하지 않음)
+# 결과: Actions 실행 화면 아래 "Artifacts"에서 설치 파일(.exe)을 내려받는다.
+#  - IntegratedStudio-Setup-with-python : Python까지 들어 있음(PC에 Python 설치 불필요)
+#  - IntegratedStudio-Setup-no-python   : 더 작음, PC에 Python 3 필요(첫 실행 때 자동 준비)
+name: 통합 작업실 Windows 설치 파일
+
+on:
+  workflow_dispatch:
+    inputs:
+      python:
+        description: 'Python 포함 여부 (both = 둘 다 만들기)'
+        type: choice
+        options: [both, with, without]
+        default: both
+  push:
+    branches: [claude/inspiring-brown-e6lazb]
+    paths:
+      - 'integrated-studio/**'
+      - '.github/workflows/integrated-studio-windows.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: integrated-studio-windows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      variants: ${{ steps.pick.outputs.variants }}
+    steps:
+      - id: pick
+        run: |
+          case "${{ inputs.python || 'both' }}" in
+            with) echo 'variants=["with"]' >> "$GITHUB_OUTPUT" ;;
+            without) echo 'variants=["without"]' >> "$GITHUB_OUTPUT" ;;
+            *) echo 'variants=["with","without"]' >> "$GITHUB_OUTPUT" ;;
+          esac
+
+  build:
+    needs: plan
+    runs-on: windows-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ${{ fromJSON(needs.plan.outputs.variants) }}
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: integrated-studio
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: integrated-studio/package-lock.json
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: 의존성 설치 (+ Open VSX 확장: CommandCrafter, 한국어 팩)
+        run: npm ci
+
+      - name: 함께 넣을 확장 확인
+        run: |
+          Get-ChildItem applications/electron/plugins | Select-Object Name
+          if (-not (Test-Path applications/electron/plugins/Papierkorb2292.commandcrafter)) { throw 'CommandCrafter 확장을 받지 못했습니다' }
+
+      - name: 앱 빌드
+        run: npm run build
+
+      - name: native 모듈을 Electron용으로 재빌드
+        run: npm run rebuild:native
+
+      - name: 임베디드 Python 준비 (Python 포함판)
+        if: matrix.python == 'with'
+        run: node scripts/bundle-python.mjs
+
+      - name: Python 미포함판은 빈 폴더
+        if: matrix.python == 'without'
+        run: New-Item -ItemType Directory -Force build-python | Out-Null
+
+      - name: 설치 파일 만들기
+        working-directory: integrated-studio/applications/electron
+        run: npx electron-builder --win nsis --publish never "-c.nsis.artifactName=IntegratedStudio-Setup-`${version}-${{ matrix.python }}-python.`${ext}"
+
+      - name: 앱이 켜지는지 확인
+        run: node scripts/ci-smoke.mjs "applications/electron/dist/win-unpacked/integrated-studio.exe"
+
+      - name: 설치 파일 올리기
+        uses: actions/upload-artifact@v4
+        with:
+          name: IntegratedStudio-Setup-${{ matrix.python }}-python
+          path: integrated-studio/applications/electron/dist/*.exe
+          if-no-files-found: error
+          retention-days: 14
