@@ -103,6 +103,20 @@ Theia 확장은 TypeScript로 작성한다. Python 쪽은 `sidecar/` 아래에�
 - Client ID는 설정 파일에 두되 비밀이 아니다. 토큰은 OS 자격 증명 저장소(`keyring`)에, 평문 파일 금지.
 - 로그인 후에는 정품 계정으로 실행하고, 오프라인(가짜 닉네임) 모드는 개발·테스트용으로만 남긴다.
 
+### M8-1. 공식 런처 연동 (온라인 플레이 대체 경로)
+- 자체 MS 로그인 대신 온라인 플레이는 **공식 마인크래프트 런처에 맡긴다**(CurseForge 기본 방식과 같다). Windows 전용.
+- 모듈: `sidecar/official_launcher.py`, 테스트: `sidecar/tests/test_official_launcher.py`(mock, pytest 28개).
+  - `is_installed()` — Store/Xbox판(Appx `Microsoft.4297127D64EC6`)과 winget·MSI판(레지스트리·기본 경로) 확인, 종류 포함.
+  - `install(confirm_callback, log_callback)` — 확인 후 `winget install --id Mojang.MinecraftLauncher --exact ...`, 실패하면 Store 페이지(`ms-windows-store://pdp/?productid=9PGW18NPBZV5`). 설치 후 런처가 스스로 업데이트된다고 안내.
+  - `register_instance(instance, confirm_callback, minecraft_dir=None, app_minecraft_dir=None)` — 공식 런처 "설치" 항목 "통합 작업실 · <이름>"으로 등록·갱신. 키는 `integrated-studio-<인스턴스 id>` 고정(라이브러리가 무작위 키로 추가만 하므로 추가 직후 옮긴다). Fabric 버전 JSON은 공식 `.minecraft/versions`에 없으면 복사.
+  - `unregister_instance(instance_id, confirm_callback)` — 우리 키 접두사 항목만 삭제.
+  - `open_launcher()`, `tail_log(instance_dir, callback)`(latest.log 교체·재생성 처리, 파일을 열어두지 않음).
+- 규칙:
+  - `launcher_accounts*.json`, `launcher_msa_credentials*` 등 로그인·토큰 파일은 **절대 읽거나 수정하지 않는다**(`_guard_path`).
+  - `launcher_profiles.json`은 수정 전 항상 백업(최근 10개), 실패 시 백업으로 복구. 설치·파일 수정은 확인 콜백을 거친다.
+  - `.minecraft`는 `%APPDATA%\.minecraft`와 Store 가상화 경로(`%LOCALAPPDATA%\Packages\Microsoft.4297127D64EC6_8wekyb3d8bbwe\LocalCache\Roaming\.minecraft`) 중 launcher_profiles.json이 최근 수정된 쪽.
+- 상태(2026-11-22): 모듈·테스트 완료, 브랜치 `feat/official-launcher`. **아직 남은 것**: 작업 브랜치에 합치기, `main.py` RPC 메서드 연결, UI(인스턴스 뷰의 "공식 런처로 플레이" 등), 실제 Windows PC 확인(설치 감지·winget 출력·.minecraft 위치·등록 항목 표시·Fabric 실행·로그 교체).
+
 ### M9. 패키징 (내 PC용)
 - electron-builder로 Windows 설치 파일 또는 압축 실행판을 만든다. **배포하지 않는다** — 개인 사용 전용.
 - 서명이 없어서 SmartScreen 경고가 뜨는 건 그대로 둔다.
