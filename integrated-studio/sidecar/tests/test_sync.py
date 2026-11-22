@@ -53,6 +53,8 @@ def main() -> None:
     check('file/B' in merged and 'file/A' not in merged, "리소스팩 목록은 인스턴스 것 유지")
     merged = sync.merge_options("fov:0.5\nresourcePacks:[\"file/A\"]\n", None)
     check("resourcePacks" not in merged, "새 인스턴스에는 다른 곳의 리소스팩 목록을 넣지 않음")
+    check(sync.merge_options("a:1\r\nb:2\r\n", "a:0\n") == "a:1\r\nb:2\r\n", "기준 파일의 줄바꿈(CRLF)을 그대로")
+    check(sync._same_text("a:1\r\nb:2\r\n", "a:1\nb:2\n"), "줄바꿈만 다르면 같은 내용으로 봄")
 
     with tempfile.TemporaryDirectory() as d:
         tmp = Path(d)
@@ -80,7 +82,8 @@ def main() -> None:
         now = time.time()
         (mc / "options.txt").write_text("version:4000\nfov:0.0\nresourcePacks:[\"vanilla\",\"file/Official\"]\n", "utf-8")
         set_mtime(mc / "options.txt", now - 100)
-        (da / "options.txt").write_text("version:4000\nfov:0.9\nkey_key.jump:key.keyboard.k\nresourcePacks:[\"vanilla\",\"file/A\"]\n", "utf-8")
+        # 게임이 Windows 에서 쓰는 것처럼 CRLF (어느 OS 에서든 같은 조건으로 시험)
+        (da / "options.txt").write_bytes("version:4000\r\nfov:0.9\r\nkey_key.jump:key.keyboard.k\r\nresourcePacks:[\"vanilla\",\"file/A\"]\r\n".encode())
         set_mtime(da / "options.txt", now - 10)  # 가장 최근
         (db / "servers.dat").write_bytes(b"\x0a\x00\x00servers-from-B")
         r = ss.sync_now()

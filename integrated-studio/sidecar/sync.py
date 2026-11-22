@@ -52,7 +52,13 @@ def merge_options(src: str, dst: str | None) -> str:
         out.append(ln)
     have = {ln.split(":", 1)[0] for ln in out}
     out += [ln for k, ln in dst_map.items() if k in PER_INSTANCE_KEYS and k not in have]
-    return "\n".join(out) + "\n"
+    eol = "\r\n" if "\r\n" in src else "\n"  # Windows 에서 게임이 쓰는 CRLF 를 그대로
+    return eol.join(out) + eol
+
+
+def _same_text(a: str, b: str) -> bool:
+    """줄바꿈(CRLF/LF)·빈 줄 차이는 같은 내용으로 본다."""
+    return _parse(a)[0] == _parse(b)[0]
 
 
 class SettingsSync:
@@ -131,6 +137,8 @@ class SettingsSync:
             else:
                 new = src_bytes
             if old == new:
+                continue
+            if name == OPTIONS and old is not None and _same_text(old.decode("utf-8", "replace"), new.decode("utf-8", "replace")):
                 continue
             if old is not None and t["official"]:
                 self._backup(dst)
