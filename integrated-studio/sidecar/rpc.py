@@ -15,6 +15,10 @@ import threading
 import traceback
 from typing import Any, Callable
 
+# 실행 환경의 기본 인코딩(Windows cp1252/cp949 등)과 상관없이 프로토콜과 로그는 UTF-8로 주고받는다.
+for _stream in (sys.stdin, sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        _stream.reconfigure(encoding="utf-8", errors="replace")
 _out = sys.stdout
 sys.stdout = sys.stderr
 _lock = threading.Lock()
