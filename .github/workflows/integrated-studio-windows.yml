@@ -54,6 +54,7 @@ jobs:
           python tests/test_importers.py
           python tests/test_official_rpc.py
           python tests/test_sync.py
+          python tests/test_cf_key.py
 
       - name: 앱 빌드
         run: npm run build

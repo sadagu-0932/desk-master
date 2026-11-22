@@ -159,6 +159,7 @@ export function CurseForgeKeyForm(props: {
     const [key, setKey] = React.useState('');
     const [busy, setBusy] = React.useState(false);
     const [error, setError] = React.useState('');
+    const [show, setShow] = React.useState(false);
     const save = async () => {
         setBusy(true);
         setError('');
@@ -180,10 +181,13 @@ export function CurseForgeKeyForm(props: {
             <li>아래에 붙여 넣고 저장</li>
         </ol>
         <div className='pb-keyrow'>
-            <input className='theia-input' type='password' value={key} placeholder='API 키' aria-label='CurseForge API 키'
+            <input className='theia-input' type={show ? 'text' : 'password'} value={key} placeholder='API 키 ($2a$10$… 60자)' aria-label='CurseForge API 키'
                 autoComplete='off' spellCheck={false} onChange={e => setKey(e.target.value)} />
+            <button className={`theia-button secondary codicon ${show ? 'codicon-eye-closed' : 'codicon-eye'}`} type='button'
+                title={show ? '키 가리기' : '붙여 넣은 키 보기'} aria-label={show ? '키 가리기' : '키 보기'} onClick={() => setShow(!show)} />
             <button className='theia-button' disabled={!key.trim() || busy} onClick={save}>{busy ? '확인 중…' : '저장'}</button>
         </div>
+        {key && <div className='ni-hint'>입력한 키: 공백 빼고 {key.replace(/\s/g, '').length}자{key.replace(/\s/g, '').startsWith('$2a$') ? '' : ' — 보통 $2a$10$ 로 시작합니다'}</div>}
         {error && <div className='ni-error'>{error}</div>}
         <p className='ni-hint'>키는 Windows 자격 증명 관리자에 저장되며 파일이나 설정에 평문으로 남지 않습니다.</p>
     </div>;

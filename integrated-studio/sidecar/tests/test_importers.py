@@ -292,7 +292,7 @@ def main() -> None:
         imp.cf_search("x")
         check(False, "틀린 키 거부")
     except RpcError as e:
-        check("올바르지" in str(e), "틀린 키 거부")
+        check("받아들이지 않았습니다" in str(e) and "HTTP 403" in str(e) and "7자" in str(e), "틀린 키 거부(HTTP 코드·키 모양 안내)")
     os.environ["INTEGRATED_STUDIO_CF_KEY"] = "good-key"
 
     print("8) CurseForge 검색 → 모드팩 설치(외부 다운로드 막힌 모드는 목록으로)")

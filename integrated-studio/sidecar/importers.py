@@ -56,13 +56,50 @@ def _request(url: str, *, headers: dict[str, str] | None = None, data: bytes | N
     return urllib.request.urlopen(urllib.request.Request(url, data=data, headers=h), timeout=timeout)
 
 
+_INVISIBLE = re.compile(r"[\s\u200b-\u200f\u2028-\u202f\u2060\ufeff\u00a0]")
+
+
+def clean_cf_key(raw: str) -> str:
+    """붙여넣을 때 딸려 오는 공백·줄바꿈·보이지 않는 문자·따옴표를 뺀다(키 안에는 공백이 없다)."""
+    key = _INVISIBLE.sub("", raw or "")
+    while len(key) >= 2 and key[0] == key[-1] and key[0] in "\"'`":
+        key = key[1:-1]
+    return key
+
+
+def describe_cf_key(key: str) -> str:
+    """오류 안내용 키 모양(비밀 부분은 보이지 않게). CurseForge 키는 보통 '$2a$10$'로 시작하는 60자."""
+    shape = f"{len(key)}자"
+    if key.startswith("$2a$") or key.startswith("$2b$"):
+        shape += f", '{key[:7]}'로 시작"
+    else:
+        shape += ", '$2a$10$'로 시작하지 않음"
+    return shape
+
+
+def _cf_http_error(e: urllib.error.HTTPError, key: str) -> RpcError:
+    ctype = (e.headers.get("Content-Type") or "").lower() if e.headers else ""
+    try:
+        body = e.read(400).decode("utf-8", "replace")
+    except Exception:  # noqa: BLE001
+        body = ""
+    print(f"[curseforge] HTTP {e.code} {ctype} {body[:200]!r}", file=sys.stderr)  # 키는 남기지 않는다
+    if "text/html" in ctype or "<html" in body.lower() or (e.headers and e.headers.get("cf-mitigated")):
+        return RpcError(f"CurseForge 서버가 접속을 막았습니다(HTTP {e.code}, 보안 검사 페이지). 키 문제가 아닐 수 있습니다. "
+                        "잠시 뒤 다시 시도하고, VPN·프록시·보안 프로그램을 쓰고 있다면 끄고 해 보세요.")
+    return RpcError(f"CurseForge가 이 키를 받아들이지 않았습니다(HTTP {e.code}). 입력한 키: {describe_cf_key(key)}. "
+                    "console.curseforge.com → API Keys 에 보이는 키 전체를 복사했는지 확인하세요"
+                    "(보통 '$2a$10$'로 시작하는 60자).")
+
+
 def _json(url: str, **kw: Any) -> Any:
     try:
         with _request(url, **kw) as r:
             return json.load(r)
     except urllib.error.HTTPError as e:
-        if e.code in (401, 403) and "x-api-key" in (kw.get("headers") or {}):
-            raise RpcError("CurseForge API 키가 올바르지 않습니다. 키를 다시 입력하세요.") from e
+        key = (kw.get("headers") or {}).get("x-api-key")
+        if e.code in (401, 403) and key is not None:
+            raise _cf_http_error(e, key) from e
         raise RpcError(f"서버 오류 {e.code}: {url.split('?')[0]}") from e
     except urllib.error.URLError as e:
         raise RpcError(f"서버에 연결하지 못했습니다({urllib.parse.urlparse(url).hostname}): {e.reason}") from e
@@ -431,7 +468,7 @@ class Importers:
         return {"hasKey": bool(self._cf_key(optional=True))}
 
     def cf_set_key(self, key: str) -> dict[str, Any]:
-        key = (key or "").strip()
+        key = clean_cf_key(key)
         if not key:
             try:
                 import keyring
@@ -439,6 +476,8 @@ class Importers:
             except Exception:  # noqa: BLE001
                 pass
             return {"hasKey": False}
+        if not key.isascii() or not key.isprintable():
+            raise RpcError("키에 영문·숫자·기호가 아닌 문자가 섞여 있습니다. CurseForge 콘솔에서 키를 다시 복사해 주세요.")
         # 저장 전에 키가 맞는지 확인
         _json(f"{CURSEFORGE_API}/games/{CF_GAME_ID}", headers={"x-api-key": key})
         try:
