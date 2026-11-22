@@ -81,3 +81,4 @@ export interface LauncherService {
 }
 
 export const DEFAULT_USERNAME = 'Dev';
+export * from './command-ids.js';

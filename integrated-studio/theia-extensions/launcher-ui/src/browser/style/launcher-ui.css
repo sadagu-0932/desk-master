@@ -1,0 +1,163 @@
+/* 작업실 UI — 목업(작업실·홈) 배치와 색 */
+
+.studio-muted { color: var(--studio-muted, #9aa395); }
+.studio-mono { font-family: var(--theia-code-font-family); font-size: 12px; }
+.studio-spacer { flex: 1; }
+.studio-error { color: #f07a6a; }
+
+.studio-dot {
+    display: inline-block; flex-shrink: 0;
+    width: 8px; height: 8px; border-radius: 4px;
+    background: #4a5146;
+}
+.studio-dot.on { background: #6cc04a; box-shadow: 0 0 0 3px rgba(108, 192, 74, 0.18); }
+.studio-dot.server { outline: 1px solid #4fc1ff; outline-offset: 1px; }
+.studio-dot.warn { background: #e8c468; }
+
+.studio-icon-btn {
+    width: 24px; height: 24px; flex-shrink: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: none; border: 0; border-radius: 4px;
+    color: var(--studio-muted, #9aa395); cursor: pointer;
+}
+.studio-icon-btn:hover { background: #2a2e28; color: #e8ede4; }
+.studio-icon-btn.codicon-play { color: #6cc04a; }
+.studio-icon-btn.codicon-debug-stop { color: #f07a6a; }
+
+/* ---------- 사이드바: 인스턴스 / 작업 ---------- */
+.studio-list { display: flex; flex-direction: column; padding: 4px 0; }
+.studio-empty { padding: 12px; display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.studio-row {
+    display: flex; align-items: center; gap: 8px;
+    height: 36px; padding: 0 8px 0 14px; cursor: pointer;
+    color: #c9cfc4;
+}
+.studio-row:hover { background: var(--studio-row-hover, #232920); }
+.studio-row.active { background: var(--studio-row-active, #26301f); color: #e8ede4; }
+.studio-row-text { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.25; }
+.studio-row-name { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.studio-row-sub { font-size: 11px; color: #8a9385; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.studio-task {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    height: 28px; padding: 0 12px 0 14px; margin: 0;
+    background: none; border: 0; text-align: left;
+    color: #c9cfc4; font-family: inherit; font-size: 12px; cursor: pointer;
+}
+.studio-task:hover:not(:disabled) { background: var(--studio-row-hover, #232920); color: #e8ede4; }
+.studio-task:disabled { opacity: 0.45; cursor: default; }
+.studio-task kbd {
+    font-family: var(--theia-code-font-family); font-size: 11px;
+    padding: 1px 5px; border-radius: 3px; background: #2a2e28; color: #9aa395;
+}
+
+/* ---------- 상단 실행 대상 막대 ---------- */
+#theia-top-panel { display: flex; align-items: center; }
+#theia-top-panel > .studio-run-bar { margin-left: auto; flex-shrink: 0; }
+.studio-run-bar { height: 100%; }
+.studio-run-bar-inner { display: flex; align-items: center; gap: 8px; height: 100%; padding: 0 10px; }
+.studio-bar-btn {
+    height: 24px; display: flex; align-items: center; gap: 6px; padding: 0 10px;
+    background: #232621; border: 1px solid #3a4037; border-radius: 6px;
+    color: #d6dbd2; font-family: var(--theia-code-font-family); font-size: 12px; cursor: pointer;
+}
+.studio-bar-btn:hover:not(:disabled) { border-color: #6cc04a; }
+.studio-target {
+    display: flex; align-items: center; height: 24px;
+    background: #232621; border: 1px solid #3a4037; border-radius: 6px; overflow: hidden;
+}
+.studio-target-pick {
+    height: 100%; display: flex; align-items: center; gap: 8px; padding: 0 10px;
+    background: none; border: 0; border-right: 1px solid #3a4037;
+    color: #d6dbd2; font-family: inherit; font-size: 12px; cursor: pointer; max-width: 260px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.studio-target-pick:hover, .studio-target-btn:hover:not(:disabled) { background: #2a2e28; }
+.studio-target-btn {
+    width: 28px; height: 100%; background: none; border: 0; cursor: pointer; color: #9aa395;
+}
+.studio-target-btn.codicon-play { color: #6cc04a; }
+.studio-target-btn.codicon-debug-stop { color: #f07a6a; }
+.studio-target-btn + .studio-target-btn { border-left: 1px solid #3a4037; }
+.studio-account { display: flex; align-items: center; gap: 6px; color: #9aa395; font-size: 12px; white-space: nowrap; }
+.studio-avatar { width: 18px; height: 18px; border-radius: 4px; background: #3a4037; }
+
+/* ---------- 하단 패널: 게임 로그 / 명령어 콘솔 ---------- */
+.studio-log, .studio-console { display: flex; flex-direction: column; background: var(--theia-panel-background); }
+.studio-log-header { display: flex; align-items: center; gap: 6px; padding: 4px 8px; border-bottom: 1px solid var(--studio-border, #2c302a); }
+.studio-log-filter { width: 220px; }
+.studio-log-body {
+    flex: 1; min-height: 0; overflow: auto; padding: 6px 10px;
+    font-family: var(--theia-code-font-family); font-size: 12px; line-height: 1.55;
+    user-select: text; white-space: pre-wrap; word-break: break-all;
+}
+.studio-log-body:focus { outline: none; }
+.studio-log-line { color: #b4bbaf; }
+.studio-log-line.level-warn { color: #e8c468; }
+.studio-log-line.level-error { color: #f07a6a; }
+.studio-log-line.level-debug { color: #6b7366; }
+.studio-log-line.source-studio, .studio-log-line.source-build { color: #a6db8a; }
+.studio-log-line.source-server::before { content: '[서버] '; color: #4fc1ff; }
+.studio-log-empty { font-family: var(--theia-ui-font-family); }
+.studio-console-input {
+    display: flex; align-items: center; gap: 6px; padding: 6px 10px;
+    border-top: 1px solid var(--studio-border, #2c302a);
+}
+.studio-console-input .theia-input { flex: 1; font-family: var(--theia-code-font-family); }
+.studio-console-prompt { color: #c586c0; font-family: var(--theia-code-font-family); }
+.studio-console-echo { color: #d6dbd2; }
+
+/* ---------- 홈 ---------- */
+.studio-home { overflow: auto; background: #1b1d1a; color: #d6dbd2; }
+.studio-home-inner { max-width: 1280px; margin: 0 auto; padding: 28px 32px; display: flex; flex-direction: column; gap: 24px; }
+.studio-home-hero { display: flex; align-items: center; gap: 14px; }
+.studio-home-hero h1 { margin: 0; font-size: 22px; font-weight: 700; }
+.studio-home-hero p { margin: 2px 0 0; }
+.studio-logo { width: 36px; height: 36px; border-radius: 6px; background: #6cc04a; box-shadow: inset -8px -8px 0 #4a8a32; }
+.studio-home-columns { display: flex; flex-wrap: wrap; gap: 28px; align-items: flex-start; }
+.studio-home-main { flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 16px; }
+.studio-home-side { flex: 1 1 280px; max-width: 380px; min-width: 0; display: flex; flex-direction: column; gap: 16px; }
+.studio-home-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.studio-home-toolbar h2, .studio-card h2 { margin: 0; font-size: 15px; font-weight: 700; }
+.studio-search {
+    display: flex; align-items: center; gap: 8px; width: 220px; height: 30px; padding: 0 10px;
+    background: #232621; border: 1px solid #343a31; border-radius: 6px; color: #9aa395;
+}
+.studio-search input { flex: 1; min-width: 0; background: none; border: 0; outline: none; color: #d6dbd2; font-family: inherit; font-size: 12px; }
+.studio-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
+.studio-card {
+    background: #1f221e; border: 1px solid #2c302a; border-radius: 10px; padding: 16px;
+    display: flex; flex-direction: column; gap: 10px;
+}
+.studio-inst-card { padding: 0; overflow: hidden; gap: 0; }
+.studio-card-banner { height: 72px; position: relative; }
+.studio-card-banner::after {
+    content: ''; position: absolute; inset: 0;
+    background-image: linear-gradient(90deg, rgba(0,0,0,0.12) 50%, transparent 50%), linear-gradient(rgba(0,0,0,0.12) 50%, transparent 50%);
+    background-size: 16px 16px;
+}
+.studio-card-body { padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+.studio-card-body h3 { margin: 0; font-size: 15px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+.studio-tags { display: flex; gap: 6px; flex-wrap: wrap; }
+.studio-chip { padding: 2px 6px; border-radius: 4px; background: #2a2e28; color: #b4bbaf; font-size: 11px; font-weight: 400; }
+.studio-chip.on { background: #26401c; color: #a6db8a; }
+.studio-chip.warn { background: #3b3420; color: #e8c468; }
+.studio-card-actions { display: flex; gap: 6px; }
+.studio-card-actions .theia-button { flex: 1; margin: 0; min-width: 0; display: flex; align-items: center; justify-content: center; gap: 4px; }
+.studio-card-actions .studio-more { flex: 0 0 32px; padding: 0; }
+.studio-quick {
+    height: 36px; display: flex; align-items: center; gap: 10px; padding: 0 12px;
+    background: #232621; border: 1px solid #343a31; border-radius: 6px;
+    color: #d6dbd2; font-family: inherit; font-size: 12px; text-align: left; cursor: pointer;
+}
+.studio-quick:hover { border-color: #6cc04a; }
+.studio-note { display: flex; gap: 10px; align-items: flex-start; line-height: 1.55; color: #b4bbaf; font-size: 12px; }
+.studio-note .studio-dot { margin-top: 6px; }
+
+/* ---------- Claude 작업 종류 칩 ---------- */
+.studio-workmode-chips { display: flex; gap: 6px; padding: 6px 10px; border-bottom: 1px solid var(--studio-border, #2c302a); }
+.studio-workmode-chips button {
+    height: 24px; padding: 0 10px; border-radius: 12px; cursor: pointer;
+    background: #232621; border: 1px solid #3a4037; color: #b4bbaf; font-family: inherit; font-size: 12px;
+}
+.studio-workmode-chips button[aria-checked='true'] { background: #2c3a26; border-color: #6cc04a; color: #e8ede4; }

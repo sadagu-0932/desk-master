@@ -1,8 +1,8 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "module": "commonjs",
-    "moduleResolution": "node",
+    "module": "node16",
+    "moduleResolution": "node16",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "strict": true,
     "strictPropertyInitialization": false,
@@ -12,7 +12,9 @@
     "skipLibCheck": true,
     "declaration": true,
     "sourceMap": true,
-    "jsx": "react",
+    "jsx": "react-jsx",
+    "jsxImportSource": "@theia/core/shared/react",
+    "allowSyntheticDefaultImports": true,
     "resolveJsonModule": true,
     "useUnknownInCatchVariables": false
   }

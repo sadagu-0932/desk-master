@@ -8,7 +8,7 @@ import { WorkspaceService } from '@theia/workspace/lib/browser/workspace-service
 import {
     DEFAULT_USERNAME, GameVersion, Instance, LauncherClient, LauncherService, Loader, LogEvent, ProgressEvent,
     ServerStartResult, StateEvent, WorkMode
-} from '../common';
+} from '../common/index.js';
 
 export interface RunState {
     game: boolean;

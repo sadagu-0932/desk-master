@@ -3,8 +3,8 @@ import { Command, CommandContribution, CommandRegistry } from '@theia/core/lib/c
 import { MessageService } from '@theia/core/lib/common/message-service';
 import { QuickInputService, QuickPickItem } from '@theia/core/lib/browser/quick-input';
 import { ConfirmDialog } from '@theia/core/lib/browser/dialogs';
-import { Instance, Loader } from '../common';
-import { InstanceManager } from './instance-manager';
+import { Instance, Loader } from '../common/index.js';
+import { InstanceManager } from './instance-manager.js';
 
 const CATEGORY = '통합 작업실';
 

@@ -3,9 +3,10 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import * as readline from 'readline';
+import { fileURLToPath } from 'url';
 import { injectable } from '@theia/core/shared/inversify';
 import { Emitter } from '@theia/core/lib/common/event';
-import { SidecarStatus } from '../common';
+import { SidecarStatus } from '../common/index.js';
 
 interface Pending {
     resolve(value: unknown): void;
@@ -22,7 +23,7 @@ export function findSidecarDir(): string | undefined {
     if (resourcesPath) {
         candidates.push(path.join(resourcesPath, 'sidecar'));
     }
-    let dir = __dirname;
+    let dir = path.dirname(fileURLToPath(import.meta.url));
     for (let i = 0; i < 8; i++) {
         candidates.push(path.join(dir, 'sidecar'));
         dir = path.dirname(dir);

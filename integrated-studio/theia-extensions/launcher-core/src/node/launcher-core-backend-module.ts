@@ -1,10 +1,11 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { fileURLToPath } from 'url';
 import { ContainerModule, inject, injectable } from '@theia/core/shared/inversify';
 import { ConnectionHandler, RpcConnectionHandler } from '@theia/core/lib/common/messaging';
 import { BackendApplicationContribution } from '@theia/core/lib/node/backend-application';
-import { LAUNCHER_SERVICE_PATH, LauncherClient, LauncherService, SidecarStatus } from '../common';
-import { SidecarProcess } from './sidecar-process';
+import { LAUNCHER_SERVICE_PATH, LauncherClient, LauncherService, SidecarStatus } from '../common/index.js';
+import { SidecarProcess } from './sidecar-process.js';
 
 /** 창(연결)마다 하나. 사이드카 프로세스는 앱 전체에서 하나를 같이 쓴다. */
 @injectable()
@@ -35,15 +36,21 @@ class LauncherServiceImpl implements LauncherService {
     }
 
     async bundledClaudeSdkCli(): Promise<string | undefined> {
-        try {
-            const pkg = require.resolve('@anthropic-ai/claude-agent-sdk/package.json');
-            const cli = path.join(path.dirname(pkg), 'cli.js');
-            const sdk = path.join(path.dirname(pkg), 'sdk.mjs');
-            // Theia는 cli.js 옆의 sdk.mjs 를 불러온다
-            return fs.existsSync(sdk) ? (fs.existsSync(cli) ? cli : sdk) : undefined;
-        } catch {
-            return undefined;
+        // 앱의 node_modules 에서 @anthropic-ai/claude-agent-sdk/sdk.mjs 를 찾는다.
+        // Theia는 지정 경로가 있는 폴더의 sdk.mjs 를 불러오므로 sdk.mjs 경로 자체를 넘긴다.
+        let dir = path.dirname(fileURLToPath(import.meta.url));
+        for (let i = 0; i < 10; i++) {
+            const sdk = path.join(dir, 'node_modules', '@anthropic-ai', 'claude-agent-sdk', 'sdk.mjs');
+            if (fs.existsSync(sdk)) {
+                return sdk;
+            }
+            const parent = path.dirname(dir);
+            if (parent === dir) {
+                break;
+            }
+            dir = parent;
         }
+        return undefined;
     }
 
     dispose(): void {

@@ -1,0 +1,41 @@
+/* 통합 작업실 공통 스타일: 글꼴, 스크롤바(흰색 기본 스크롤바 금지) */
+:root {
+    --theia-ui-font-family: 'Noto Sans KR', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --theia-code-font-family: 'JetBrains Mono', Consolas, 'Courier New', monospace;
+    --studio-accent: #6cc04a;
+    --studio-accent-fg: #10140e;
+    --studio-muted: #9aa395;
+    --studio-border: #2c302a;
+    --studio-input: #232621;
+    --studio-input-border: #3a4037;
+    --studio-row-hover: #232920;
+    --studio-row-active: #26301f;
+}
+
+body {
+    font-family: var(--theia-ui-font-family);
+}
+
+* {
+    scrollbar-width: thin;
+    scrollbar-color: #34502a transparent;
+}
+
+::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+    background: transparent;
+}
+::-webkit-scrollbar-thumb {
+    background: #34502a;
+    border-radius: 6px;
+    border: 3px solid transparent;
+    background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: #5a9440;
+    background-clip: padding-box;
+}
