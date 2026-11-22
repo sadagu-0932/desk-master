@@ -91,3 +91,56 @@
 /* 버튼 줄: 만든 뒤 바로 설치 */
 .studio-newinst-dialog .dialogControl { align-items: center; }
 .studio-newinst-installnow { display: flex; align-items: center; gap: 6px; margin-right: auto; color: #c9cfc4; cursor: pointer; }
+
+/* 왼쪽 방법 목록 구분 */
+.ni-source-sep { margin: 10px 10px 2px; font-size: 10px; font-weight: 700; color: #6b7366; }
+.ni-link { margin-left: 8px; font-weight: 400; color: #8fd16b; }
+
+/* 파일 가져오기 */
+.ni-file { flex: 1; display: flex; flex-direction: column; gap: 12px; overflow: auto; }
+.ni-file-pick { display: flex; gap: 8px; flex-wrap: wrap; }
+.ni-file-pick .theia-button { margin: 0; display: flex; align-items: center; gap: 6px; }
+.ni-file-kinds { margin: 0; padding-left: 18px; line-height: 1.8; font-size: 12px; }
+.ni-file-card { padding: 14px; border: 1px solid #3a4037; border-radius: 8px; background: #1f221e; display: flex; flex-direction: column; gap: 8px; }
+.ni-file-card.bad { border-color: #6a5a28; }
+.ni-file-card h3 { margin: 0; font-size: 15px; }
+.ni-path { font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.studio-newinst .studio-tags { display: flex; gap: 6px; flex-wrap: wrap; }
+
+/* Modrinth·CurseForge */
+.ni-platform { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 12px; }
+.pb { flex: 1; min-height: 0; display: flex; flex-direction: column; border: 1px solid #2c302a; border-radius: 6px; overflow: hidden; }
+.pb-list { flex: 1; min-height: 0; overflow: auto; }
+.pb-item { display: flex; gap: 10px; align-items: center; padding: 8px 10px; cursor: pointer; border-bottom: 1px solid #23271f; }
+.pb-item:hover { background: #232920; }
+.pb-item.selected { background: #2c3a26; }
+.pb-icon { width: 36px; height: 36px; border-radius: 6px; flex-shrink: 0; object-fit: cover; background: #2a2e28; }
+.pb-text { flex: 1; min-width: 0; }
+.pb-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pb-desc { color: #9aa395; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pb-meta { color: #9aa395; font-size: 11px; white-space: nowrap; display: flex; align-items: center; gap: 4px; }
+.pb-more { margin: 8px auto !important; display: block; }
+.ni-platform-versions { height: 190px; flex-shrink: 0; display: flex; flex-direction: column; border-top: 1px solid #2c302a; padding-top: 10px; }
+.ni-platform-versions > .ni-table { border: 1px solid #2c302a; border-radius: 6px; }
+.pb-vrow { grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) 90px 90px; }
+.pb-vname { display: flex; gap: 6px; align-items: center; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pb-ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pb-keyform { max-width: 560px; display: flex; flex-direction: column; gap: 8px; padding: 6px 4px; }
+.pb-keyform h3 { margin: 0; font-size: 15px; }
+.pb-keyform p, .pb-keyform ol { margin: 0; line-height: 1.7; font-size: 12px; }
+.pb-keyform a { color: #8fd16b; }
+.pb-keyrow { display: flex; gap: 8px; }
+.pb-keyrow .theia-input { flex: 1; }
+.pb-keyrow .theia-button { margin: 0; }
+
+/* 모드 추가 창 */
+.ni-addmods-bottom { flex-direction: row; gap: 12px; }
+.ni-addmods-versions { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.ni-addmods-versions > .ni-table { border: 1px solid #2c302a; border-radius: 6px; }
+.ni-addmods-side { width: 260px; flex-shrink: 0; display: flex; flex-direction: column; gap: 8px; }
+.ni-addmods-side .theia-button { margin: 0; }
+.ni-addmods-log { flex: 1; overflow: auto; font-size: 12px; line-height: 1.5; }
+.ni-addmods-log .lv-ok { color: #a6db8a; }
+.ni-addmods-log .lv-warn { color: #e8c468; }
+.ni-addmods-log .lv-error { color: #f07a6a; }
+.studio-addmods-dialog .studio-newinst { height: min(640px, calc(100vh - 170px)); }

@@ -17,6 +17,7 @@ const TASKS: TaskItem[] = [
     { label: '리소스팩 적용 후 다시 불러오기', command: TaskCommandIds.RESOURCEPACK_APPLY, key: 'F8' },
     { label: '데이터팩 .zip 내보내기', command: TaskCommandIds.DATAPACK_ZIP, key: '' },
     { label: '데이터팩을 월드로 동기화', command: TaskCommandIds.DATAPACK_SYNC, key: '' },
+    { label: '모드 추가 (Modrinth·CurseForge)', command: 'studio.mods.add', key: '' },
 ];
 
 /** 사이드바 "작업" 뷰 */

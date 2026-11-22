@@ -35,6 +35,9 @@ win:
     - target: nsis
   artifactName: IntegratedStudio-Setup-${version}.${ext}
 nsis:
+  # 기존 설치를 찾아 업데이트로 안내(resources/installer.nsh). 같은 appId라 같은 위치에 덮어쓴다
+  include: resources/installer.nsh
+  deleteAppDataOnUninstall: false
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true

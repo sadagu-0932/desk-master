@@ -4,6 +4,7 @@ import { ReactWidget } from '@theia/core/lib/browser/widgets/react-widget';
 import { codicon } from '@theia/core/lib/browser/widgets';
 import { CommandService } from '@theia/core/lib/common/command';
 import { QuickInputService } from '@theia/core/lib/browser/quick-input';
+import { ApplicationServer } from '@theia/core/lib/common/application-protocol';
 import { InstanceManager, StudioCommands } from 'integrated-studio-launcher-core/lib/browser';
 import { Instance } from 'integrated-studio-launcher-core/lib/common';
 import { loaderLabel } from './instances-widget.js';
@@ -20,6 +21,9 @@ export class HomeWidget extends ReactWidget {
     @inject(InstanceManager) protected readonly manager: InstanceManager;
     @inject(CommandService) protected readonly commands: CommandService;
     @inject(QuickInputService) protected readonly quickInput: QuickInputService;
+    @inject(ApplicationServer) protected readonly appServer: ApplicationServer;
+
+    protected appVersion = '';
 
     protected query = '';
 
@@ -33,6 +37,7 @@ export class HomeWidget extends ReactWidget {
         this.addClass('studio-home');
         this.node.tabIndex = 0;
         this.toDispose.push(this.manager.onDidChange(() => this.update()));
+        this.appServer.getApplicationInfo().then(i => { this.appVersion = i?.version ?? ''; this.update(); }).catch(() => undefined);
         this.update();
     }
 
@@ -49,7 +54,7 @@ export class HomeWidget extends ReactWidget {
                 <div className='studio-logo' aria-hidden='true' />
                 <div>
                     <h1>통합 작업실</h1>
-                    <p className='studio-muted'>마인크래프트 실행 · 데이터팩 · 모드 · 리소스팩</p>
+                    <p className='studio-muted'>마인크래프트 실행 · 데이터팩 · 모드 · 리소스팩{this.appVersion && ` · 버전 ${this.appVersion}`}</p>
                 </div>
             </header>
             <div className='studio-home-columns'>

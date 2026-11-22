@@ -133,7 +133,11 @@ export class SidecarProcess {
         }
         const dir = venvDir(this.sidecarDir!, this.dataDir);
         const py = venvPython(dir);
-        if (fs.existsSync(py) && fs.existsSync(path.join(dir, '.studio-ready'))) {
+        // requirements.txt 가 바뀌면(새 패키지 추가 등) 다시 설치한다
+        const reqFile = path.join(this.sidecarDir!, 'requirements.txt');
+        const reqStamp = fs.existsSync(reqFile) ? fs.readFileSync(reqFile, 'utf8').replace(/\r\n/g, '\n').trim() : '';
+        const marker = path.join(dir, '.studio-ready');
+        if (fs.existsSync(py) && fs.existsSync(marker) && fs.readFileSync(marker, 'utf8') === reqStamp) {
             return py;
         }
         const notify = (text: string, done = false) =>
@@ -148,7 +152,7 @@ export class SidecarProcess {
             }
             notify('처음 실행 준비: 런처 라이브러리 설치 중(pip)');
             await run(py, ['-m', 'pip', 'install', '--disable-pip-version-check', '-r', path.join(this.sidecarDir!, 'requirements.txt')], this.sidecarDir!);
-            fs.writeFileSync(path.join(dir, '.studio-ready'), new Date().toISOString());
+            fs.writeFileSync(marker, reqStamp);
         } finally {
             notify('', true);
         }

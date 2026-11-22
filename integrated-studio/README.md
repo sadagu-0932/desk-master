@@ -29,18 +29,17 @@ npm start
 - 데이터 폴더: 개발 중에는 저장소의 `data/`(git 제외), 패키징된 앱은 `~/.integrated-studio/data`.
   `INTEGRATED_STUDIO_DATA` 환경 변수로 바꿀 수 있다.
 
-## 설치 파일 받기 (가장 쉬움)
+## 설치 파일 받기
 
-GitHub 저장소 → **Actions** → "통합 작업실 Windows 설치 파일" → 가장 최근 실행 → 아래 **Artifacts**에서 내려받는다.
+설치 파일은 **요청할 때만** 만든다(push로는 만들지 않음).
+GitHub 저장소 → **Actions** → "통합 작업실 Windows 설치 파일" → **Run workflow** → 끝나면 아래 **Artifacts**의
+`IntegratedStudio-Setup-0.1.<번호>`를 내려받는다.
 
-| 파일 | 설명 |
-|---|---|
-| `IntegratedStudio-Setup-with-python` | Python까지 들어 있음. PC에 Python을 설치하지 않아도 된다 |
-| `IntegratedStudio-Setup-without-python` | 더 작음. PC에 Python 3이 있어야 한다(첫 실행 때 자동 준비) |
-
-이 브랜치에 `integrated-studio/`를 바꿔 푸시하면 자동으로 둘 다 만들어진다.
-Actions 화면의 "Run workflow"로 직접 돌릴 때는 Python 포함 여부(both / with / without)를 고를 수 있다.
-서명이 없어서 처음 설치할 때 SmartScreen 경고가 뜬다 — "추가 정보 → 실행".
+- Python 미포함판이다. PC에 Python 3이 있어야 하고, 첫 실행 때 필요한 패키지를 자동으로 설치한다.
+- 버전은 실행할 때마다 올라간다(0.1.<실행 번호>). 홈 화면 위쪽에 지금 버전이 보인다.
+- **이미 설치돼 있으면 업데이트로 설치된다**: 설치 파일이 기존 버전을 찾아 안내하고 같은 위치에 덮어쓴다.
+  인스턴스·월드·설정(`~/.integrated-studio`)은 지우지 않는다.
+- 서명이 없어서 처음 설치할 때 SmartScreen 경고가 뜬다 — "추가 정보 → 실행".
 
 ## 직접 패키징 (내 PC에서)
 

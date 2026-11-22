@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from instances import InstanceStore  # noqa: E402
 from packs import Packs  # noqa: E402
+from importers import Importers  # noqa: E402
 from rpc import notify, serve  # noqa: E402
 from runner import Runner  # noqa: E402
 
@@ -30,6 +31,7 @@ def main() -> None:
     runner = Runner(data_dir, store)
     atexit.register(runner.shutdown)
     packs = Packs(store, runner.mc_dir)
+    imp = Importers(store, data_dir)
 
     handlers = {
         "ping": lambda: {"version": VERSION, "data": str(data_dir)},
@@ -65,8 +67,22 @@ def main() -> None:
         "mod_new": packs.mod_new,
         "mod_build": packs.mod_build,
         "open_external": packs.open_external,
+        "inspect_import": imp.inspect_import,
+        "import_file": imp.import_file,
+        "modrinth_search": imp.modrinth_search,
+        "modrinth_versions": imp.modrinth_versions,
+        "modrinth_install_modpack": imp.modrinth_install_modpack,
+        "modrinth_add_mod": imp.modrinth_add_mod,
+        "cf_key_status": imp.cf_key_status,
+        "cf_set_key": imp.cf_set_key,
+        "cf_search": imp.cf_search,
+        "cf_files": imp.cf_files,
+        "cf_install_modpack": imp.cf_install_modpack,
+        "cf_add_mod": imp.cf_add_mod,
     }
-    background = {"install", "launch", "list_versions", "list_loader_versions", "server_start", "server_stop", "generate_reports", "stop", "mod_new", "mod_build", "read_commands"}
+    background = {"install", "launch", "list_versions", "list_loader_versions", "server_start", "server_stop", "generate_reports", "stop", "mod_new", "mod_build", "read_commands", "inspect_import", "import_file",
+                  "modrinth_search", "modrinth_versions", "modrinth_install_modpack", "modrinth_add_mod",
+                  "cf_key_status", "cf_set_key", "cf_search", "cf_files", "cf_install_modpack", "cf_add_mod"}
     notify("ready", {"version": VERSION})
     serve(handlers, background)
 
