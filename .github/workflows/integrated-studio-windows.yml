@@ -47,6 +47,8 @@ jobs:
 
       - name: 사이드카 시험 (가짜 Modrinth·CurseForge 서버, 공식 런처 RPC)
         working-directory: integrated-studio/sidecar
+        env:
+          PYTHONIOENCODING: utf-8
         run: |
           python -m pip install --disable-pip-version-check -r requirements.txt
           python tests/test_importers.py

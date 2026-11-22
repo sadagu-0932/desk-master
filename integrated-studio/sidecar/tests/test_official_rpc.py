@@ -15,6 +15,10 @@ import threading
 import time
 from pathlib import Path
 
+for _s in (sys.stdout, sys.stderr):  # Windows 콘솔(cp1252 등)에서도 한글 출력
+    if hasattr(_s, "reconfigure"):
+        _s.reconfigure(encoding="utf-8", errors="replace")
+
 HERE = Path(__file__).resolve().parent
 SIDECAR = HERE.parent
 sys.path.insert(0, str(SIDECAR))
