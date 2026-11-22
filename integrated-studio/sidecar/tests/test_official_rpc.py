@@ -126,6 +126,21 @@ def test_main_wiring(tmp: Path) -> None:
               "로그가 게임 로그 알림 형식(id·line·level·source=official)으로 옴")
         check(not any("이전 실행" in m["params"].get("line", "") for m in sc.notes if m["method"] == "log"),
               "기존 내용은 건너뜀(from_start=False)")
+        with open(logs / "latest.log", "a", encoding="utf-8") as f:
+            f.write("[12:00:02] [main/INFO]: Setting user: Player\n")
+        n = sc.wait_note(lambda m: m["method"] == "state" and m["params"]["id"] == inst["id"] and m["params"]["running"])
+        check(n["params"]["source"] == "game" and sc.call("running")["game"] == [inst["id"]],
+              "로그로 게임 실행 상태를 알아냄(running 에도 반영)")
+        with open(logs / "latest.log", "a", encoding="utf-8") as f:
+            f.write("[12:30:00] [Render thread/INFO]: Stopping!\n")
+        sc.wait_note(lambda m: m["method"] == "state" and m["params"]["id"] == inst["id"] and not m["params"]["running"])
+        check(sc.call("running")["game"] == [], "게임을 닫으면(Stopping!) 실행 상태 꺼짐")
+        for gone in ("launch", "stop"):
+            try:
+                sc.call(gone, id=inst["id"])
+                check(False, f"오프라인 실행 메서드 {gone} 없음")
+            except RuntimeError as e:
+                check("알 수 없는 메서드" in str(e), f"오프라인 실행 메서드 {gone} 없음(공식 런처로만 실행)")
         r = sc.call("official_tail_stop", id=inst["id"])
         check(r["stopped"] and sc.call("official_tailing") == [], "official_tail_stop")
         try:
@@ -199,6 +214,13 @@ def test_confirm_flow(tmp: Path) -> None:
     check((mc / "versions" / vid / f"{vid}.json").is_file(), "Fabric 버전 JSON 복사")
     check(any(m == "log" and p["source"] == "official" and p["id"] == inst["id"] for m, p in notes),
           "등록 결과가 게임 로그로 감")
+
+    n_confirms = sum(1 for m, _ in notes if m == "confirm")
+    r = h["official_register_instance"](id=inst["id"])  # 답을 준비하지 않음: 물으면 시간 초과로 실패한다
+    check(r["ok"] and r.get("unchanged") and sum(1 for m, _ in notes if m == "confirm") == n_confirms,
+          "같은 내용으로 이미 등록돼 있으면 다시 묻지 않음")
+    check((store.dir_of(inst["id"]) / "config" / "command_crafter.properties").is_file(),
+          "실행 전에 CommandCrafter 포트 설정을 씀")
 
     answers.append(None)
     t0 = time.time()

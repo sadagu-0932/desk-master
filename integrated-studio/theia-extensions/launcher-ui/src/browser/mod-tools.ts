@@ -4,7 +4,8 @@ import { MessageService } from '@theia/core/lib/common/message-service';
 import { QuickInputService } from '@theia/core/lib/browser/quick-input';
 import { OpenerService, open } from '@theia/core/lib/browser/opener-service';
 import { FileUri } from '@theia/core/lib/common/file-uri';
-import { InstanceManager } from 'integrated-studio-launcher-core/lib/browser';
+import { InstanceManager, StudioCommands } from 'integrated-studio-launcher-core/lib/browser';
+import { CommandService } from '@theia/core/lib/common/command';
 import { Instance, TaskCommandIds } from 'integrated-studio-launcher-core/lib/common';
 
 const CATEGORY = '통합 작업실';
@@ -18,6 +19,7 @@ export namespace ModCommands {
 @injectable()
 export class ModTools implements CommandContribution {
     @inject(InstanceManager) protected readonly manager: InstanceManager;
+    @inject(CommandService) protected readonly commands: CommandService;
     @inject(MessageService) protected readonly messages: MessageService;
     @inject(QuickInputService) protected readonly quickInput: QuickInputService;
     @inject(OpenerService) protected readonly openers: OpenerService;
@@ -96,7 +98,11 @@ export class ModTools implements CommandContribution {
             const res = await this.manager.call<{ jar: string }>('mod_build', { id: inst.id, modid });
             progress.cancel();
             this.manager.log(inst.id, `테스트 인스턴스에 넣음: ${res.jar}`, 'info', 'build');
-            await this.manager.restart(inst.id);
+            if (this.manager.isRunning(inst.id)) {
+                this.messages.info('모드를 넣었습니다. 게임 창을 닫은 뒤 다시 실행(F5)하면 새 모드로 켜집니다.');
+            } else {
+                await this.commands.executeCommand(StudioCommands.LAUNCH.id, inst.id);
+            }
         } finally {
             progress.cancel();
             this.building = false;

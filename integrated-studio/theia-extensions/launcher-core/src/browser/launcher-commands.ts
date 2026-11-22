@@ -21,9 +21,9 @@ const CATEGORY = '통합 작업실';
 export namespace StudioCommands {
     export const CREATE: Command = { id: 'studio.instance.create', category: CATEGORY, label: '새 인스턴스 만들기' };
     export const INSTALL: Command = { id: 'studio.instance.install', category: CATEGORY, label: '인스턴스 설치(게임 파일 받기)' };
-    export const LAUNCH: Command = { id: 'studio.instance.launch', category: CATEGORY, label: '실행' };
+    /** 게임 실행은 항상 공식 런처로(로그인·플레이는 공식 런처에서) */
+    export const LAUNCH: Command = { id: 'studio.instance.launch', category: CATEGORY, label: '실행 (공식 런처)' };
     export const STOP: Command = { id: 'studio.instance.stop', category: CATEGORY, label: '중지' };
-    export const RESTART: Command = { id: 'studio.instance.restart', category: CATEGORY, label: '재시작' };
     export const SELECT_TARGET: Command = { id: 'studio.instance.selectTarget', category: CATEGORY, label: '실행 대상 바꾸기' };
     export const OPEN_WORKSPACE: Command = { id: 'studio.instance.openWorkspace', category: CATEGORY, label: '작업실에서 열기' };
     export const RENAME: Command = { id: 'studio.instance.rename', category: CATEGORY, label: '인스턴스 이름 바꾸기' };
@@ -32,7 +32,6 @@ export namespace StudioCommands {
     export const REFRESH: Command = { id: 'studio.instance.refresh', category: CATEGORY, label: '인스턴스 목록 새로고침' };
     export const ADD_MODS: Command = { id: 'studio.mods.add', category: CATEGORY, label: '모드 추가 (Modrinth·CurseForge)' };
     export const CF_KEY: Command = { id: 'studio.curseforge.key', category: CATEGORY, label: 'CurseForge API 키 지우기' };
-    export const OFFICIAL_PLAY: Command = { id: 'studio.official.play', category: CATEGORY, label: '공식 런처로 플레이 (온라인)' };
     export const OFFICIAL_UNREGISTER: Command = { id: 'studio.official.unregister', category: CATEGORY, label: '공식 런처에서 등록 해제' };
     export const OFFICIAL_OPEN: Command = { id: 'studio.official.open', category: CATEGORY, label: '공식 런처 열기' };
     export const OFFICIAL_INSTALL: Command = { id: 'studio.official.install', category: CATEGORY, label: '공식 런처 설치' };
@@ -70,15 +69,11 @@ export class LauncherCommandContribution implements CommandContribution {
             })
         });
         registry.registerCommand(StudioCommands.LAUNCH, {
-            execute: (id: IdArg) => this.withInstance(id, i => this.manager.launch(i.id)),
-            isEnabled: (id: IdArg) => !this.manager.isRunning(this.resolve(id)?.id),
+            execute: (id: IdArg) => this.withInstance(id, i => this.officialPlay(i)),
         });
         registry.registerCommand(StudioCommands.STOP, {
-            execute: (id: IdArg) => this.withInstance(id, i => this.manager.stop(i.id)),
-            isEnabled: (id: IdArg) => this.manager.isRunning(this.resolve(id)?.id),
-        });
-        registry.registerCommand(StudioCommands.RESTART, {
-            execute: (id: IdArg) => this.withInstance(id, i => this.manager.restart(i.id)),
+            // 공식 런처가 켠 게임은 이 앱의 프로세스가 아니라서 끌 수 없다
+            execute: () => this.messages.info('게임은 공식 런처가 실행했습니다. 게임 창을 닫아 종료해 주세요.'),
         });
         registry.registerCommand(StudioCommands.SELECT_TARGET, { execute: () => this.guard(() => this.selectTarget()) });
         registry.registerCommand(StudioCommands.OPEN_WORKSPACE, {
@@ -124,9 +119,6 @@ export class LauncherCommandContribution implements CommandContribution {
                 await this.manager.call('cf_set_key', { key: '' });
                 this.messages.info('CurseForge API 키를 지웠습니다.');
             })
-        });
-        registry.registerCommand(StudioCommands.OFFICIAL_PLAY, {
-            execute: (id: IdArg) => this.withInstance(id, i => this.officialPlay(i)),
         });
         registry.registerCommand(StudioCommands.OFFICIAL_UNREGISTER, {
             execute: (id: IdArg) => this.withInstance(id, async i => {
@@ -191,6 +183,10 @@ export class LauncherCommandContribution implements CommandContribution {
      * 로그인과 '플레이' 버튼은 공식 런처에서 사용자가 한다. 이 앱은 계정 정보를 다루지 않는다.
      */
     protected async officialPlay(inst: Instance): Promise<void> {
+        if (this.manager.isRunning(inst.id)) {
+            this.messages.info(`${inst.name}은(는) 이미 실행 중입니다. 다시 켜려면 게임 창을 닫은 뒤 실행하세요.`);
+            return;
+        }
         if (!await this.ensureOfficialLauncher(inst.id)) {
             return;
         }
@@ -198,7 +194,7 @@ export class LauncherCommandContribution implements CommandContribution {
             this.messages.info(`${inst.name}을(를) 먼저 설치합니다(게임 파일 받기).`);
             inst = await this.manager.install(inst.id);
         }
-        const reg = await this.manager.call<OfficialResult>('official_register_instance', { id: inst.id });
+        const reg = await this.manager.call<OfficialResult & { unchanged?: boolean }>('official_register_instance', { id: inst.id });
         if (!reg.ok) {
             this.messages.info(reg.message);  // 사용자가 '아니오'
             return;

@@ -1,14 +1,12 @@
 """게임 설치·실행·중지, 로컬 서버, 데이터 생성기. minecraft-launcher-lib 래퍼."""
 from __future__ import annotations
 
-import hashlib
 import json
 import re
 import subprocess
 import threading
 import urllib.parse
 import urllib.request
-import uuid
 from pathlib import Path
 from typing import Any
 
@@ -46,18 +44,13 @@ def _level(line: str) -> str:
     return {"WARNING": "warn", "FATAL": "error", "TRACE": "debug"}.get(lv, lv.lower())
 
 
-def offline_uuid(name: str) -> str:
-    """오프라인 모드 UUID (서버와 같은 방식: OfflinePlayer:<이름>의 UUIDv3)."""
-    return str(uuid.UUID(bytes=hashlib.md5(f"OfflinePlayer:{name}".encode()).digest(), version=3))
-
-
 class Runner:
     def __init__(self, data_dir: Path, store: InstanceStore):
         self.mc_dir = (data_dir / "minecraft").resolve()
         self.reports_dir = (data_dir / "reports").resolve()
         self.mc_dir.mkdir(parents=True, exist_ok=True)
         self.store = store
-        self.procs: dict[str, subprocess.Popen] = {}       # 게임 클라이언트
+        self.procs: dict[str, subprocess.Popen] = {}       # (게임 클라이언트는 공식 런처가 실행한다 — 비어 있음)
         self.servers: dict[str, subprocess.Popen] = {}     # 로컬 서버
         self.install_lock = threading.Lock()
 
@@ -193,37 +186,6 @@ class Runner:
         table.pop(inst_id, None)
         notify("state", {"id": inst_id, "source": source, "running": False, "exitCode": code})
 
-    def launch(self, id: str, username: str = "Dev") -> dict[str, Any]:
-        if id in self.procs:
-            raise RpcError("이미 실행 중입니다.")
-        meta = self.store.get(id)
-        if not meta.get("installed"):
-            meta = self.install(id)
-        if not re.fullmatch(r"[A-Za-z0-9_]{3,16}", username):
-            raise RpcError("닉네임은 영문·숫자·_ 3~16자여야 합니다.")
-        d = self.store.dir_of(id)
-        write_cc_config(d, meta["ccPort"])
-        options = {
-            "username": username,
-            "uuid": offline_uuid(username),
-            "token": "0",                     # 오프라인 테스트 모드(가짜 닉네임). MS 로그인은 보류(M8)
-            "gameDirectory": str(d),
-            "launcherName": "integrated-studio",
-            "launcherVersion": "0.1",
-        }
-        cmd = mll.command.get_minecraft_command(meta["versionId"], str(self.mc_dir), options)
-        notify("log", {"id": id, "level": "info", "source": "studio",
-                       "line": f"실행: {meta['name']} ({meta['versionId']}) — 오프라인 테스트 모드, 닉네임 {username}"})
-        proc = subprocess.Popen(
-            cmd, cwd=d, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
-            text=True, encoding="utf-8", errors="replace",
-            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-        )
-        self.procs[id] = proc
-        notify("state", {"id": id, "source": "game", "running": True, "pid": proc.pid})
-        threading.Thread(target=self._pump, args=(id, proc, "game", self.procs), daemon=True).start()
-        return {"pid": proc.pid}
-
     @staticmethod
     def _terminate(proc: subprocess.Popen) -> None:
         proc.terminate()
@@ -231,13 +193,6 @@ class Runner:
             proc.wait(timeout=15)
         except subprocess.TimeoutExpired:
             proc.kill()
-
-    def stop(self, id: str) -> bool:
-        proc = self.procs.get(id)
-        if not proc:
-            return False
-        self._terminate(proc)
-        return True
 
     def running(self) -> dict[str, list[str]]:
         return {"game": list(self.procs), "server": list(self.servers)}

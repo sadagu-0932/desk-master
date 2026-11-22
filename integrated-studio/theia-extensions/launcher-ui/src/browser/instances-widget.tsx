@@ -57,13 +57,9 @@ export class InstancesWidget extends ReactWidget {
                         <span className='studio-row-name'>{i.name}</span>
                         <span className='studio-row-sub'>{sub}{server ? ' · 서버' : ''}</span>
                     </span>
-                    {running
-                        ? <button className='studio-icon-btn codicon codicon-debug-stop' aria-label={`${i.name} 중지`} title='중지 (Shift+F5)'
-                            onClick={e => { e.stopPropagation(); this.commands.executeCommand(StudioCommands.STOP.id, i.id); }} />
-                        : <button className='studio-icon-btn codicon codicon-play' aria-label={`${i.name} 실행`} title='실행 (F5)'
-                            onClick={e => { e.stopPropagation(); this.commands.executeCommand(StudioCommands.LAUNCH.id, i.id); }} />}
-                    <button className='studio-icon-btn codicon codicon-globe' aria-label={`${i.name} 공식 런처로 플레이`} title='공식 런처로 플레이 (온라인)'
-                        onClick={e => { e.stopPropagation(); this.commands.executeCommand(StudioCommands.OFFICIAL_PLAY.id, i.id); }} />
+                    <button className='studio-icon-btn codicon codicon-play' aria-label={`${i.name} 실행 (공식 런처)`} disabled={running}
+                        title={running ? '실행 중 — 게임 창을 닫으면 종료됩니다' : '실행 (F5) — 공식 런처로'}
+                        onClick={e => { e.stopPropagation(); this.commands.executeCommand(StudioCommands.LAUNCH.id, i.id); }} />
                     <button className='studio-icon-btn codicon codicon-folder-opened' aria-label={`${i.name} 작업실에서 열기`} title='작업실에서 열기'
                         onClick={e => { e.stopPropagation(); this.commands.executeCommand(StudioCommands.OPEN_WORKSPACE.id, i.id); }} />
                 </div>;

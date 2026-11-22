@@ -7,7 +7,7 @@ import { FileUri } from '@theia/core/lib/common/file-uri';
 import { WorkspaceService } from '@theia/workspace/lib/browser/workspace-service';
 import { ConfirmDialog } from '@theia/core/lib/browser/dialogs';
 import {
-    ConfirmEvent, CreateInstanceOptions, DEFAULT_USERNAME, GameVersion, LoaderVersions, Instance, LauncherClient, LauncherService, Loader, LogEvent, ProgressEvent,
+    ConfirmEvent, CreateInstanceOptions, GameVersion, LoaderVersions, Instance, LauncherClient, LauncherService, Loader, LogEvent, ProgressEvent,
     ServerStartResult, StateEvent, WorkMode
 } from '../common/index.js';
 
@@ -267,32 +267,6 @@ export class InstanceManager {
         } finally {
             this.closeProgress(id);
         }
-    }
-
-    async launch(id: string, username = DEFAULT_USERNAME): Promise<void> {
-        try {
-            await this.service.call('launch', { id, username });
-        } finally {
-            this.closeProgress(id);
-            await this.refresh();
-        }
-    }
-
-    async stop(id: string): Promise<void> {
-        await this.service.call('stop', { id });
-    }
-
-    async restart(id: string): Promise<void> {
-        if (this.isRunning(id)) {
-            const exited = new Promise<void>(resolve => {
-                const d = this.onState(ev => {
-                    if (ev.id === id && ev.source === 'game' && !ev.running) { d.dispose(); resolve(); }
-                });
-            });
-            await this.stop(id);
-            await exited;
-        }
-        await this.launch(id);
     }
 
     async rename(id: string, name: string): Promise<void> {

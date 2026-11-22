@@ -59,7 +59,7 @@ Theia 확장은 TypeScript로 작성한다. Python 쪽은 `sidecar/` 아래에�
 
 ### M1. 사이드카와 인스턴스
 - `sidecar/main.py`: `list_instances`, `create_instance(name, version, loader)`, `install(id)`, `launch(id)`, `stop(id)` 메서드. 진행률과 게임 로그는 알림 메시지로 흘려보낸다.
-- 실행은 우선 **오프라인 테스트 모드**(가짜 닉네임)만. 인스턴스마다 `--gameDir`를 분리한다.
+- 실행은 처음에 오프라인 테스트 모드로 만들었다가, **지금은 공식 런처로만 한다(M8-1 결정)**. 인스턴스마다 게임 폴더(`gameDir`)를 분리한다.
 - 인스턴스 표시 이름과 폴더 이름을 분리한다(폴더는 `inst_<짧은 id>`). 특수문자 이름 오류 방지.
 - **완료 조건**: 명령 팔레트에서 인스턴스를 만들고 바닐라와 Fabric 26.3을 실행·중지할 수 있다.
 
@@ -97,11 +97,11 @@ Theia 확장은 TypeScript로 작성한다. Python 쪽은 `sidecar/` 아래에�
 - Fabric 모드 템플릿 생성, F7 = `gradlew build` → jar를 테스트 인스턴스 `mods/`에 복사 → 재시작. Java 편집은 Theia의 Java 지원 또는 외부 IDE 열기 버튼.
 
 ### M8. MS 로그인 — **보류**
-- 상태: 지금은 진행하지 않는다. 앱은 오프라인 테스트 모드로만 실행하고, 온라인 플레이는 공식 런처를 쓴다. 나중에 Azure 앱 등록과 Mojang 신청서(https://aka.ms/mce-reviewappid) 승인이 나면 사용자가 알려준다. 그 전에는 로그인 관련 코드를 만들지 않는다(설정 화면에 "MS 로그인: 준비 중" 자리만).
+- 상태: 지금은 진행하지 않는다. 게임 실행은 공식 런처로만 한다(아래 M8-1, 오프라인 실행은 제거됨). 나중에 Azure 앱 등록과 Mojang 신청서(https://aka.ms/mce-reviewappid) 승인이 나면 사용자가 알려준다. 그 전에는 로그인 관련 코드를 만들지 않는다(설정 화면에 "MS 로그인: 준비 중" 자리만).
 - Azure 앱은 **공개 클라이언트(데스크톱)**: 개인 Microsoft 계정, 리디렉션 URI는 루프백(`http://localhost:<포트>`), 클라이언트 시크릿을 앱에 넣지 않는다.
 - `minecraft-launcher-lib`의 보안 로그인 흐름: `get_secure_login_data()`(PKCE + state) → 브라우저 로그인 → `parse_auth_code_url()` → `complete_login(..., code_verifier)` → refresh token 저장. 승인 전에는 `AzureAppNotPermitted`가 난다.
 - Client ID는 설정 파일에 두되 비밀이 아니다. 토큰은 OS 자격 증명 저장소(`keyring`)에, 평문 파일 금지.
-- 로그인 후에는 정품 계정으로 실행하고, 오프라인(가짜 닉네임) 모드는 개발·테스트용으로만 남긴다.
+- 로그인 기능을 만들게 되면 정품 계정으로 실행한다. 그 전까지 실행은 공식 런처로만(M8-1).
 
 ### M8-1. 공식 런처 연동 (온라인 플레이 대체 경로)
 - 자체 MS 로그인 대신 온라인 플레이는 **공식 마인크래프트 런처에 맡긴다**(CurseForge 기본 방식과 같다). Windows 전용.
@@ -119,7 +119,10 @@ Theia 확장은 TypeScript로 작성한다. Python 쪽은 `sidecar/` 아래에�
   - 확인 콜백 = `confirm` 알림 {token, id, title, message} → 프런트(InstanceManager)가 확인 창 → `confirm_reply`. 10분 안에 답이 없으면 취소, `confirm_cancel` 알림으로 창을 닫는다.
   - 로그 = 기존 `log` 알림 형식, `source: "official"`. 설치 로그처럼 인스턴스와 상관없는 줄은 id를 비운다.
   - 시험: `sidecar/tests/test_official_rpc.py`(pytest 없이 실행, CI에서도 돈다).
-- UI: 홈 카드 "공식 런처" 버튼·인스턴스 뷰 지구본 아이콘 = 명령 `studio.official.play`(필요하면 게임 설치 → 공식 런처 확인·설치 → 등록 확인 창 → 로그 따라 읽기 → 런처 열기). 명령 팔레트: 공식 런처 열기 / 설치 / 등록 해제. 시험: `scripts/e2e/t13-official.js`(가짜 공식 런처로).
+- **결정(2026-11-22, 사용자): 게임 클라이언트 실행은 항상 공식 런처로만.** 사이드카의 오프라인 실행(`launch`/`stop`)은 없앴다.
+  - F5·▶·카드 '실행'·상단 실행 버튼 = `studio.instance.launch` → (필요하면 게임 설치) → 공식 런처 확인·설치 → 등록(같은 내용으로 이미 등록돼 있으면 묻지 않음) → CommandCrafter 포트 설정 → 로그 따라 읽기 → 런처 열기.
+  - 실행 상태는 latest.log로 안다(`Setting user:`/`Loading Minecraft` = 켜짐, `Stopping!`/`Game crashed!` = 꺼짐). 우리 프로세스가 아니라서 중지·재시작은 없다(Shift+F5는 안내만). F7은 모드를 넣고 꺼져 있으면 실행, 켜져 있으면 다시 켜라고 안내.
+  - 명령 팔레트: 공식 런처 열기 / 설치 / 등록 해제. 시험: `scripts/e2e/t13-official.js`(가짜 공식 런처로).
 - 상태(2026-11-22): 모듈·RPC·UI 완료. **아직 남은 것**: 실제 Windows PC 확인(설치 감지·winget 출력·.minecraft 위치·등록 항목 표시·Fabric 실행·로그 교체).
 
 ### M9. 패키징 (내 PC용)

@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 import official_launcher as ol
-from instances import InstanceStore
+from instances import InstanceStore, write_cc_config
 from rpc import RpcError, notify
 from runner import _level
 
@@ -81,6 +81,7 @@ class OfficialLauncherRpc:
         self.confirmer = confirmer or Confirmer()
         self._tails: dict[str, ol.LogTail] = {}
         self._tails_lock = threading.Lock()
+        self._game_running: dict[str, bool] = {}
 
     # ---------- 메서드 ----------
     def is_installed(self) -> dict[str, Any]:
@@ -104,6 +105,13 @@ class OfficialLauncherRpc:
             "versionId": meta["versionId"],
             "jvmArgs": meta.get("jvmArgs"),
         }
+        if meta.get("ccPort"):
+            write_cc_config(self.store.dir_of(id), meta["ccPort"])  # CommandCrafter 포트(공식 런처로 켜도 같은 폴더)
+        # 이미 같은 내용으로 등록돼 있으면 묻지 않고 그대로 쓴다(실행할 때마다 확인 창이 뜨지 않게)
+        current = ol.registered_profile(id)
+        if current and self._same_profile(current, instance):
+            return {"ok": True, "key": ol.profile_key(id), "updated": False, "unchanged": True, "backup": None,
+                    "message": "공식 런처에 이미 등록돼 있습니다.", "warnings": []}
         result = ol.register_instance(instance, self.confirmer.callback(id),
                                       app_minecraft_dir=self.app_minecraft_dir)
         if result.get("ok"):
@@ -111,6 +119,15 @@ class OfficialLauncherRpc:
         for w in result.get("warnings") or []:
             _log(id, w, "warn")
         return result
+
+    @staticmethod
+    def _same_profile(profile: dict[str, Any], instance: dict[str, Any]) -> bool:
+        try:
+            same_dir = Path(profile.get("gameDir", "")).resolve() == Path(instance["path"]).resolve()
+        except OSError:
+            return False
+        return (same_dir and profile.get("lastVersionId") == instance["versionId"]
+                and profile.get("name") == ol.PROFILE_NAME_PREFIX + str(instance["name"]).strip())
 
     def unregister_instance(self, id: str) -> dict[str, Any]:
         result = ol.unregister_instance(id, self.confirmer.callback(id))
@@ -126,17 +143,34 @@ class OfficialLauncherRpc:
         d = self.store.dir_of(id)
         self.store.get(id)  # 없는 인스턴스면 여기서 오류
         self.tail_stop(id)
-        tail = ol.tail_log(d, lambda line: _log(id, line), from_start=bool(from_start))
+        tail = ol.tail_log(d, lambda line: self._on_game_line(id, line), from_start=bool(from_start))
         with self._tails_lock:
             self._tails[id] = tail
         return {"ok": True, "path": str(tail.path),
                 "message": "공식 런처로 실행한 게임의 로그를 따라 읽습니다."}
+
+    def _on_game_line(self, id: str, line: str) -> None:
+        """게임 로그를 전달하고, 공식 런처로 켠 게임의 실행 상태를 로그로 알아낸다(우리 프로세스가 아니므로)."""
+        _log(id, line)
+        state = None
+        if "Setting user:" in line or "Loading Minecraft" in line:
+            state = True
+        elif "Stopping!" in line or "Game crashed!" in line:
+            state = False
+        if state is not None and self._game_running.get(id) != state:
+            self._game_running[id] = state
+            notify("state", {"id": id, "source": "game", "running": state, "official": True})
+
+    def running_games(self) -> list[str]:
+        return sorted(k for k, v in self._game_running.items() if v)
 
     def tail_stop(self, id: str) -> dict[str, Any]:
         with self._tails_lock:
             tail = self._tails.pop(id, None)
         if tail is not None:
             tail.stop()
+        if self._game_running.pop(id, None):
+            notify("state", {"id": id, "source": "game", "running": False, "official": True})
         return {"ok": True, "stopped": tail is not None}
 
     def tailing(self) -> list[str]:

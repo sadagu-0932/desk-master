@@ -48,9 +48,8 @@ def main() -> None:
         "list_versions": runner.list_versions,
         "list_loader_versions": runner.list_loader_versions,
         "install": runner.install,
-        "launch": runner.launch,
-        "stop": runner.stop,
-        "running": runner.running,
+        # 게임 클라이언트 실행은 공식 런처로만 한다(사용자 결정 2026-11-22). 오프라인 실행(launch/stop)은 등록하지 않는다.
+        "running": lambda: {"game": official.running_games(), "server": runner.running()["server"]},
         "server_start": runner.server_start,
         "server_stop": runner.server_stop,
         "server_command": runner.server_command,
@@ -84,7 +83,7 @@ def main() -> None:
         "cf_add_mod": imp.cf_add_mod,
         **official.handlers(),
     }
-    background = {"install", "launch", "list_versions", "list_loader_versions", "server_start", "server_stop", "generate_reports", "stop", "mod_new", "mod_build", "read_commands", "inspect_import", "import_file",
+    background = {"install", "list_versions", "list_loader_versions", "server_start", "server_stop", "generate_reports", "mod_new", "mod_build", "read_commands", "inspect_import", "import_file",
                   "modrinth_search", "modrinth_versions", "modrinth_install_modpack", "modrinth_add_mod",
                   "cf_key_status", "cf_set_key", "cf_search", "cf_files", "cf_install_modpack", "cf_add_mod"} | official.BACKGROUND
     notify("ready", {"version": VERSION})
