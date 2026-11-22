@@ -60,6 +60,7 @@ npm run package:with-python   # Python 포함 설치 파일 (Windows에서만)
 | 로컬 서버 | F6 (EULA는 `server/eula.txt`를 직접 읽고 true로 바꿔야 한다) |
 | 모드 빌드 후 테스트 | F7 (`mods-src/<모드>`를 `./gradlew build` → `mods/`에 복사 → 재시작) |
 | 리소스팩 적용 | F8 |
+| 설정 동기화 | 자동(시작·30초마다·실행 직전·게임 종료 뒤). 게임 설정(options.txt, 리소스팩 목록 제외)과 서버 목록이 모든 인스턴스·공식 런처에서 같게 유지된다. 공식 런처 파일은 덮기 전에 `~/.integrated-studio/data/sync-backups/`에 백업. 수동: 명령 팔레트 `설정 지금 동기화` |
 | /reload | 상단 `/reload` 버튼 — `datapacks/`를 최근 월드로 동기화한 뒤 CommandCrafter(또는 로컬 서버)로 보낸다 |
 | 게임 꺼져 있을 때 자동완성 | 명령 팔레트 `게임 없이 쓸 자동완성 준비(데이터 생성기)` |
 | Claude 작업 종류 | Claude 패널 위 “작업 종류” 또는 상태 표시줄 — 데이터팩 / Fabric 모드 / 리소스팩 |

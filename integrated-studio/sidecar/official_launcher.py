@@ -511,6 +511,18 @@ def registered_profile(instance_id: str, *, minecraft_dir: str | os.PathLike | N
         return None
 
 
+def registered_ids(*, minecraft_dir: str | os.PathLike | None = None) -> list[str]:
+    """우리가 등록한 항목들의 인스턴스 id (읽기만)."""
+    if minecraft_dir is None and not _is_windows():
+        return []
+    try:
+        mc_dir, _ = _resolve_mc_dir(minecraft_dir)
+        keys = _read_profiles(mc_dir)["profiles"]
+    except (OfficialLauncherError, OSError, ValueError):
+        return []
+    return [k[len(PROFILE_KEY_PREFIX):] for k in keys if k.startswith(PROFILE_KEY_PREFIX)]
+
+
 def unregister_instance(instance_id: str, confirm_callback: ConfirmCallback | None = None, *,
                         minecraft_dir: str | os.PathLike | None = None) -> dict[str, Any]:
     """우리가 만든 항목(키 integrated-studio-<id>)만 공식 런처에서 지운다."""
@@ -636,5 +648,5 @@ def tail_log(instance_dir: str | os.PathLike, callback: LogCallback, *, from_sta
 __all__ = [
     "OfficialLauncherError", "is_installed", "install", "register_instance", "unregister_instance",
     "open_launcher", "tail_log", "LogTail", "find_minecraft_dir", "minecraft_dir_candidates",
-    "backup_profiles", "launcher_running", "profile_key", "registered_profile",
+    "backup_profiles", "launcher_running", "profile_key", "registered_profile", "registered_ids",
 ]

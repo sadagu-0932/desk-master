@@ -15,6 +15,7 @@ from instances import InstanceStore  # noqa: E402
 from packs import Packs  # noqa: E402
 from importers import Importers  # noqa: E402
 from official_rpc import OfficialLauncherRpc  # noqa: E402
+from sync import SettingsSync  # noqa: E402
 from rpc import notify, serve  # noqa: E402
 from runner import Runner  # noqa: E402
 
@@ -35,14 +36,30 @@ def main() -> None:
     imp = Importers(store, data_dir)
     official = OfficialLauncherRpc(store, runner.mc_dir)  # 공식 런처 연동(M8-1, Windows 전용)
     atexit.register(official.shutdown)
+    # 설정 동기화(게임 설정·서버 목록·공식 런처 항목): 시작 때·30초마다·게임이 닫힌 뒤
+    settings_sync = SettingsSync(store, data_dir, official)
+    official.on_game_stopped = lambda _id: settings_sync.later()
+    atexit.register(settings_sync.shutdown)
+
+    def rename_instance(id: str, name: str):
+        result = store.rename(id, name)
+        settings_sync.later(0.5)  # 공식 런처 항목 이름도 맞춘다
+        return result
+
+    def delete_instance(id: str):
+        try:
+            official.forget(id)  # 공식 런처 항목도 지운다(우리 항목만)
+        except Exception as e:  # noqa: BLE001 - 항목 정리에 실패해도 삭제는 한다(다음 동기화 때 다시 정리)
+            print(f"[sync] 공식 런처 항목 정리 실패: {e}", file=sys.stderr)
+        return store.delete(id)
 
     handlers = {
         "ping": lambda: {"version": VERSION, "data": str(data_dir)},
         "list_instances": store.list,
         "get_instance": lambda id: store.get(id),
         "create_instance": store.create,
-        "rename_instance": lambda id, name: store.rename(id, name),
-        "delete_instance": lambda id: store.delete(id),
+        "rename_instance": rename_instance,
+        "delete_instance": delete_instance,
         "set_cc_enabled": lambda id, enabled: store.set_cc_enabled(id, enabled),
         "set_work_mode": lambda id, mode: store.set_work_mode(id, mode),
         "list_versions": runner.list_versions,
@@ -82,11 +99,13 @@ def main() -> None:
         "cf_install_modpack": imp.cf_install_modpack,
         "cf_add_mod": imp.cf_add_mod,
         **official.handlers(),
+        "sync_now": settings_sync.sync_now,
     }
     background = {"install", "list_versions", "list_loader_versions", "server_start", "server_stop", "generate_reports", "mod_new", "mod_build", "read_commands", "inspect_import", "import_file",
                   "modrinth_search", "modrinth_versions", "modrinth_install_modpack", "modrinth_add_mod",
-                  "cf_key_status", "cf_set_key", "cf_search", "cf_files", "cf_install_modpack", "cf_add_mod"} | official.BACKGROUND
+                  "cf_key_status", "cf_set_key", "cf_search", "cf_files", "cf_install_modpack", "cf_add_mod"} | official.BACKGROUND | {"sync_now", "delete_instance"}
     notify("ready", {"version": VERSION})
+    settings_sync.start()
     serve(handlers, background)
 
 

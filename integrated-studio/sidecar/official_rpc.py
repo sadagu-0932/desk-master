@@ -82,6 +82,8 @@ class OfficialLauncherRpc:
         self._tails: dict[str, ol.LogTail] = {}
         self._tails_lock = threading.Lock()
         self._game_running: dict[str, bool] = {}
+        self._profiles_lock = threading.RLock()  # launcher_profiles.json 을 쓰는 작업은 한 번에 하나(실행·동기화 겹침 방지)
+        self.on_game_stopped: Callable[[str], None] | None = None  # 게임이 닫히면(설정 동기화 등)
 
     # ---------- 메서드 ----------
     def is_installed(self) -> dict[str, Any]:
@@ -93,11 +95,13 @@ class OfficialLauncherRpc:
         _log(id, result["message"], "info" if result.get("ok") else "warn")
         return result
 
-    def register_instance(self, id: str) -> dict[str, Any]:
+    def _instance_dict(self, id: str) -> dict[str, Any]:
         meta = self.store.get(id)
         if not meta.get("installed") or not meta.get("versionId"):
             raise RpcError("먼저 이 인스턴스를 설치해 주세요. 설치한 버전을 공식 런처에 등록합니다.")
-        instance = {
+        if meta.get("ccPort"):
+            write_cc_config(self.store.dir_of(id), meta["ccPort"])  # CommandCrafter 포트(공식 런처로 켜도 같은 폴더)
+        return {
             "id": meta["id"],
             "name": meta.get("name") or meta["id"],
             "path": str(self.store.dir_of(id)),
@@ -105,20 +109,74 @@ class OfficialLauncherRpc:
             "versionId": meta["versionId"],
             "jvmArgs": meta.get("jvmArgs"),
         }
-        if meta.get("ccPort"):
-            write_cc_config(self.store.dir_of(id), meta["ccPort"])  # CommandCrafter 포트(공식 런처로 켜도 같은 폴더)
-        # 이미 같은 내용으로 등록돼 있으면 묻지 않고 그대로 쓴다(실행할 때마다 확인 창이 뜨지 않게)
+
+    def register_instance(self, id: str) -> dict[str, Any]:
+        """처음 등록은 묻는다. 이미 우리 항목이 있으면(동기화 대상) 묻지 않고 맞춘다."""
+        with self._profiles_lock:
+            return self._register_instance_locked(id)
+
+    def _register_instance_locked(self, id: str) -> dict[str, Any]:
+        instance = self._instance_dict(id)
         current = ol.registered_profile(id)
         if current and self._same_profile(current, instance):
             return {"ok": True, "key": ol.profile_key(id), "updated": False, "unchanged": True, "backup": None,
                     "message": "공식 런처에 이미 등록돼 있습니다.", "warnings": []}
-        result = ol.register_instance(instance, self.confirmer.callback(id),
-                                      app_minecraft_dir=self.app_minecraft_dir)
+        confirm = (lambda _m: True) if current else self.confirmer.callback(id)
+        result = ol.register_instance(instance, confirm, app_minecraft_dir=self.app_minecraft_dir)
         if result.get("ok"):
             _log(id, result["message"], "info")
         for w in result.get("warnings") or []:
             _log(id, w, "warn")
         return result
+
+    def sync_profile(self, id: str) -> bool:
+        """이미 등록된 인스턴스의 항목이 달라졌으면 확인 없이 고친다. 고쳤으면 True."""
+        with self._profiles_lock:
+            return self._sync_profile_locked(id)
+
+    def _sync_profile_locked(self, id: str) -> bool:
+        current = ol.registered_profile(id)
+        if not current:
+            return False
+        try:
+            instance = self._instance_dict(id)
+        except RpcError:
+            return False
+        if self._same_profile(current, instance):
+            return False
+        result = ol.register_instance(instance, lambda _m: True, app_minecraft_dir=self.app_minecraft_dir)
+        if result.get("ok"):
+            _log(id, "공식 런처 항목을 맞췄습니다: " + result["message"], "info")
+        return bool(result.get("ok"))
+
+    def forget(self, id: str) -> bool:
+        """인스턴스를 지울 때 우리 항목도 확인 없이 지운다. 지웠으면 True."""
+        with self._profiles_lock:
+            return self._forget_locked(id)
+
+    def _forget_locked(self, id: str) -> bool:
+        if not ol.registered_profile(id):
+            return False
+        self.tail_stop(id)
+        r = ol.unregister_instance(id, lambda _m: True)
+        if r.get("removed"):
+            _log("", r["message"], "info")
+        return bool(r.get("removed"))
+
+    def remove_orphans(self, existing_ids: set[str]) -> int:
+        """앱에 없는 인스턴스의 우리 항목(다른 곳에서 지운 경우)을 정리한다."""
+        with self._profiles_lock:
+            return self._remove_orphans_locked(existing_ids)
+
+    def _remove_orphans_locked(self, existing_ids: set[str]) -> int:
+        n = 0
+        for iid in ol.registered_ids():
+            if iid not in existing_ids:
+                r = ol.unregister_instance(iid, lambda _m: True)
+                if r.get("removed"):
+                    _log("", "없어진 인스턴스의 공식 런처 항목을 지웠습니다: " + r["message"], "info")
+                    n += 1
+        return n
 
     @staticmethod
     def _same_profile(profile: dict[str, Any], instance: dict[str, Any]) -> bool:
@@ -130,6 +188,10 @@ class OfficialLauncherRpc:
                 and profile.get("name") == ol.PROFILE_NAME_PREFIX + str(instance["name"]).strip())
 
     def unregister_instance(self, id: str) -> dict[str, Any]:
+        with self._profiles_lock:
+            return self._unregister_instance_locked(id)
+
+    def _unregister_instance_locked(self, id: str) -> dict[str, Any]:
         result = ol.unregister_instance(id, self.confirmer.callback(id))
         if result.get("removed"):
             _log(id, result["message"], "info")
@@ -160,6 +222,8 @@ class OfficialLauncherRpc:
         if state is not None and self._game_running.get(id) != state:
             self._game_running[id] = state
             notify("state", {"id": id, "source": "game", "running": state, "official": True})
+            if not state and self.on_game_stopped:
+                self.on_game_stopped(id)
 
     def running_games(self) -> list[str]:
         return sorted(k for k, v in self._game_running.items() if v)

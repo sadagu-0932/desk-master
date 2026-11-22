@@ -123,7 +123,11 @@ Theia 확장은 TypeScript로 작성한다. Python 쪽은 `sidecar/` 아래에�
   - F5·▶·카드 '실행'·상단 실행 버튼 = `studio.instance.launch` → (필요하면 게임 설치) → 공식 런처 확인·설치 → 등록(같은 내용으로 이미 등록돼 있으면 묻지 않음) → CommandCrafter 포트 설정 → 로그 따라 읽기 → 런처 열기.
   - 실행 상태는 latest.log로 안다(`Setting user:`/`Loading Minecraft` = 켜짐, `Stopping!`/`Game crashed!` = 꺼짐). 우리 프로세스가 아니라서 중지·재시작은 없다(Shift+F5는 안내만). F7은 모드를 넣고 꺼져 있으면 실행, 켜져 있으면 다시 켜라고 안내.
   - 명령 팔레트: 공식 런처 열기 / 설치 / 등록 해제. 시험: `scripts/e2e/t13-official.js`(가짜 공식 런처로).
-- 상태(2026-11-22): 모듈·RPC·UI 완료. **아직 남은 것**: 실제 Windows PC 확인(설치 감지·winget 출력·.minecraft 위치·등록 항목 표시·Fabric 실행·로그 교체).
+- **결정(2026-11-22, 사용자): 설정은 항상 동기화** — `sidecar/sync.py`(시험 `tests/test_sync.py`).
+  - 게임 설정 `options.txt`·서버 목록 `servers.dat`: 모든 인스턴스 + 공식 `.minecraft`가 같게. 가장 최근에 바뀐 파일이 기준, 쓴 파일의 수정 시각을 기준과 같게(왕복 방지). 리소스팩 목록(`resourcePacks`, `incompatibleResourcePacks`)은 인스턴스별이라 맞추지 않는다. 실행 중인 인스턴스엔 쓰지 않는다. 공식 `.minecraft` 파일은 덮기 전에 `data/sync-backups/`에 백업(최근 20개).
+  - 공식 런처 항목: 처음 등록만 묻고, 이후 이름·버전·폴더가 바뀌면 확인 없이 갱신. 인스턴스 삭제 시 항목도 삭제, 앱에 없는 인스턴스의 우리 항목은 정리. `launcher_profiles.json` 쓰기는 잠금으로 하나씩.
+  - 언제: 사이드카 시작, 30초마다, 실행 직전, 게임이 닫힌 뒤(3초 뒤), 이름 바꾼 뒤. 수동: 명령 팔레트 "설정 지금 동기화"(RPC `sync_now`).
+- 상태(2026-11-22): 모듈·RPC·UI·동기화 완료. **아직 남은 것**: 실제 Windows PC 확인(설치 감지·winget 출력·.minecraft 위치·등록 항목 표시·Fabric 실행·로그 교체).
 
 ### M9. 패키징 (내 PC용)
 - electron-builder로 Windows 설치 파일 또는 압축 실행판을 만든다. **배포하지 않는다** — 개인 사용 전용.

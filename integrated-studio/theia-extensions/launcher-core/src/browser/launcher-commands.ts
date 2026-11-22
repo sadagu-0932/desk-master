@@ -35,6 +35,7 @@ export namespace StudioCommands {
     export const OFFICIAL_UNREGISTER: Command = { id: 'studio.official.unregister', category: CATEGORY, label: '공식 런처에서 등록 해제' };
     export const OFFICIAL_OPEN: Command = { id: 'studio.official.open', category: CATEGORY, label: '공식 런처 열기' };
     export const OFFICIAL_INSTALL: Command = { id: 'studio.official.install', category: CATEGORY, label: '공식 런처 설치' };
+    export const SYNC_NOW: Command = { id: 'studio.settings.syncNow', category: CATEGORY, label: '설정 지금 동기화 (게임 설정·서버 목록·공식 런처 항목)' };
     export const SIDECAR_STATUS: Command = { id: 'studio.sidecar.status', category: CATEGORY, label: '사이드카 상태 보기' };
 }
 
@@ -132,6 +133,14 @@ export class LauncherCommandContribution implements CommandContribution {
         registry.registerCommand(StudioCommands.OFFICIAL_INSTALL, {
             execute: () => this.guard(() => this.ensureOfficialLauncher(this.manager.current?.id ?? '', true)),
         });
+        registry.registerCommand(StudioCommands.SYNC_NOW, {
+            execute: () => this.guard(async () => {
+                const r = await this.manager.call<{ options: string[]; servers: string[]; profiles: number }>('sync_now');
+                const n = r.options.length + r.servers.length + r.profiles;
+                this.messages.info(n ? `동기화했습니다 — 게임 설정 ${r.options.length}곳, 서버 목록 ${r.servers.length}곳, 공식 런처 항목 ${r.profiles}개.`
+                    : '이미 모두 맞춰져 있습니다.');
+            }),
+        });
         registry.registerCommand(StudioCommands.REFRESH, { execute: () => this.manager.refresh() });
         registry.registerCommand(StudioCommands.SIDECAR_STATUS, {
             execute: async () => {
@@ -200,6 +209,7 @@ export class LauncherCommandContribution implements CommandContribution {
             return;
         }
         (reg.warnings ?? []).forEach(w => this.messages.warn(w));
+        await this.manager.call('sync_now').catch(() => undefined);  // 실행 직전에 게임 설정·서버 목록을 최신으로
         await this.manager.call('official_tail_log', { id: inst.id });
         await this.manager.setTarget(inst.id);
         await this.registry.executeCommand(TaskCommandIds.GAME_LOG_TOGGLE).catch(() => undefined);
