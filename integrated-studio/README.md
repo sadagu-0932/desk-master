@@ -1,17 +1,58 @@
 # 통합 작업실 (Integrated Studio)
 
-마인크래프트 실행 · 데이터팩 · 모드 · 리소스팩 — Eclipse Theia 기반 개인용 데스크톱 앱.
+마인크래프트 실행 · 데이터팩 · 모드 · 리소스팩 — Eclipse Theia 기반 **개인용** 데스크톱 앱(배포하지 않음).
 작업 지시는 [CLAUDE.md](CLAUDE.md)를 따른다.
+
+## 필요한 것 (내 PC)
+
+| 도구 | 용도 |
+|---|---|
+| Node.js 22~24 (권장 24), npm | 앱 빌드 |
+| Python 3.10 이상 | 게임 설치·실행 사이드카 (`minecraft-launcher-lib`) — 첫 실행 때 가상환경을 자동으로 만든다 |
+| git | 인스턴스마다 저장소 생성 |
+| Visual Studio Build Tools (C++ 데스크톱 개발) | native 모듈 빌드 (Windows) |
+| `claude` CLI 로그인 | Claude 패널 (Agent SDK는 앱에 포함) |
+| JDK 25 (`JAVA_HOME`) | Fabric 모드 빌드(F7)만. 게임 실행용 자바는 자동으로 받는다 |
+
+Linux에서 빌드할 때는 `libxkbfile-dev libx11-dev libsecret-1-dev pkg-config`도 필요하다.
 
 ## 실행 (개발용)
 
 ```
-npm install
-npm run rebuild -w integrated-studio-electron   # native 모듈을 Electron용으로 재빌드
+npm install                 # 의존성 + Open VSX에서 CommandCrafter·한국어 팩 확장 받기
+npm run rebuild:native      # native 모듈을 Electron용으로 재빌드
 npm run build
 npm start
 ```
 
-- Theia 1.77.0 / Electron 44.9.1 / Node 22~24
-- Windows: Visual Studio Build Tools(C++ 데스크톱 개발) 필요
-- Linux: `libxkbfile-dev libx11-dev libsecret-1-dev pkg-config` 필요
+- 확장을 다시 받으려면 `npm run download:plugins -- --force`
+- 데이터 폴더: 개발 중에는 저장소의 `data/`(git 제외), 패키징된 앱은 `~/.integrated-studio/data`.
+  `INTEGRATED_STUDIO_DATA` 환경 변수로 바꿀 수 있다.
+
+## 패키징 (M9, 내 PC용)
+
+```
+npm run package             # applications/electron/dist/ 에 Windows 설치 파일(.exe)과 압축판(.zip)
+```
+
+서명이 없어서 처음 실행할 때 SmartScreen 경고가 뜬다(“추가 정보 → 실행”).
+
+## 쓰는 법
+
+| 동작 | 방법 |
+|---|---|
+| 인스턴스 만들기 | 홈의 “+ 새 인스턴스” 또는 명령 팔레트 `통합 작업실: 새 인스턴스 만들기` |
+| 실행 / 중지 | F5 / Shift+F5, 사이드바 “인스턴스” 뷰의 ▶/■, 상단 실행 대상 막대 |
+| 작업실에서 열기 | 인스턴스 뷰의 폴더 버튼 — 그 인스턴스 폴더가 작업 공간이 되고 Claude도 그 폴더에서 일한다 |
+| 로컬 서버 | F6 (EULA는 `server/eula.txt`를 직접 읽고 true로 바꿔야 한다) |
+| 모드 빌드 후 테스트 | F7 (`mods-src/<모드>`를 `./gradlew build` → `mods/`에 복사 → 재시작) |
+| 리소스팩 적용 | F8 |
+| /reload | 상단 `/reload` 버튼 — `datapacks/`를 최근 월드로 동기화한 뒤 CommandCrafter(또는 로컬 서버)로 보낸다 |
+| 게임 꺼져 있을 때 자동완성 | 명령 팔레트 `게임 없이 쓸 자동완성 준비(데이터 생성기)` |
+| Claude 작업 종류 | Claude 패널 위 “작업 종류” 또는 상태 표시줄 — 데이터팩 / Fabric 모드 / 리소스팩 |
+
+## 보안 메모
+
+- CommandCrafter 모드는 서비스 포트(인스턴스마다 52853부터)를 **모든 네트워크 인터페이스**에 연다.
+  공용 네트워크에서는 방화벽에서 이 포트의 외부 접속을 막아 둔다.
+- MS 로그인은 보류(M8). 지금은 오프라인 테스트 모드(닉네임 Dev)로만 실행된다.

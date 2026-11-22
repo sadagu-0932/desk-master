@@ -27,6 +27,7 @@
 /* ---------- 사이드바: 인스턴스 / 작업 ---------- */
 .studio-list { display: flex; flex-direction: column; padding: 4px 0; }
 .studio-empty { padding: 12px; display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.studio-empty .theia-button { margin: 0; white-space: nowrap; }
 .studio-row {
     display: flex; align-items: center; gap: 8px;
     height: 36px; padding: 0 8px 0 14px; cursor: pointer;
@@ -38,6 +39,7 @@
 .studio-row-name { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .studio-row-sub { font-size: 11px; color: #8a9385; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
+.studio-task > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .studio-task {
     display: flex; align-items: center; justify-content: space-between; gap: 8px;
     height: 28px; padding: 0 12px 0 14px; margin: 0;
@@ -52,9 +54,13 @@
 }
 
 /* ---------- 상단 실행 대상 막대 ---------- */
-#theia-top-panel { display: flex; align-items: center; }
-#theia-top-panel > .studio-run-bar { margin-left: auto; flex-shrink: 0; }
-.studio-run-bar { height: 100%; }
+#theia-top-panel {
+    display: flex; align-items: center; min-height: 36px;
+    background: var(--theia-titleBar-activeBackground, #141613);
+    border-bottom: 1px solid var(--studio-border, #2c302a);
+}
+#theia-top-panel.lm-mod-hidden { display: none; }
+#theia-top-panel > .studio-run-bar { margin-left: auto; flex-shrink: 0; height: 36px; }
 .studio-run-bar-inner { display: flex; align-items: center; gap: 8px; height: 100%; padding: 0 10px; }
 .studio-bar-btn {
     height: 24px; display: flex; align-items: center; gap: 6px; padding: 0 10px;

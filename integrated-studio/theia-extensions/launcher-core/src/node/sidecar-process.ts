@@ -1,4 +1,4 @@
-import { ChildProcess, spawn } from 'child_process';
+import { ChildProcess, execFile, spawn } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -47,17 +47,25 @@ export function resolveDataDir(sidecarDir: string | undefined): string {
     return path.join(os.homedir(), '.integrated-studio', 'data');
 }
 
-export function findPython(sidecarDir: string): string {
-    if (process.env.INTEGRATED_STUDIO_PYTHON) {
-        return process.env.INTEGRATED_STUDIO_PYTHON;
-    }
-    const venv = process.platform === 'win32'
-        ? path.join(sidecarDir, '.venv', 'Scripts', 'python.exe')
-        : path.join(sidecarDir, '.venv', 'bin', 'python');
-    if (fs.existsSync(venv)) {
-        return venv;
-    }
-    return process.platform === 'win32' ? 'python' : 'python3';
+/** 사이드카 전용 가상환경 위치: 개발 중에는 sidecar/.venv, 패키징된 앱은 ~/.integrated-studio/venv */
+export function venvDir(sidecarDir: string, dataDir: string): string {
+    return isPackagedSidecar(sidecarDir) ? path.join(path.dirname(dataDir), 'venv') : path.join(sidecarDir, '.venv');
+}
+
+export function venvPython(dir: string): string {
+    return process.platform === 'win32' ? path.join(dir, 'Scripts', 'python.exe') : path.join(dir, 'bin', 'python');
+}
+
+function run(cmd: string, args: string[], cwd: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+        execFile(cmd, args, { cwd, windowsHide: true, maxBuffer: 16 * 1024 * 1024 }, (err, _stdout, stderr) => {
+            if (err) {
+                reject(new Error(`${cmd} ${args.join(' ')} 실패: ${String(stderr).split(/\r?\n/).slice(-5).join('\n') || err.message}`));
+            } else {
+                resolve();
+            }
+        });
+    });
 }
 
 /** Python 사이드카 자식 프로세스와 줄 단위 JSON-RPC 통신 */
@@ -72,7 +80,7 @@ export class SidecarProcess {
 
     readonly sidecarDir = findSidecarDir();
     readonly dataDir = resolveDataDir(this.sidecarDir);
-    readonly python = this.sidecarDir ? findPython(this.sidecarDir) : undefined;
+    python: string | undefined;
 
     protected readonly onNotificationEmitter = new Emitter<{ method: string; params: unknown }>();
     readonly onNotification = this.onNotificationEmitter.event;
@@ -99,7 +107,45 @@ export class SidecarProcess {
         return this.starting;
     }
 
-    protected start(): Promise<void> {
+    /** INTEGRATED_STUDIO_PYTHON → 가상환경 → (없으면) 가상환경을 만들고 requirements.txt 설치 */
+    protected async ensurePython(): Promise<string> {
+        if (process.env.INTEGRATED_STUDIO_PYTHON) {
+            return process.env.INTEGRATED_STUDIO_PYTHON;
+        }
+        const dir = venvDir(this.sidecarDir!, this.dataDir);
+        const py = venvPython(dir);
+        if (fs.existsSync(py) && fs.existsSync(path.join(dir, '.studio-ready'))) {
+            return py;
+        }
+        const notify = (text: string, done = false) =>
+            this.onNotificationEmitter.fire({ method: 'progress', params: { id: '', stage: 'setup', text, done } });
+        notify('처음 실행 준비: Python 가상환경 만드는 중');
+        try {
+            if (!fs.existsSync(py)) {
+                const base = process.platform === 'win32' ? 'python' : 'python3';
+                await run(base, ['-m', 'venv', dir], this.sidecarDir!).catch(e => {
+                    throw new Error(`Python 3이 필요합니다(설치 후 PATH에 추가). ${e.message}`);
+                });
+            }
+            notify('처음 실행 준비: 런처 라이브러리 설치 중(pip)');
+            await run(py, ['-m', 'pip', 'install', '--disable-pip-version-check', '-r', path.join(this.sidecarDir!, 'requirements.txt')], this.sidecarDir!);
+            fs.writeFileSync(path.join(dir, '.studio-ready'), new Date().toISOString());
+        } finally {
+            notify('', true);
+        }
+        return py;
+    }
+
+    protected async start(): Promise<void> {
+        if (!this.sidecarDir) {
+            throw new Error('사이드카 폴더(sidecar/main.py)를 찾지 못했습니다.');
+        }
+        try {
+            this.python = await this.ensurePython();
+        } catch (e) {
+            this.lastError = e instanceof Error ? e.message : String(e);
+            throw e;
+        }
         return new Promise<void>((resolve, reject) => {
             if (!this.sidecarDir || !this.python) {
                 reject(new Error('사이드카 폴더(sidecar/main.py)를 찾지 못했습니다.'));

@@ -12,7 +12,10 @@
     --studio-row-active: #26301f;
 }
 
-body {
+body,
+body.monaco-workbench,
+.monaco-workbench,
+.theia-ApplicationShell {
     font-family: var(--theia-ui-font-family);
 }
 

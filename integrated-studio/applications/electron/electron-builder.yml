@@ -1,0 +1,41 @@
+# 통합 작업실 — 개인 PC용 패키징(배포하지 않음, 서명 없음: SmartScreen 경고는 그대로 둔다)
+appId: local.integrated-studio
+productName: 통합 작업실
+executableName: integrated-studio
+copyright: 개인 사용 전용
+electronDist: ../../node_modules/electron/dist
+asar: false
+directories:
+  output: dist
+  buildResources: resources
+files:
+  - lib/**
+  - src-gen/**
+  - scripts/**
+  - plugins/**
+  - package.json
+  - "!**/*.map"
+extraResources:
+  - from: ../../sidecar
+    to: sidecar
+    filter:
+      - "**/*"
+      - "!.venv/**"
+      - "!**/__pycache__/**"
+win:
+  target:
+    - target: nsis
+    - target: zip
+  artifactName: 통합작업실-${version}-${arch}.${ext}
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  shortcutName: 통합 작업실
+linux:
+  target:
+    - target: dir
+  category: Development
+mac:
+  target:
+    - target: dir

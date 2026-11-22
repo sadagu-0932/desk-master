@@ -18,6 +18,7 @@
     "build:extensions": "npm run build -w integrated-studio-launcher-core -w integrated-studio-theme -w integrated-studio-launcher-ui -w integrated-studio-datapack-tools -w integrated-studio-resourcepack-editor",
     "build": "npm run build:extensions && npm run build -w integrated-studio-electron",
     "rebuild:native": "npm run rebuild -w integrated-studio-electron",
-    "start": "npm run start -w integrated-studio-electron"
+    "start": "npm run start -w integrated-studio-electron",
+    "package": "npm run build && npm run package -w integrated-studio-electron"
   }
 }

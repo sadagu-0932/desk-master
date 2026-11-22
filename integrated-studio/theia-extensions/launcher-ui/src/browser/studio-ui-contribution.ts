@@ -70,8 +70,10 @@ export class StudioUiContribution implements FrontendApplicationContribution, Co
     async onDidInitializeLayout(_app: FrontendApplication): Promise<void> {
         const bar = await this.widgets.getOrCreateWidget<RunTargetBar>(RunTargetBar.ID);
         if (!bar.isAttached) {
-            this.shell.addWidget(bar, { area: 'top' });
+            await this.shell.addWidget(bar, { area: 'top' });
         }
+        // 기본(네이티브) 메뉴를 쓰면 Theia가 위쪽 패널을 숨기므로 실행 대상 막대를 위해 보이게 한다
+        this.shell.topPanel.show();
         this.overrideDebugKeys();
         await this.manager.ready;
         if (!this.manager.workspaceInstance) {

@@ -5,7 +5,7 @@
   "version": "0.0.1",
   "description": "마인크래프트 실행 · 데이터팩 · 모드 · 리소스팩",
   "license": "UNLICENSED",
-  "main": "lib/backend/electron-main.js",
+  "main": "scripts/studio-main.mjs",
   "theia": {
     "target": "electron",
     "frontend": {
@@ -73,13 +73,16 @@
   },
   "devDependencies": {
     "@theia/cli": "1.77.0",
-    "electron": "44.9.1"
+    "electron": "44.9.1",
+    "electron-builder": "26.18.0"
   },
   "scripts": {
     "build": "theia build --mode development",
     "rebuild": "theia rebuild:electron --cacheRoot ../..",
-    "start": "theia start --plugins=local-dir:plugins",
-    "watch": "theia build --watch --mode development"
+    "start": "theia start",
+    "watch": "theia build --watch --mode development",
+    "package": "electron-builder --win",
+    "package:dir": "electron-builder --dir"
   },
   "theiaPluginsDir": "plugins"
 }
