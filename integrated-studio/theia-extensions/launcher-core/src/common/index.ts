@@ -12,6 +12,11 @@ export interface Instance {
     name: string;
     version: string;
     loader: Loader;
+    /** Fabric 로더 버전(없으면 설치 때 최신 안정판) */
+    loaderVersion?: string | null;
+    group?: string | null;
+    /** 카드·목록에 쓰는 아이콘 색 #RRGGBB */
+    icon?: string | null;
     versionId: string | null;
     installed: boolean;
     ccEnabled: boolean;
@@ -24,7 +29,24 @@ export interface Instance {
 
 export interface GameVersion {
     id: string;
-    type: 'release' | 'snapshot';
+    type: 'release' | 'snapshot' | 'old_beta' | 'old_alpha';
+    /** 출시일 YYYY-MM-DD */
+    released: string;
+}
+
+export interface LoaderVersions {
+    supported: boolean;
+    versions: { version: string; stable: boolean }[];
+}
+
+export interface CreateInstanceOptions {
+    name: string;
+    version: string;
+    loader: Loader;
+    loaderVersion?: string;
+    group?: string;
+    icon?: string;
+    ccEnabled?: boolean;
 }
 
 export interface LogEvent {

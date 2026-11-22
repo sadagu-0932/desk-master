@@ -1,3 +1,5 @@
+import '../../src/browser/style/create-instance.css';
+
 import { ContainerModule } from '@theia/core/shared/inversify';
 import { CommandContribution } from '@theia/core/lib/common/command';
 import { ServiceConnectionProvider } from '@theia/core/lib/browser/messaging/service-connection-provider';

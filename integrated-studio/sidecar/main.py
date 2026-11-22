@@ -35,12 +35,13 @@ def main() -> None:
         "ping": lambda: {"version": VERSION, "data": str(data_dir)},
         "list_instances": store.list,
         "get_instance": lambda id: store.get(id),
-        "create_instance": lambda name, version, loader: store.create(name, version, loader),
+        "create_instance": store.create,
         "rename_instance": lambda id, name: store.rename(id, name),
         "delete_instance": lambda id: store.delete(id),
         "set_cc_enabled": lambda id, enabled: store.set_cc_enabled(id, enabled),
         "set_work_mode": lambda id, mode: store.set_work_mode(id, mode),
         "list_versions": runner.list_versions,
+        "list_loader_versions": runner.list_loader_versions,
         "install": runner.install,
         "launch": runner.launch,
         "stop": runner.stop,
@@ -65,7 +66,7 @@ def main() -> None:
         "mod_build": packs.mod_build,
         "open_external": packs.open_external,
     }
-    background = {"install", "launch", "list_versions", "server_start", "server_stop", "generate_reports", "stop", "mod_new", "mod_build", "read_commands"}
+    background = {"install", "launch", "list_versions", "list_loader_versions", "server_start", "server_stop", "generate_reports", "stop", "mod_new", "mod_build", "read_commands"}
     notify("ready", {"version": VERSION})
     serve(handlers, background)
 

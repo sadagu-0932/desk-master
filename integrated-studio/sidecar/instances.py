@@ -80,7 +80,8 @@ class InstanceStore:
         (d / "instance.json").write_text(json.dumps(clean, ensure_ascii=False, indent=2), "utf-8")
 
     # ---------- 만들기·지우기 ----------
-    def create(self, name: str, version: str, loader: str) -> dict[str, Any]:
+    def create(self, name: str, version: str, loader: str, loader_version: str | None = None,
+               group: str | None = None, icon: str | None = None, cc_enabled: bool | None = None) -> dict[str, Any]:
         name = (name or "").strip()
         if not name:
             raise RpcError("인스턴스 이름을 입력하세요.")
@@ -90,6 +91,11 @@ class InstanceStore:
             raise RpcError(f"지원하지 않는 로더입니다: {loader}")
         if not re.fullmatch(r"[0-9A-Za-z._\- ]{1,64}", version or ""):
             raise RpcError(f"잘못된 버전 형식입니다: {version}")
+        if loader_version and not re.fullmatch(r"[0-9A-Za-z.+_\-]{1,64}", loader_version):
+            raise RpcError(f"잘못된 로더 버전입니다: {loader_version}")
+        group = (group or "").strip()[:40] or None
+        if icon and not re.fullmatch(r"#[0-9a-fA-F]{6}", icon):
+            icon = None
 
         inst_id = "inst_" + secrets.token_hex(4)
         while (self.root / inst_id).exists():
@@ -109,9 +115,12 @@ class InstanceStore:
             "name": name,
             "version": version,
             "loader": loader,
+            "loaderVersion": loader_version if loader == "fabric" else None,  # None 이면 설치 때 최신 안정판
+            "group": group,
+            "icon": icon,
             "versionId": None,       # 설치 후 실제 실행 버전 id (fabric-loader-... 등)
             "installed": False,
-            "ccEnabled": loader == "fabric",
+            "ccEnabled": loader == "fabric" and (cc_enabled is None or bool(cc_enabled)),
             "ccPort": port,
             "workMode": "datapack",
             "created": time.time(),

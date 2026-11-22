@@ -63,11 +63,30 @@ class Runner:
 
     # ---------- 버전 ----------
     def list_versions(self, snapshots: bool = False) -> list[dict[str, Any]]:
+        """버전 목록(새 것부터). snapshots=True 면 스냅샷·베타·알파까지 모두."""
         out = []
         for v in mll.utils.get_version_list():
-            if v["type"] == "release" or (snapshots and v["type"] == "snapshot"):
-                out.append({"id": v["id"], "type": v["type"]})
+            if v["type"] == "release" or snapshots:
+                rt = v.get("releaseTime")
+                out.append({"id": v["id"], "type": v["type"],
+                            "released": rt.date().isoformat() if hasattr(rt, "date") else str(rt or "")[:10]})
         return out
+
+    def list_loader_versions(self, version: str, loader: str = "fabric") -> dict[str, Any]:
+        """그 게임 버전에서 쓸 수 있는 로더 버전들(새 것부터)과 지원 여부."""
+        if loader != "fabric":
+            raise RpcError(f"지원하지 않는 로더입니다: {loader}")
+        try:
+            data = _http_json(f"https://meta.fabricmc.net/v2/versions/loader/{urllib.parse.quote(version)}")
+            versions = [{"version": d["loader"]["version"], "stable": bool(d["loader"].get("stable"))} for d in data]
+        except Exception:  # noqa: BLE001 - 메타 서버가 안 되면 라이브러리로
+            fabric = mll.mod_loader.get_mod_loader("fabric")
+            if not fabric.is_minecraft_version_supported(version):
+                versions = []
+            else:
+                stable = set(fabric.get_loader_versions(version, True))
+                versions = [{"version": v, "stable": v in stable} for v in fabric.get_loader_versions(version, False)]
+        return {"supported": bool(versions), "versions": versions}
 
     # ---------- 설치 ----------
     def _callback(self, inst_id: str, stage: str) -> dict:
@@ -111,6 +130,7 @@ class Runner:
                     raise RpcError(f"Fabric이 아직 {meta['version']}을 지원하지 않습니다.")
                 version_id = fabric.install(
                     meta["version"], str(self.mc_dir),
+                    loader_version=meta.get("loaderVersion") or None,
                     callback=self._callback(id, "install"),
                     java=self._java_for(meta["version"]),
                 )

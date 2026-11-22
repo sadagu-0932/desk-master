@@ -6,7 +6,7 @@ import { StorageService } from '@theia/core/lib/browser/storage-service';
 import { FileUri } from '@theia/core/lib/common/file-uri';
 import { WorkspaceService } from '@theia/workspace/lib/browser/workspace-service';
 import {
-    DEFAULT_USERNAME, GameVersion, Instance, LauncherClient, LauncherService, Loader, LogEvent, ProgressEvent,
+    CreateInstanceOptions, DEFAULT_USERNAME, GameVersion, LoaderVersions, Instance, LauncherClient, LauncherService, Loader, LogEvent, ProgressEvent,
     ServerStartResult, StateEvent, WorkMode
 } from '../common/index.js';
 
@@ -210,8 +210,16 @@ export class InstanceManager {
         return this.service.call<GameVersion[]>('list_versions', { snapshots });
     }
 
-    async create(name: string, version: string, loader: Loader): Promise<Instance> {
-        const inst = await this.service.call<Instance>('create_instance', { name, version, loader });
+    listLoaderVersions(version: string, loader: Loader = 'fabric'): Promise<LoaderVersions> {
+        return this.service.call<LoaderVersions>('list_loader_versions', { version, loader });
+    }
+
+    async create(opts: CreateInstanceOptions): Promise<Instance> {
+        const inst = await this.service.call<Instance>('create_instance', {
+            name: opts.name, version: opts.version, loader: opts.loader,
+            loader_version: opts.loaderVersion ?? null, group: opts.group ?? null,
+            icon: opts.icon ?? null, cc_enabled: opts.ccEnabled ?? null,
+        });
         await this.refresh();
         await this.setTarget(inst.id);
         return inst;

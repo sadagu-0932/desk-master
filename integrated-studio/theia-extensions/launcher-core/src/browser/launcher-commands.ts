@@ -1,9 +1,10 @@
 import { inject, injectable } from '@theia/core/shared/inversify';
 import { Command, CommandContribution, CommandRegistry } from '@theia/core/lib/common/command';
 import { MessageService } from '@theia/core/lib/common/message-service';
-import { QuickInputService, QuickPickItem } from '@theia/core/lib/browser/quick-input';
+import { QuickInputService } from '@theia/core/lib/browser/quick-input';
 import { ConfirmDialog } from '@theia/core/lib/browser/dialogs';
-import { Instance, Loader } from '../common/index.js';
+import { Instance } from '../common/index.js';
+import { CreateInstanceDialog } from './create-instance-dialog.js';
 import { InstanceManager } from './instance-manager.js';
 
 const CATEGORY = '통합 작업실';
@@ -151,35 +152,26 @@ export class LauncherCommandContribution implements CommandContribution {
         }
     }
 
+    /** 새 인스턴스 창(Prism Launcher의 "인스턴스 추가" 배치 참고) */
     protected async create(): Promise<void> {
-        const name = await this.quickInput.input({
-            title: '새 인스턴스 (1/3)', prompt: '인스턴스 이름', placeHolder: '예: 캠핑장 맵',
-            validateInput: async v => (v.trim() ? undefined : '이름을 입력하세요'),
-        });
-        if (!name) {
+        await this.manager.ready;
+        const groups = [...new Set(this.manager.instances.map(i => i.group).filter((g): g is string => !!g))];
+        const result = await new CreateInstanceDialog(this.manager, groups).open();
+        if (!result) {
             return;
         }
-        const versionsPromise = this.manager.listVersions(true);
-        const versionItems = versionsPromise.then(vs => vs.map((v): QuickPickItem & { id: string } => ({
-            label: v.id, description: v.type === 'snapshot' ? '스냅샷' : undefined, id: v.id,
-        })));
-        const version = await this.quickInput.pick(versionItems, { title: '새 인스턴스 (2/3)', placeHolder: '게임 버전' });
-        if (!version) {
-            return;
-        }
-        const loader = await this.quickInput.pick<QuickPickItem & { id: Loader }>([
-            { label: 'Fabric', description: '모드 사용 · CommandCrafter 자동 설치', id: 'fabric' },
-            { label: '바닐라', description: '모드 없음', id: 'vanilla' },
-        ], { title: '새 인스턴스 (3/3)', placeHolder: '로더' });
-        if (!loader) {
-            return;
-        }
-        const inst = await this.manager.create(name, version.label, loader.id);
-        const action = await this.messages.info(`'${inst.name}' 인스턴스를 만들었습니다.`, '지금 설치', '작업실에서 열기');
-        if (action === '지금 설치') {
-            await this.guard(() => this.manager.install(inst.id));
-        } else if (action === '작업실에서 열기') {
-            await this.manager.openInWorkspace(inst.id);
+        const inst = await this.manager.create(result.options);
+        if (result.installNow) {
+            // 설치는 뒤에서 진행(진행률은 알림에 표시). 창을 막지 않는다
+            this.manager.install(inst.id)
+                .then(() => this.messages.info(`'${inst.name}' 설치가 끝났습니다. F5로 실행하세요.`, '작업실에서 열기')
+                    .then(a => a && this.manager.openInWorkspace(inst.id)))
+                .catch(e => this.messages.error(`'${inst.name}' 설치 실패: ${e instanceof Error ? e.message : e}`));
+        } else {
+            const action = await this.messages.info(`'${inst.name}' 인스턴스를 만들었습니다. 처음 실행할 때 게임 파일을 받습니다.`, '작업실에서 열기');
+            if (action) {
+                await this.manager.openInWorkspace(inst.id);
+            }
         }
     }
 }

@@ -9,7 +9,7 @@ import { Instance } from 'integrated-studio-launcher-core/lib/common';
 import { loaderLabel } from './instances-widget.js';
 
 const BANNERS = ['#c95a1c', '#4f7a2a', '#3a6a8a', '#6a5a8a', '#8a6a2a', '#2a7a6a'];
-const banner = (i: Instance) => BANNERS[parseInt(i.id.slice(5, 7), 16) % BANNERS.length];
+const banner = (i: Instance) => i.icon || BANNERS[parseInt(i.id.slice(5, 7), 16) % BANNERS.length];
 
 /** 홈 화면: 인스턴스 카드 목록, 빠른 시작, 알림 */
 @injectable()
@@ -74,8 +74,9 @@ export class HomeWidget extends ReactWidget {
                                 <div className='studio-card-body'>
                                     <h3>{i.name}{running && <span className='studio-chip on'>실행 중</span>}</h3>
                                     <div className='studio-tags'>
+                                        {i.group && <span className='studio-chip'>{i.group}</span>}
                                         <span className='studio-chip'>Java {i.version}</span>
-                                        <span className='studio-chip'>{loaderLabel(i)}</span>
+                                        <span className='studio-chip'>{loaderLabel(i)}{i.loaderVersion ? ` ${i.loaderVersion}` : ''}</span>
                                         {!i.installed && <span className='studio-chip warn'>설치 전</span>}
                                         {i.loader === 'fabric' && <span className='studio-chip'>CommandCrafter {i.ccEnabled ? '켬' : '끔'}</span>}
                                     </div>
