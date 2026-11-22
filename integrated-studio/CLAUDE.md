@@ -115,7 +115,11 @@ Theia 확장은 TypeScript로 작성한다. Python 쪽은 `sidecar/` 아래에�
   - `launcher_accounts*.json`, `launcher_msa_credentials*` 등 로그인·토큰 파일은 **절대 읽거나 수정하지 않는다**(`_guard_path`).
   - `launcher_profiles.json`은 수정 전 항상 백업(최근 10개), 실패 시 백업으로 복구. 설치·파일 수정은 확인 콜백을 거친다.
   - `.minecraft`는 `%APPDATA%\.minecraft`와 Store 가상화 경로(`%LOCALAPPDATA%\Packages\Microsoft.4297127D64EC6_8wekyb3d8bbwe\LocalCache\Roaming\.minecraft`) 중 launcher_profiles.json이 최근 수정된 쪽.
-- 상태(2026-11-22): 모듈·테스트 완료, 브랜치 `feat/official-launcher`. **아직 남은 것**: 작업 브랜치에 합치기, `main.py` RPC 메서드 연결, UI(인스턴스 뷰의 "공식 런처로 플레이" 등), 실제 Windows PC 확인(설치 감지·winget 출력·.minecraft 위치·등록 항목 표시·Fabric 실행·로그 교체).
+- RPC(`sidecar/official_rpc.py`, `main.py`에 등록): `official_is_installed`, `official_install(id?)`, `official_register_instance(id)`, `official_unregister_instance(id)`, `official_open_launcher`, `official_tail_log(id, from_start?)`, `official_tail_stop(id)`, `official_tailing`, `confirm_reply(token, ok)`.
+  - 확인 콜백 = `confirm` 알림 {token, id, title, message} → 프런트(InstanceManager)가 확인 창 → `confirm_reply`. 10분 안에 답이 없으면 취소, `confirm_cancel` 알림으로 창을 닫는다.
+  - 로그 = 기존 `log` 알림 형식, `source: "official"`. 설치 로그처럼 인스턴스와 상관없는 줄은 id를 비운다.
+  - 시험: `sidecar/tests/test_official_rpc.py`(pytest 없이 실행, CI에서도 돈다).
+- 상태(2026-11-22): 모듈·테스트·RPC 연결 완료(작업 브랜치에 합침). **아직 남은 것**: UI(인스턴스 뷰의 "공식 런처로 플레이" 등), 실제 Windows PC 확인(설치 감지·winget 출력·.minecraft 위치·등록 항목 표시·Fabric 실행·로그 교체).
 
 ### M9. 패키징 (내 PC용)
 - electron-builder로 Windows 설치 파일 또는 압축 실행판을 만든다. **배포하지 않는다** — 개인 사용 전용.

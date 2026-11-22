@@ -5,8 +5,9 @@ import { Progress } from '@theia/core/lib/common/message-service-protocol';
 import { StorageService } from '@theia/core/lib/browser/storage-service';
 import { FileUri } from '@theia/core/lib/common/file-uri';
 import { WorkspaceService } from '@theia/workspace/lib/browser/workspace-service';
+import { ConfirmDialog } from '@theia/core/lib/browser/dialogs';
 import {
-    CreateInstanceOptions, DEFAULT_USERNAME, GameVersion, LoaderVersions, Instance, LauncherClient, LauncherService, Loader, LogEvent, ProgressEvent,
+    ConfirmEvent, CreateInstanceOptions, DEFAULT_USERNAME, GameVersion, LoaderVersions, Instance, LauncherClient, LauncherService, Loader, LogEvent, ProgressEvent,
     ServerStartResult, StateEvent, WorkMode
 } from '../common/index.js';
 
@@ -44,6 +45,7 @@ export class InstanceManager {
     protected _workspaceInstanceId: string | undefined;
     protected _ready: Promise<void>;
     protected _error: string | undefined;
+    protected _confirms = new Map<string, ConfirmDialog>();
 
     protected readonly onDidChangeEmitter = new Emitter<void>();
     readonly onDidChange = this.onDidChangeEmitter.event;
@@ -166,10 +168,42 @@ export class InstanceManager {
             case 'progress':
                 this.handleProgress(params as ProgressEvent);
                 break;
+            case 'confirm':
+                this.handleConfirm(params as ConfirmEvent);
+                break;
+            case 'confirm_cancel':
+                // 사이드카 쪽에서 시간 초과로 취소됨 → 열린 창을 닫는다
+                this._confirms.get((params as { token: string }).token)?.close();
+                break;
             case 'sidecar_exit':
+                this._confirms.forEach(d => d.close());
                 this._running.clear();
                 this.fire();
                 break;
+        }
+    }
+
+    /** 사이드카의 확인 질문을 창으로 띄우고 답을 돌려준다. 창을 그냥 닫으면 '아니오'. */
+    protected async handleConfirm(ev: ConfirmEvent): Promise<void> {
+        const msg = document.createElement('div');
+        msg.style.whiteSpace = 'pre-wrap';
+        msg.textContent = ev.message;
+        const name = ev.id ? this.find(ev.id)?.name : undefined;
+        const dialog = new ConfirmDialog({
+            title: name ? `${ev.title ?? '확인'} — ${name}` : (ev.title ?? '확인'),
+            msg, ok: '예', cancel: '아니오',
+        });
+        this._confirms.set(ev.token, dialog);
+        let ok = false;
+        try {
+            ok = (await dialog.open()) === true;
+        } finally {
+            this._confirms.delete(ev.token);
+        }
+        try {
+            await this.service.call('confirm_reply', { token: ev.token, ok });
+        } catch {
+            // 사이드카가 이미 끝났으면 답할 곳이 없다
         }
     }
 

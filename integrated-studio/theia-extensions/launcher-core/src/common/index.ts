@@ -53,7 +53,15 @@ export interface LogEvent {
     id: string;
     line: string;
     level: LogLevel;
-    source: ProcessSource | 'studio' | 'build';
+    source: ProcessSource | 'studio' | 'build' | 'official';
+}
+
+/** 사이드카가 사용자에게 묻는 확인(공식 런처 설치·등록 등). 답은 confirm_reply(token, ok) */
+export interface ConfirmEvent {
+    token: string;
+    id: string;
+    title?: string;
+    message: string;
 }
 
 export interface StateEvent {

@@ -14,6 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from instances import InstanceStore  # noqa: E402
 from packs import Packs  # noqa: E402
 from importers import Importers  # noqa: E402
+from official_rpc import OfficialLauncherRpc  # noqa: E402
 from rpc import notify, serve  # noqa: E402
 from runner import Runner  # noqa: E402
 
@@ -32,6 +33,8 @@ def main() -> None:
     atexit.register(runner.shutdown)
     packs = Packs(store, runner.mc_dir)
     imp = Importers(store, data_dir)
+    official = OfficialLauncherRpc(store, runner.mc_dir)  # 공식 런처 연동(M8-1, Windows 전용)
+    atexit.register(official.shutdown)
 
     handlers = {
         "ping": lambda: {"version": VERSION, "data": str(data_dir)},
@@ -79,10 +82,11 @@ def main() -> None:
         "cf_files": imp.cf_files,
         "cf_install_modpack": imp.cf_install_modpack,
         "cf_add_mod": imp.cf_add_mod,
+        **official.handlers(),
     }
     background = {"install", "launch", "list_versions", "list_loader_versions", "server_start", "server_stop", "generate_reports", "stop", "mod_new", "mod_build", "read_commands", "inspect_import", "import_file",
                   "modrinth_search", "modrinth_versions", "modrinth_install_modpack", "modrinth_add_mod",
-                  "cf_key_status", "cf_set_key", "cf_search", "cf_files", "cf_install_modpack", "cf_add_mod"}
+                  "cf_key_status", "cf_set_key", "cf_search", "cf_files", "cf_install_modpack", "cf_add_mod"} | official.BACKGROUND
     notify("ready", {"version": VERSION})
     serve(handlers, background)
 
