@@ -92,7 +92,11 @@ export class HomeWidget extends ReactWidget {
                                                 <span className='codicon codicon-debug-stop' aria-hidden='true' /> 중지</button>
                                             : <button className='theia-button' onClick={() => this.run(StudioCommands.LAUNCH.id, i.id)}>
                                                 <span className='codicon codicon-play' aria-hidden='true' /> 실행</button>}
-                                        <button className='theia-button secondary' onClick={() => this.run(StudioCommands.OPEN_WORKSPACE.id, i.id)}>작업실 열기</button>
+                                        <button className='theia-button secondary' title='공식 런처로 플레이 — 공식 마인크래프트 런처에 등록하고 열어서, 내 MS 계정으로 온라인 플레이'
+                                            aria-label={`${i.name} 공식 런처로 플레이`}
+                                            onClick={() => this.run(StudioCommands.OFFICIAL_PLAY.id, i.id)}>
+                                            <span className='codicon codicon-globe' aria-hidden='true' /> 공식 런처</button>
+                                        <button className='theia-button secondary' title='작업실에서 열기' onClick={() => this.run(StudioCommands.OPEN_WORKSPACE.id, i.id)}>작업실</button>
                                         <button className='theia-button secondary studio-more codicon codicon-ellipsis' aria-label={`${i.name} 더보기`}
                                             onClick={() => this.more(i)} />
                                     </div>
@@ -119,7 +123,7 @@ export class HomeWidget extends ReactWidget {
                     <section className='studio-card'>
                         <h2>알림</h2>
                         <div className='studio-note'><span className='studio-dot' aria-hidden='true' />
-                            MS 로그인: 준비 중 — 승인 전이라 오프라인 테스트 모드로 실행됩니다. 온라인 플레이는 공식 런처를 쓰세요.</div>
+                            MS 로그인: 준비 중 — ‘실행’은 오프라인 테스트 모드입니다. 온라인 플레이는 카드의 ‘공식 런처로 플레이’를 쓰세요(로그인은 공식 런처가 합니다).</div>
                         <div className='studio-note'><span className='studio-dot warn' aria-hidden='true' />
                             CommandCrafter 모드는 서비스 포트를 모든 네트워크 인터페이스에 엽니다. 공용 네트워크에서는 방화벽에서 이 포트(52853~)의 외부 접속을 막아 두세요.</div>
                     </section>

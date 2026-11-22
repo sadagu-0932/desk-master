@@ -9,7 +9,12 @@ import { AddModsDialog } from './add-mods-dialog.js';
 import { FileDialogService } from '@theia/filesystem/lib/browser/file-dialog/file-dialog-service';
 import { WindowService } from '@theia/core/lib/browser/window/window-service';
 import { FileUri } from '@theia/core/lib/common/file-uri';
+import { isWindows } from '@theia/core/lib/common/os';
 import { InstanceManager } from './instance-manager.js';
+import { TaskCommandIds } from '../common/command-ids.js';
+
+interface OfficialInfo { installed: boolean; message: string }
+interface OfficialResult { ok: boolean; message: string; method?: string | null; removed?: boolean; warnings?: string[] }
 
 const CATEGORY = '통합 작업실';
 
@@ -27,6 +32,10 @@ export namespace StudioCommands {
     export const REFRESH: Command = { id: 'studio.instance.refresh', category: CATEGORY, label: '인스턴스 목록 새로고침' };
     export const ADD_MODS: Command = { id: 'studio.mods.add', category: CATEGORY, label: '모드 추가 (Modrinth·CurseForge)' };
     export const CF_KEY: Command = { id: 'studio.curseforge.key', category: CATEGORY, label: 'CurseForge API 키 지우기' };
+    export const OFFICIAL_PLAY: Command = { id: 'studio.official.play', category: CATEGORY, label: '공식 런처로 플레이 (온라인)' };
+    export const OFFICIAL_UNREGISTER: Command = { id: 'studio.official.unregister', category: CATEGORY, label: '공식 런처에서 등록 해제' };
+    export const OFFICIAL_OPEN: Command = { id: 'studio.official.open', category: CATEGORY, label: '공식 런처 열기' };
+    export const OFFICIAL_INSTALL: Command = { id: 'studio.official.install', category: CATEGORY, label: '공식 런처 설치' };
     export const SIDECAR_STATUS: Command = { id: 'studio.sidecar.status', category: CATEGORY, label: '사이드카 상태 보기' };
 }
 
@@ -49,7 +58,10 @@ export class LauncherCommandContribution implements CommandContribution {
     @inject(FileDialogService) protected readonly fileDialog: FileDialogService;
     @inject(WindowService) protected readonly windows: WindowService;
 
+    protected registry: CommandRegistry;
+
     registerCommands(registry: CommandRegistry): void {
+        this.registry = registry;
         registry.registerCommand(StudioCommands.CREATE, { execute: () => this.guard(() => this.create()) });
         registry.registerCommand(StudioCommands.INSTALL, {
             execute: (id: IdArg) => this.withInstance(id, async i => {
@@ -113,6 +125,21 @@ export class LauncherCommandContribution implements CommandContribution {
                 this.messages.info('CurseForge API 키를 지웠습니다.');
             })
         });
+        registry.registerCommand(StudioCommands.OFFICIAL_PLAY, {
+            execute: (id: IdArg) => this.withInstance(id, i => this.officialPlay(i)),
+        });
+        registry.registerCommand(StudioCommands.OFFICIAL_UNREGISTER, {
+            execute: (id: IdArg) => this.withInstance(id, async i => {
+                const r = await this.manager.call<OfficialResult>('official_unregister_instance', { id: i.id });
+                this.messages.info(r.message);
+            }),
+        });
+        registry.registerCommand(StudioCommands.OFFICIAL_OPEN, {
+            execute: () => this.guard(async () => this.report(await this.manager.call<OfficialResult>('official_open_launcher'))),
+        });
+        registry.registerCommand(StudioCommands.OFFICIAL_INSTALL, {
+            execute: () => this.guard(() => this.ensureOfficialLauncher(this.manager.current?.id ?? '', true)),
+        });
         registry.registerCommand(StudioCommands.REFRESH, { execute: () => this.manager.refresh() });
         registry.registerCommand(StudioCommands.SIDECAR_STATUS, {
             execute: async () => {
@@ -124,6 +151,68 @@ export class LauncherCommandContribution implements CommandContribution {
                 }
             }
         });
+    }
+
+    protected report(r: OfficialResult): void {
+        if (r.ok) {
+            this.messages.info(r.message);
+        } else {
+            this.messages.warn(r.message);
+        }
+    }
+
+    /** 공식 런처가 있으면 true. 없으면 설치를 권한다(확인 창은 사이드카가 confirm 알림으로 띄운다). */
+    protected async ensureOfficialLauncher(id: string, explicit = false): Promise<boolean> {
+        let info = await this.manager.call<OfficialInfo>('official_is_installed');
+        if (info.installed) {
+            if (explicit) {
+                this.messages.info(info.message);
+            }
+            return true;
+        }
+        if (!isWindows) {
+            this.messages.warn(info.message);
+            return false;
+        }
+        const r = await this.manager.call<OfficialResult>('official_install', { id });
+        if (!r.ok || r.method !== 'winget') {
+            this.report(r);  // 취소, 실패, 또는 Store 페이지에서 사용자가 직접 설치
+            return false;
+        }
+        info = await this.manager.call<OfficialInfo>('official_is_installed');
+        if (!info.installed) {
+            this.messages.warn('공식 런처를 설치했지만 아직 찾지 못했습니다. 잠시 뒤 다시 눌러 주세요.');
+        }
+        return info.installed;
+    }
+
+    /**
+     * 공식 런처로 플레이: (필요하면 게임 설치) → 공식 런처 확인·설치 → "설치" 항목 등록 → 로그 따라 읽기 → 런처 열기.
+     * 로그인과 '플레이' 버튼은 공식 런처에서 사용자가 한다. 이 앱은 계정 정보를 다루지 않는다.
+     */
+    protected async officialPlay(inst: Instance): Promise<void> {
+        if (!await this.ensureOfficialLauncher(inst.id)) {
+            return;
+        }
+        if (!inst.installed) {
+            this.messages.info(`${inst.name}을(를) 먼저 설치합니다(게임 파일 받기).`);
+            inst = await this.manager.install(inst.id);
+        }
+        const reg = await this.manager.call<OfficialResult>('official_register_instance', { id: inst.id });
+        if (!reg.ok) {
+            this.messages.info(reg.message);  // 사용자가 '아니오'
+            return;
+        }
+        (reg.warnings ?? []).forEach(w => this.messages.warn(w));
+        await this.manager.call('official_tail_log', { id: inst.id });
+        await this.manager.setTarget(inst.id);
+        await this.registry.executeCommand(TaskCommandIds.GAME_LOG_TOGGLE).catch(() => undefined);
+        const open = await this.manager.call<OfficialResult>('official_open_launcher');
+        if (open.ok) {
+            this.messages.info(`공식 런처에서 '통합 작업실 · ${inst.name}'을(를) 고르고 '플레이'를 눌러 주세요. 게임 로그는 아래 '게임 로그' 탭에 나옵니다.`);
+        } else {
+            this.messages.warn(open.message);
+        }
     }
 
     resolve(id: IdArg): Instance | undefined {

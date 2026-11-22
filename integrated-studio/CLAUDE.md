@@ -119,7 +119,8 @@ Theia 확장은 TypeScript로 작성한다. Python 쪽은 `sidecar/` 아래에�
   - 확인 콜백 = `confirm` 알림 {token, id, title, message} → 프런트(InstanceManager)가 확인 창 → `confirm_reply`. 10분 안에 답이 없으면 취소, `confirm_cancel` 알림으로 창을 닫는다.
   - 로그 = 기존 `log` 알림 형식, `source: "official"`. 설치 로그처럼 인스턴스와 상관없는 줄은 id를 비운다.
   - 시험: `sidecar/tests/test_official_rpc.py`(pytest 없이 실행, CI에서도 돈다).
-- 상태(2026-11-22): 모듈·테스트·RPC 연결 완료(작업 브랜치에 합침). **아직 남은 것**: UI(인스턴스 뷰의 "공식 런처로 플레이" 등), 실제 Windows PC 확인(설치 감지·winget 출력·.minecraft 위치·등록 항목 표시·Fabric 실행·로그 교체).
+- UI: 홈 카드 "공식 런처" 버튼·인스턴스 뷰 지구본 아이콘 = 명령 `studio.official.play`(필요하면 게임 설치 → 공식 런처 확인·설치 → 등록 확인 창 → 로그 따라 읽기 → 런처 열기). 명령 팔레트: 공식 런처 열기 / 설치 / 등록 해제. 시험: `scripts/e2e/t13-official.js`(가짜 공식 런처로).
+- 상태(2026-11-22): 모듈·RPC·UI 완료. **아직 남은 것**: 실제 Windows PC 확인(설치 감지·winget 출력·.minecraft 위치·등록 항목 표시·Fabric 실행·로그 교체).
 
 ### M9. 패키징 (내 PC용)
 - electron-builder로 Windows 설치 파일 또는 압축 실행판을 만든다. **배포하지 않는다** — 개인 사용 전용.
