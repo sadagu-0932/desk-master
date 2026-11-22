@@ -14,6 +14,7 @@ from __future__ import annotations
 import configparser
 import hashlib
 import json
+import sys
 import os
 import re
 import shutil
@@ -241,13 +242,24 @@ class Importers:
                 report = self._copy_prism(inst["id"], Path(path))
         except Exception:
             notify("progress", {"id": inst["id"], "stage": "import", "done": True})
-            try:
-                self.store.delete(inst["id"])  # 반쯤 만들어진 인스턴스는 휴지통으로
-            except Exception:  # noqa: BLE001
-                pass
+            self._discard_failed(inst["id"])
             raise
         notify("progress", {"id": inst["id"], "stage": "import", "text": "가져오기 완료", "done": True})
         return {"instance": self.store.get(inst["id"]), **report}
+
+    def _discard_failed(self, inst_id: str) -> None:
+        """반쯤 만들어진 인스턴스를 목록에서 빼고 휴지통으로 보낸다.
+        휴지통을 못 쓰는 환경(예: 휴지통이 없는 드라이브)에서도 목록에는 다시 나타나지 않게
+        instance.json 이름부터 바꾼다. 영구 삭제는 하지 않는다."""
+        d = self.store.dir_of(inst_id)
+        try:
+            (d / "instance.json").replace(d / "instance.import-failed.json")
+        except OSError:
+            pass
+        try:
+            self.store.delete(inst_id)
+        except Exception as e:  # noqa: BLE001
+            print(f"[import] 휴지통으로 보내지 못함, 폴더를 남겨 둠: {d} ({e})", file=sys.stderr)
 
     def _install_mrpack(self, inst_id: str, mrpack: Path) -> dict[str, Any]:
         base = self.store.dir_of(inst_id)
