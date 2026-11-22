@@ -1,7 +1,7 @@
 # 통합 작업실 — Windows 설치 파일 만들기 (개인 사용, 배포하지 않음)
 # 결과: Actions 실행 화면 아래 "Artifacts"에서 설치 파일(.exe)을 내려받는다.
 #  - IntegratedStudio-Setup-with-python : Python까지 들어 있음(PC에 Python 설치 불필요)
-#  - IntegratedStudio-Setup-no-python   : 더 작음, PC에 Python 3 필요(첫 실행 때 자동 준비)
+#  - IntegratedStudio-Setup-without-python   : 더 작음, PC에 Python 3 필요(첫 실행 때 자동 준비)
 name: 통합 작업실 Windows 설치 파일
 
 on:
@@ -64,7 +64,7 @@ jobs:
         with:
           python-version: '3.13'
 
-      - name: 의존성 설치 (+ Open VSX 확장: CommandCrafter, 한국어 팩)
+      - name: '의존성 설치 (+ Open VSX 확장 - CommandCrafter, 한국어 팩)'
         run: npm ci
 
       - name: 함께 넣을 확장 확인

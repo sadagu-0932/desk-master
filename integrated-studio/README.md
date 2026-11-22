@@ -36,7 +36,7 @@ GitHub 저장소 → **Actions** → "통합 작업실 Windows 설치 파일" �
 | 파일 | 설명 |
 |---|---|
 | `IntegratedStudio-Setup-with-python` | Python까지 들어 있음. PC에 Python을 설치하지 않아도 된다 |
-| `IntegratedStudio-Setup-no-python` | 더 작음. PC에 Python 3이 있어야 한다(첫 실행 때 자동 준비) |
+| `IntegratedStudio-Setup-without-python` | 더 작음. PC에 Python 3이 있어야 한다(첫 실행 때 자동 준비) |
 
 이 브랜치에 `integrated-studio/`를 바꿔 푸시하면 자동으로 둘 다 만들어진다.
 Actions 화면의 "Run workflow"로 직접 돌릴 때는 Python 포함 여부(both / with / without)를 고를 수 있다.
