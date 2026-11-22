@@ -1,0 +1,18 @@
+{
+  "private": true,
+  "name": "integrated-studio",
+  "version": "0.0.1",
+  "description": "통합 작업실 — 마인크래프트 실행 · 데이터팩 · 모드 · 리소스팩",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=22 <25"
+  },
+  "workspaces": [
+    "applications/*",
+    "theia-extensions/*"
+  ],
+  "scripts": {
+    "build": "npm run build -w integrated-studio-electron",
+    "start": "npm run start -w integrated-studio-electron"
+  }
+}

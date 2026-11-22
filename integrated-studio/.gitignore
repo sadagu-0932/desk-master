@@ -1,0 +1,10 @@
+node_modules/
+lib/
+dist/
+data/
+*.log
+.venv/
+__pycache__/
+applications/electron/gen-esbuild.*.mjs
+applications/electron/src-gen/
+applications/electron/plugins/
