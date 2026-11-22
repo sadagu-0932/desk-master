@@ -129,6 +129,8 @@ class Packs:
     def read_commands(self, reports_dir: str) -> dict[str, Any]:
         """데이터 생성기 commands.json 을 자동완성용 간단한 트리로 줄인다."""
         path = Path(reports_dir) / "reports" / "commands.json"
+        if not path.is_file():
+            raise RpcError("명령어 목록이 아직 없습니다. '게임 없이 쓸 자동완성 준비'를 실행하세요.")
         tree = json.loads(path.read_text("utf-8"))
 
         def slim(node: dict, depth: int) -> dict:

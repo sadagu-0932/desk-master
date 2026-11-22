@@ -5,6 +5,9 @@ executableName: integrated-studio
 copyright: 개인 사용 전용
 electronDist: ../../node_modules/electron/dist
 asar: false
+# native 모듈은 theia rebuild:electron 으로 미리 재빌드한다(npm run rebuild:native)
+npmRebuild: false
+publish: null
 directories:
   output: dist
   buildResources: resources

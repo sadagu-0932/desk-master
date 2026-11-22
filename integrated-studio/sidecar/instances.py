@@ -32,6 +32,12 @@ server/
 *.jar
 *.jar.disabled
 usercache.json
+options.txt
+downloads/
+exports/
+.theia/
+.fabric/
+instance.json
 .claude/.edit-baks/
 .claude/settings.local.json
 .claude/hooks/
