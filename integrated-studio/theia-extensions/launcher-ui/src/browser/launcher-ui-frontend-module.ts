@@ -14,6 +14,8 @@ import { HomeWidget } from './home-widget.js';
 import { StudioUiContribution } from './studio-ui-contribution.js';
 import { ClaudeIntegration } from './claude-integration.js';
 import { ModTools } from './mod-tools.js';
+import { StudioFilterContribution } from './studio-filter.js';
+import { FilterContribution } from '@theia/core/lib/common/contribution-filter';
 
 function widget(bind: interfaces.Bind, id: string, cls: interfaces.Newable<object>): void {
     bind(cls).toSelf().inSingletonScope();
@@ -31,6 +33,9 @@ export default new ContainerModule(bind => {
     bind(StudioUiContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(StudioUiContribution);
     bind(CommandContribution).toService(StudioUiContribution);
+
+    bind(StudioFilterContribution).toSelf().inSingletonScope();
+    bind(FilterContribution).toService(StudioFilterContribution);
 
     bind(ModTools).toSelf().inSingletonScope();
     bind(CommandContribution).toService(ModTools);
