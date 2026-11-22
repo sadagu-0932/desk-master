@@ -13,6 +13,7 @@ import { RunTargetBar } from './run-target-bar.js';
 import { HomeWidget } from './home-widget.js';
 import { StudioUiContribution } from './studio-ui-contribution.js';
 import { ClaudeIntegration } from './claude-integration.js';
+import { ModTools } from './mod-tools.js';
 
 function widget(bind: interfaces.Bind, id: string, cls: interfaces.Newable<object>): void {
     bind(cls).toSelf().inSingletonScope();
@@ -30,6 +31,9 @@ export default new ContainerModule(bind => {
     bind(StudioUiContribution).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(StudioUiContribution);
     bind(CommandContribution).toService(StudioUiContribution);
+
+    bind(ModTools).toSelf().inSingletonScope();
+    bind(CommandContribution).toService(ModTools);
 
     bind(ClaudeIntegration).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(ClaudeIntegration);

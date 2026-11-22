@@ -8,3 +8,4 @@ __pycache__/
 applications/electron/gen-esbuild.*.mjs
 applications/electron/src-gen/
 applications/electron/plugins/
+*.tsbuildinfo

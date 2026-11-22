@@ -178,6 +178,10 @@ export class StudioUiContribution implements FrontendApplicationContribution, Co
         if (!inst) {
             return false;
         }
+        // 작업용 원본(datapacks/)을 월드로 먼저 동기화한다
+        if (this.commandRegistry.getCommand('studio.datapack.syncAll')) {
+            await this.commands.executeCommand('studio.datapack.syncAll');
+        }
         if (this.ccAvailable(inst) && this.commandRegistry.getCommand(CC_RELOAD)) {
             await this.commands.executeCommand(CC_RELOAD);
             this.manager.log(inst.id, '/reload 보냄 (CommandCrafter)', 'info', 'studio');

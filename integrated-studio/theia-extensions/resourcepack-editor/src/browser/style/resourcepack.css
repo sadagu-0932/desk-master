@@ -1,0 +1,8 @@
+.studio-texel { display: flex; flex-direction: column; background: #1b1d1a; }
+.studio-texel-bar {
+    display: flex; align-items: center; gap: 8px; padding: 6px 10px;
+    border-bottom: 1px solid #2c302a; background: #1f221e;
+}
+.studio-texel-bar .theia-button { margin: 0; }
+.studio-texel-info { flex: 1; color: #9aa395; font-size: 12px; }
+.studio-texel-frame { flex: 1; width: 100%; border: 0; background: #1b1d1a; }
