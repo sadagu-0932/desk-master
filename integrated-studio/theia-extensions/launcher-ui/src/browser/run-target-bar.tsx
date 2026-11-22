@@ -5,7 +5,7 @@ import { CommandService } from '@theia/core/lib/common/command';
 import { InstanceManager, StudioCommands } from 'integrated-studio-launcher-core/lib/browser';
 import { TaskCommandIds } from 'integrated-studio-launcher-core/lib/common';
 
-/** 상단 막대: /reload, 실행 대상 선택기 + 실행(공식 런처), 안내 */
+/** 상단 막대: 홈, /reload, 실행 대상 선택기 + 실행(공식 런처), 안내 */
 @injectable()
 export class RunTargetBar extends ReactWidget {
     static readonly ID = 'studio-run-target-bar';
@@ -29,6 +29,10 @@ export class RunTargetBar extends ReactWidget {
         const t = this.manager.target;
         const running = this.manager.isRunning(t?.id);
         return <div className='studio-run-bar-inner'>
+            <button className='studio-bar-btn studio-home-btn' title='홈 (Alt+Home)' aria-label='홈'
+                onClick={() => this.run(TaskCommandIds.HOME_OPEN)}>
+                <span className='codicon codicon-home' aria-hidden='true' />홈
+            </button>
             <button className='studio-bar-btn' title='데이터팩 다시 불러오기 (/reload)' disabled={!t}
                 onClick={() => this.run(TaskCommandIds.GAME_RELOAD)}>
                 <span className='codicon codicon-refresh' aria-hidden='true' />/reload

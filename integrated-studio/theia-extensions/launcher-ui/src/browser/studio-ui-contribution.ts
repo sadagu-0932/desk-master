@@ -266,6 +266,7 @@ export class StudioUiContribution implements FrontendApplicationContribution, Co
             { command: TaskCommandIds.SERVER_TOGGLE, keybinding: 'f6' },
             { command: TaskCommandIds.MOD_BUILD_TEST, keybinding: 'f7' },
             { command: TaskCommandIds.RESOURCEPACK_APPLY, keybinding: 'f8' },
+            { command: TaskCommandIds.HOME_OPEN, keybinding: 'alt+home' },
         );
     }
 }

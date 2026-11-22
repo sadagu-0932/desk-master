@@ -17,8 +17,12 @@ import { ModTools } from './mod-tools.js';
 import { StudioFilterContribution } from './studio-filter.js';
 import { FilterContribution } from '@theia/core/lib/common/contribution-filter';
 
+/**
+ * 위젯은 매번 새로 만든다(싱글톤 금지). WidgetManager 가 살아 있는 것을 캐시하고, 탭을 닫아 dispose 되면
+ * 캐시에서 빼고 다시 createWidget 을 부른다 — 싱글톤이면 이미 dispose 된 빈 위젯이 돌아와 빈 화면이 된다.
+ */
 function widget(bind: interfaces.Bind, id: string, cls: interfaces.Newable<object>): void {
-    bind(cls).toSelf().inSingletonScope();
+    bind(cls).toSelf();
     bind(WidgetFactory).toDynamicValue(ctx => ({ id, createWidget: () => ctx.container.get(cls) })).inSingletonScope();
 }
 
