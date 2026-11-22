@@ -62,5 +62,6 @@ execFileSync('python', ['-m', 'pip', 'install', '--disable-pip-version-check', '
 
 // 확인: 임베디드 Python 으로 사이드카가 쓰는 모듈을 불러온다
 execFileSync(path.join(out, 'python.exe'), ['-c',
-    'import minecraft_launcher_lib, send2trash, json, zipfile, urllib.request; print("임베디드 Python 확인 완료")'],
-    { stdio: 'inherit' });
+    'import minecraft_launcher_lib, send2trash, json, zipfile, urllib.request; print("embedded python OK")'],
+    { stdio: 'inherit', env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' } });
+console.log('임베디드 Python 확인 완료');
