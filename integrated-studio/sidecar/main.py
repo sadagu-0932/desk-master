@@ -18,6 +18,7 @@ from official_rpc import OfficialLauncherRpc  # noqa: E402
 from sync import SettingsSync  # noqa: E402
 from rpc import notify, serve  # noqa: E402
 from runner import Runner  # noqa: E402
+from server_runner import ServerRunner, ServersDat  # noqa: E402
 
 VERSION = "0.1.0"
 
@@ -34,6 +35,10 @@ def main() -> None:
     atexit.register(runner.shutdown)
     packs = Packs(store, runner.mc_dir)
     imp = Importers(store, data_dir)
+    # M10 P2P 서버 — 방식 A(전용 서버)와 참가할 때 servers.dat 추가
+    p2p = ServerRunner(data_dir, store, lambda version: [runner._runtime_java(version)])
+    atexit.register(p2p.shutdown)
+    servers_dat = ServersDat(store)
     official = OfficialLauncherRpc(store, runner.mc_dir)  # 공식 런처 연동(M8-1, Windows 전용)
     atexit.register(official.shutdown)
     # 설정 동기화(게임 설정·서버 목록·공식 런처 항목): 시작 때·30초마다·게임이 닫힌 뒤
@@ -99,11 +104,22 @@ def main() -> None:
         "cf_install_modpack": imp.cf_install_modpack,
         "cf_add_mod": imp.cf_add_mod,
         **official.handlers(),
+        "p2p_server_list": p2p.list,
+        "p2p_server_create": p2p.create,
+        "p2p_server_update": p2p.update,
+        "p2p_server_set_world": p2p.set_world,
+        "p2p_server_accept_eula": p2p.accept_eula,
+        "p2p_server_start": p2p.start,
+        "p2p_server_stop": p2p.stop,
+        "p2p_server_command": p2p.command,
+        "p2p_server_delete": p2p.delete,
+        "p2p_server_running": p2p.running,
+        "servers_dat_add": servers_dat.add,
         "sync_now": settings_sync.sync_now,
     }
     background = {"install", "list_versions", "list_loader_versions", "server_start", "server_stop", "generate_reports", "mod_new", "mod_build", "read_commands", "inspect_import", "import_file",
                   "modrinth_search", "modrinth_versions", "modrinth_install_modpack", "modrinth_add_mod",
-                  "cf_key_status", "cf_set_key", "cf_search", "cf_files", "cf_install_modpack", "cf_add_mod"} | official.BACKGROUND | {"sync_now", "delete_instance"}
+                  "cf_key_status", "cf_set_key", "cf_search", "cf_files", "cf_install_modpack", "cf_add_mod"} | official.BACKGROUND | {"p2p_server_create", "p2p_server_set_world", "p2p_server_start", "p2p_server_stop"} | {"sync_now", "delete_instance"}
     notify("ready", {"version": VERSION})
     settings_sync.start()
     serve(handlers, background)
