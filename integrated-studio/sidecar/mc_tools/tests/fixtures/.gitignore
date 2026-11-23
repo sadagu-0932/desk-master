@@ -1,0 +1,2 @@
+# 위쪽 .gitignore 의 data/ (실행 데이터 폴더용)가 시험 자료의 data/ 까지 막지 않게
+!data/

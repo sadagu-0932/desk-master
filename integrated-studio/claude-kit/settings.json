@@ -1,0 +1,35 @@
+{
+  "permissions": {
+    "allow": ["mcp__mc-tools"]
+  },
+  "enabledMcpjsonServers": ["mc-tools"],
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${MC_TOOLS_PYTHON}",
+            "args": ["${MC_TOOLS_HOOK}", "post"],
+            "timeout": 120,
+            "statusMessage": "mc-tools: 바뀐 팩 검사 중"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${MC_TOOLS_PYTHON}",
+            "args": ["${MC_TOOLS_HOOK}", "stop"],
+            "timeout": 300,
+            "statusMessage": "mc-tools: 마무리 전 전체 검사"
+          }
+        ]
+      }
+    ]
+  }
+}

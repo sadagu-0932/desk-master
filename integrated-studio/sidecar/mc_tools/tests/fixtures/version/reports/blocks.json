@@ -1,0 +1,78 @@
+{
+ "minecraft:air": {
+  "states": [
+   {
+    "default": true,
+    "id": 0
+   }
+  ]
+ },
+ "minecraft:stone": {
+  "states": [
+   {
+    "default": true,
+    "id": 1
+   }
+  ]
+ },
+ "minecraft:campfire": {
+  "properties": {
+   "facing": [
+    "north",
+    "south",
+    "west",
+    "east"
+   ],
+   "lit": [
+    "true",
+    "false"
+   ],
+   "signal_fire": [
+    "true",
+    "false"
+   ],
+   "waterlogged": [
+    "true",
+    "false"
+   ]
+  },
+  "states": [
+   {
+    "default": true,
+    "id": 24237,
+    "properties": {
+     "facing": "north",
+     "lit": "true",
+     "signal_fire": "false",
+     "waterlogged": "false"
+    }
+   }
+  ]
+ },
+ "minecraft:oak_log": {
+  "properties": {
+   "axis": [
+    "x",
+    "y",
+    "z"
+   ]
+  },
+  "states": [
+   {
+    "default": true,
+    "id": 140,
+    "properties": {
+     "axis": "y"
+    }
+   }
+  ]
+ },
+ "minecraft:diamond_block": {
+  "states": [
+   {
+    "default": true,
+    "id": 6865
+   }
+  ]
+ }
+}

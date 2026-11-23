@@ -1,0 +1,103 @@
+{
+ "minecraft:block": {
+  "entries": {
+   "minecraft:air": {
+    "protocol_id": 0
+   },
+   "minecraft:stone": {
+    "protocol_id": 1
+   },
+   "minecraft:campfire": {
+    "protocol_id": 2
+   },
+   "minecraft:oak_log": {
+    "protocol_id": 3
+   },
+   "minecraft:diamond_block": {
+    "protocol_id": 4
+   }
+  }
+ },
+ "minecraft:item": {
+  "entries": {
+   "minecraft:air": {
+    "protocol_id": 0
+   },
+   "minecraft:stone": {
+    "protocol_id": 1
+   },
+   "minecraft:diamond": {
+    "protocol_id": 2
+   },
+   "minecraft:diamond_sword": {
+    "protocol_id": 3
+   },
+   "minecraft:campfire": {
+    "protocol_id": 4
+   },
+   "minecraft:oak_log": {
+    "protocol_id": 5
+   },
+   "minecraft:emerald": {
+    "protocol_id": 6
+   }
+  }
+ },
+ "minecraft:entity_type": {
+  "entries": {
+   "minecraft:player": {
+    "protocol_id": 0
+   },
+   "minecraft:zombie": {
+    "protocol_id": 1
+   },
+   "minecraft:pig": {
+    "protocol_id": 2
+   }
+  }
+ },
+ "minecraft:mob_effect": {
+  "entries": {
+   "minecraft:regeneration": {
+    "protocol_id": 0
+   },
+   "minecraft:speed": {
+    "protocol_id": 1
+   }
+  }
+ },
+ "minecraft:particle_type": {
+  "entries": {
+   "minecraft:flame": {
+    "protocol_id": 0
+   }
+  }
+ },
+ "minecraft:recipe_serializer": {
+  "entries": {
+   "minecraft:crafting_shaped": {
+    "protocol_id": 0
+   },
+   "minecraft:crafting_shapeless": {
+    "protocol_id": 1
+   }
+  }
+ },
+ "minecraft:loot_pool_entry_type": {
+  "entries": {
+   "minecraft:item": {
+    "protocol_id": 0
+   },
+   "minecraft:empty": {
+    "protocol_id": 1
+   }
+  }
+ },
+ "minecraft:game_event": {
+  "entries": {
+   "minecraft:step": {
+    "protocol_id": 0
+   }
+  }
+ }
+}
