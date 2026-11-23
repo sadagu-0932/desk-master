@@ -51,17 +51,20 @@ export class InstancesWidget extends ReactWidget {
                     className={'studio-row' + (target?.id === i.id ? ' active' : '')}
                     onClick={() => this.manager.setTarget(i.id)}
                     onDoubleClick={() => this.commands.executeCommand(StudioCommands.OPEN_WORKSPACE.id, i.id)}
+                    onContextMenu={e => { e.preventDefault(); this.commands.executeCommand(StudioCommands.MANAGE.id, i.id); }}
                     title={i.path}>
                     <span className={'studio-dot' + (running ? ' on' : '') + (server ? ' server' : '')} aria-hidden='true' />
                     <span className='studio-row-text'>
                         <span className='studio-row-name'>{i.name}</span>
-                        <span className='studio-row-sub'>{sub}{server ? ' · 서버' : ''}</span>
+                        <span className='studio-row-sub'>{sub}{server ? ' · 서버' : ''}{i.linkedDir ? ' · 연결됨' : ''}</span>
                     </span>
                     <button className='studio-icon-btn codicon codicon-play' aria-label={`${i.name} 실행 (공식 런처)`} disabled={running}
                         title={running ? '실행 중 — 게임 창을 닫으면 종료됩니다' : '실행 (F5) — 공식 런처로'}
                         onClick={e => { e.stopPropagation(); this.commands.executeCommand(StudioCommands.LAUNCH.id, i.id); }} />
-                    <button className='studio-icon-btn codicon codicon-folder-opened' aria-label={`${i.name} 작업실에서 열기`} title='작업실에서 열기'
-                        onClick={e => { e.stopPropagation(); this.commands.executeCommand(StudioCommands.OPEN_WORKSPACE.id, i.id); }} />
+                    <button className='studio-icon-btn codicon codicon-folder' aria-label={`${i.name} 폴더 열기`} title='폴더 열기 (파일 탐색기)'
+                        onClick={e => { e.stopPropagation(); this.commands.executeCommand(StudioCommands.OPEN_FOLDER.id, i.id); }} />
+                    <button className='studio-icon-btn codicon codicon-ellipsis' aria-label={`${i.name} 관리`} title='관리 — 이름 바꾸기·복제·메모리·삭제 등 (오른쪽 클릭)'
+                        onClick={e => { e.stopPropagation(); this.commands.executeCommand(StudioCommands.MANAGE.id, i.id); }} />
                 </div>;
             })}
         </div>;

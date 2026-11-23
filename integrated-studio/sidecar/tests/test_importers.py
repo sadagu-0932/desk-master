@@ -280,7 +280,11 @@ def main() -> None:
     res = imp.import_file(str(pr))
     d = Path(res["instance"]["path"])
     check(res["instance"]["name"] == "내 프리즘 인스턴스", "이름은 instance.cfg 에서")
-    check((d / "mods/sodium.jar").exists() and (d / "saves/World1/level.dat").exists(), "mods·saves 복사")
+    check(d == (pr / ".minecraft").resolve() and res["instance"].get("linkedDir"), "폴더는 그대로 두고 연결(기본)")
+    check((d / "mods/sodium.jar").exists() and not (d / "instance.json").exists(), "원본 폴더에 우리 파일을 쓰지 않음")
+    res2 = imp.import_file(str(pr), name="복사본", mode="copy")
+    d2 = Path(res2["instance"]["path"])
+    check(d2 != d and (d2 / "mods/sodium.jar").exists() and (d2 / "saves/World1/level.dat").exists(), "copy 면 mods·saves 복사")
 
     print("5) Modrinth 검색 → 모드팩 설치")
     hits = imp.modrinth_search("test")

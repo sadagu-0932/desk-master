@@ -151,8 +151,72 @@ class InstanceStore:
         return self.get(inst_id)
 
     def delete(self, inst_id: str) -> None:
+        """앱의 인스턴스 폴더만 휴지통으로. "연결"한 인스턴스의 원본 게임 폴더(linkedDir)는 건드리지 않는다."""
         d = self.dir_of(inst_id)
         trash(d, self.root)
+
+    # 복제할 때 옮기는 게임 항목(로그·크래시·서버·git·설정 파일은 새로)
+    DUPLICATE_SKIP = {"instance.json", ".git", "logs", "crash-reports", "servers", "screenshots", ".theia", ".fabric",
+                      "CLAUDE.md", ".claude", ".gitignore", "usercache.json", "downloads", "exports"}
+
+    def duplicate(self, inst_id: str, name: str | None = None) -> dict[str, Any]:
+        """같은 버전·로더로 새 인스턴스를 만들고 게임 폴더 내용(모드·설정·월드 등)을 복사한다. 연결 인스턴스도 복사본이 된다."""
+        import shutil
+        src_meta = self.get(inst_id)
+        src = Path(src_meta["path"])
+        new = self.create((name or f"{src_meta['name']} 복사본")[:64], src_meta["version"], src_meta["loader"],
+                          src_meta.get("loaderVersion"), src_meta.get("group"), src_meta.get("icon"),
+                          cc_enabled=bool(src_meta.get("ccEnabled")))
+        from importers.launchers import is_account_file   # 계정·토큰 파일은 복사하지 않는다
+
+        def skip(_d: str, names: list[str]) -> set[str]:
+            return {n for n in names if n == "session.lock" or is_account_file(n)}
+        dst = self.dir_of(new["id"])
+        for item in src.iterdir():
+            if item.name in self.DUPLICATE_SKIP or item.is_symlink() or is_account_file(item.name):
+                continue
+            target = safe_join(dst, item.name)
+            if item.is_dir():
+                shutil.copytree(item, target, dirs_exist_ok=True, ignore=skip)
+            else:
+                shutil.copy2(item, target)
+        meta = self.get(new["id"])
+        for key in ("jvmArgs", "versionId", "installed"):
+            if src_meta.get(key) is not None:
+                meta[key] = src_meta[key]
+        self.save(meta)
+        return self.get(new["id"])
+
+    def set_memory(self, inst_id: str, memory_mb: int | None = None, java_args: str | None = None) -> dict[str, Any]:
+        """공식 런처 항목의 JVM 인자(최대 메모리 -Xmx + 추가 인자)."""
+        meta = self.get(inst_id)
+        if memory_mb is not None and not (512 <= int(memory_mb) <= 65536):
+            raise RpcError("메모리는 512MB ~ 64GB 사이로 정하세요.")
+        extra = java_args if java_args is not None else " ".join(
+            a for a in (meta.get("jvmArgs") or "").split() if not re.match(r"-Xm[xs]\d", a))
+        if re.search(r"[\r\n\x00]", extra or ""):
+            raise RpcError("자바 인자에 줄바꿈을 넣을 수 없습니다.")
+        parts = [f"-Xmx{int(memory_mb)}M"] if memory_mb else []
+        parts += [a for a in (extra or "").split() if not re.match(r"-Xm[xs]\d", a)]
+        meta["jvmArgs"] = " ".join(parts) or None
+        self.save(meta)
+        return self.get(inst_id)
+
+    def open_folder(self, inst_id: str) -> dict[str, Any]:
+        """게임 폴더를 파일 탐색기(Windows 탐색기)로 연다."""
+        import os
+        import subprocess
+        import sys
+        d = Path(self.get(inst_id)["path"])
+        if not d.is_dir():
+            raise RpcError(f"폴더가 없습니다: {d}")
+        if sys.platform == "win32":
+            os.startfile(str(d))  # type: ignore[attr-defined]
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", str(d)])
+        else:
+            subprocess.Popen(["xdg-open", str(d)])
+        return {"ok": True, "path": str(d)}
 
     # ---------- 설정 ----------
     def set_cc_enabled(self, inst_id: str, enabled: bool) -> dict[str, Any]:

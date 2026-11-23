@@ -74,7 +74,8 @@ export class HomeWidget extends ReactWidget {
                     <div className='studio-cards'>
                         {list.map(i => {
                             const running = this.manager.isRunning(i.id);
-                            return <article key={i.id} className='studio-card studio-inst-card'>
+                            return <article key={i.id} className='studio-card studio-inst-card'
+                                onContextMenu={e => { e.preventDefault(); this.run(StudioCommands.MANAGE.id, i.id); }}>
                                 <div className='studio-card-banner' style={{ background: banner(i) }} aria-hidden='true' />
                                 <div className='studio-card-body'>
                                     <h3>{i.name}{running && <span className='studio-chip on'>실행 중</span>}</h3>
@@ -83,16 +84,19 @@ export class HomeWidget extends ReactWidget {
                                         <span className='studio-chip'>Java {i.version}</span>
                                         <span className='studio-chip'>{loaderLabel(i)}{i.loaderVersion ? ` ${i.loaderVersion}` : ''}</span>
                                         {!i.installed && <span className='studio-chip warn'>설치 전</span>}
+                                        {i.linkedDir && <span className='studio-chip' title={`원래 폴더를 그대로 씀: ${i.linkedDir}`}>연결됨</span>}
                                         {i.loader === 'fabric' && <span className='studio-chip'>CommandCrafter {i.ccEnabled ? '켬' : '끔'}</span>}
                                     </div>
-                                    <div className='studio-mono studio-muted' title={i.path}>{i.id}</div>
+                                    <div className='studio-mono studio-muted studio-path' title={i.path}>{i.linkedDir ?? i.id}</div>
                                     <div className='studio-card-actions'>
                                         <button className='theia-button' disabled={running} aria-label={`${i.name} 실행 (공식 런처)`}
                                             title={running ? '실행 중 — 게임 창을 닫으면 종료됩니다' : '공식 런처로 실행 — 내 MS 계정으로 플레이'}
                                             onClick={() => this.run(StudioCommands.LAUNCH.id, i.id)}>
                                             <span className='codicon codicon-play' aria-hidden='true' /> {running ? '실행 중' : '실행'}</button>
                                         <button className='theia-button secondary' title='작업실에서 열기' onClick={() => this.run(StudioCommands.OPEN_WORKSPACE.id, i.id)}>작업실</button>
-                                        <button className='theia-button secondary studio-more codicon codicon-ellipsis' aria-label={`${i.name} 더보기`}
+                                        <button className='theia-button secondary codicon codicon-folder' aria-label={`${i.name} 폴더 열기`} title='폴더 열기 (파일 탐색기)'
+                                            onClick={() => this.run(StudioCommands.OPEN_FOLDER.id, i.id)} />
+                                        <button className='theia-button secondary studio-more codicon codicon-ellipsis' aria-label={`${i.name} 관리`} title='관리 — 이름 바꾸기·복제·메모리·삭제 등'
                                             onClick={() => this.more(i)} />
                                     </div>
                                 </div>
@@ -129,6 +133,6 @@ export class HomeWidget extends ReactWidget {
 
     protected async more(i: Instance): Promise<void> {
         await this.manager.setTarget(i.id);
-        this.quickInput.open('>통합 작업실: ');
+        this.run(StudioCommands.MANAGE.id, i.id);
     }
 }

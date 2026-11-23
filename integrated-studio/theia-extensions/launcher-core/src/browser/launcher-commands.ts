@@ -28,6 +28,10 @@ export namespace StudioCommands {
     export const OPEN_WORKSPACE: Command = { id: 'studio.instance.openWorkspace', category: CATEGORY, label: '작업실에서 열기' };
     export const RENAME: Command = { id: 'studio.instance.rename', category: CATEGORY, label: '인스턴스 이름 바꾸기' };
     export const DELETE: Command = { id: 'studio.instance.delete', category: CATEGORY, label: '인스턴스 삭제(휴지통)' };
+    export const OPEN_FOLDER: Command = { id: 'studio.instance.openFolder', category: CATEGORY, label: '인스턴스 폴더 열기 (파일 탐색기)' };
+    export const DUPLICATE: Command = { id: 'studio.instance.duplicate', category: CATEGORY, label: '인스턴스 복제' };
+    export const MEMORY: Command = { id: 'studio.instance.memory', category: CATEGORY, label: '인스턴스 메모리·자바 인자 설정' };
+    export const MANAGE: Command = { id: 'studio.instance.manage', category: CATEGORY, label: '인스턴스 관리…' };
     export const TOGGLE_CC: Command = { id: 'studio.instance.toggleCommandCrafter', category: CATEGORY, label: 'CommandCrafter 모드 켜기/끄기' };
     export const REFRESH: Command = { id: 'studio.instance.refresh', category: CATEGORY, label: '인스턴스 목록 새로고침' };
     export const ADD_MODS: Command = { id: 'studio.mods.add', category: CATEGORY, label: '모드 추가 (Modrinth·CurseForge)' };
@@ -94,7 +98,11 @@ export class LauncherCommandContribution implements CommandContribution {
                     this.messages.warn('실행 중인 인스턴스는 삭제할 수 없습니다. 먼저 중지하세요.');
                     return;
                 }
-                const ok = await new ConfirmDialog({
+                const ok = await new ConfirmDialog(i.linkedDir ? {
+                    title: '목록에서 지우기',
+                    msg: `'${i.name}'을(를) 통합 작업실 목록에서 지울까요? 연결해 둔 원래 폴더(${i.linkedDir})와 그 안의 월드·모드는 그대로 남습니다.`,
+                    ok: '목록에서 지우기', cancel: '취소',
+                } : {
                     title: '인스턴스 삭제',
                     msg: `'${i.name}' 인스턴스 폴더를 휴지통으로 옮길까요? (월드·데이터팩 포함)`,
                     ok: '휴지통으로', cancel: '취소',
@@ -104,6 +112,37 @@ export class LauncherCommandContribution implements CommandContribution {
                 }
             })
         });
+        registry.registerCommand(StudioCommands.OPEN_FOLDER, {
+            execute: (id: IdArg) => this.withInstance(id, i => this.manager.call('open_instance_folder', { id: i.id })),
+        });
+        registry.registerCommand(StudioCommands.DUPLICATE, {
+            execute: (id: IdArg) => this.withInstance(id, async i => {
+                const name = await this.quickInput.input({ prompt: '복제본 이름(모드·설정·월드를 복사합니다)', value: `${i.name} 복사본` });
+                if (!name) {
+                    return;
+                }
+                const copy = await this.manager.call<Instance>('duplicate_instance', { id: i.id, name });
+                await this.manager.refresh();
+                this.messages.info(`'${copy.name}'을(를) 만들었습니다.`);
+            }),
+        });
+        registry.registerCommand(StudioCommands.MEMORY, {
+            execute: (id: IdArg) => this.withInstance(id, async i => {
+                const cur = /-Xmx(\d+)([MmGg])/.exec(i.jvmArgs ?? '');
+                const curGb = cur ? (cur[2].toLowerCase() === 'g' ? Number(cur[1]) : Math.round(Number(cur[1]) / 1024 * 10) / 10) : undefined;
+                const gb = await this.quickInput.input({
+                    prompt: `최대 메모리(GB). 비우면 공식 런처 기본값. 지금: ${curGb ? curGb + 'GB' : '기본값'}`, value: curGb ? String(curGb) : '',
+                    validateInput: async v => (!v.trim() || (/^\d+(\.\d+)?$/.test(v.trim()) && Number(v) >= 0.5 && Number(v) <= 64)) ? undefined : '0.5 ~ 64 사이 숫자(GB)',
+                });
+                if (gb === undefined) {
+                    return;
+                }
+                await this.manager.call('set_instance_memory', { id: i.id, memory_mb: gb.trim() ? Math.round(Number(gb) * 1024) : null });
+                await this.manager.refresh();
+                this.messages.info(`${i.name}: 최대 메모리 ${gb.trim() ? gb + 'GB' : '기본값'} (다음 실행부터)`);
+            }),
+        });
+        registry.registerCommand(StudioCommands.MANAGE, { execute: (id: IdArg) => this.withInstance(id, i => this.manage(i)) });
         registry.registerCommand(StudioCommands.TOGGLE_CC, {
             execute: (id: IdArg) => this.withInstance(id, async i => {
                 if (i.loader !== 'fabric') {
@@ -227,6 +266,29 @@ export class LauncherCommandContribution implements CommandContribution {
             this.messages.info(`공식 런처에서 '통합 작업실 · ${inst.name}'을(를) 고르고 '플레이'를 눌러 주세요. 게임 로그는 아래 '게임 로그' 탭에 나옵니다.`);
         } else {
             this.messages.warn(open.message);
+        }
+    }
+
+    /** 인스턴스 관리 메뉴(카드의 … 버튼·오른쪽 클릭) */
+    protected async manage(i: Instance): Promise<void> {
+        const running = this.manager.isRunning(i.id);
+        const items: Array<{ label: string; description?: string; cmd: string }> = [
+            { label: '$(play) 실행', description: running ? '실행 중' : '공식 런처로', cmd: StudioCommands.LAUNCH.id },
+            { label: '$(folder) 폴더 열기', description: i.linkedDir ? `연결된 원래 폴더: ${i.path}` : i.path, cmd: StudioCommands.OPEN_FOLDER.id },
+            { label: '$(window) 작업실에서 열기', cmd: StudioCommands.OPEN_WORKSPACE.id },
+            { label: '$(edit) 이름 바꾸기', cmd: StudioCommands.RENAME.id },
+            { label: '$(copy) 복제', description: '모드·설정·월드를 복사한 새 인스턴스', cmd: StudioCommands.DUPLICATE.id },
+            { label: '$(dashboard) 메모리 설정', description: i.jvmArgs ?? '공식 런처 기본값', cmd: StudioCommands.MEMORY.id },
+            { label: '$(extensions) 모드 추가', cmd: StudioCommands.ADD_MODS.id },
+            { label: '$(broadcast) 서버로 열기', cmd: 'studio.serverHost.hostInstance' },
+            ...(i.loader === 'fabric' ? [{ label: '$(plug) CommandCrafter 켜기/끄기', description: i.ccEnabled ? '지금 켬' : '지금 끔', cmd: StudioCommands.TOGGLE_CC.id }] : []),
+            { label: '$(debug-disconnect) 공식 런처에서 등록 해제', cmd: StudioCommands.OFFICIAL_UNREGISTER.id },
+            { label: i.linkedDir ? '$(close) 목록에서 지우기' : '$(trash) 삭제(휴지통)',
+                description: i.linkedDir ? '원래 폴더는 그대로' : '월드·데이터팩 포함', cmd: StudioCommands.DELETE.id },
+        ];
+        const pick = await this.quickInput.showQuickPick(items, { placeholder: `${i.name} — ${i.version} · ${LOADER_LABELS[i.loader] ?? i.loader}${i.linkedDir ? ' · 연결됨' : ''}` });
+        if (pick) {
+            await this.registry.executeCommand(pick.cmd, i.id);
         }
     }
 

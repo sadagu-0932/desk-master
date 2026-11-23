@@ -284,7 +284,10 @@ class Importers:
                 "files": mods, "supported": loader in SUPPORTED_LOADERS and bool(mc)}
 
     # ============================================================ 파일 가져오기
-    def import_file(self, path: str, name: str | None = None, group: str | None = None, icon: str | None = None) -> dict[str, Any]:
+    def import_file(self, path: str, name: str | None = None, group: str | None = None, icon: str | None = None,
+                    mode: str = "link") -> dict[str, Any]:
+        """mode: Prism·MultiMC 인스턴스 "폴더"는 기본 link(폴더는 그대로 두고 여기서 실행·관리), copy 면 복사.
+        압축 파일(.mrpack·zip)은 풀 곳이 필요하므로 항상 앱 폴더로."""
         info = self.inspect_import(path)
         if info["kind"] in ("prism", "prism-zip"):
             if info["loader"] not in ALL_LOADERS:
@@ -302,6 +305,8 @@ class Importers:
                 report = self._install_cf_zip(inst["id"], Path(path))
             elif info["kind"] == "prism-zip":
                 report = self._copy_prism_zip(inst["id"], Path(path))
+            elif mode == "link":
+                report = self._link_prism(inst["id"], Path(path))
             else:
                 report = self._copy_prism(inst["id"], Path(path))
         except Exception:
@@ -394,6 +399,16 @@ class Importers:
                 with zf.open(info) as src, open(target, "wb") as dst:
                     shutil.copyfileobj(src, dst)
             return self._copy_prism(inst_id, Path(td))
+
+    def _link_prism(self, inst_id: str, folder: Path) -> dict[str, Any]:
+        game = next((folder / d for d in (".minecraft", "minecraft") if (folder / d).is_dir()), None)
+        if not game:
+            raise RpcError("인스턴스 안에 .minecraft 폴더가 없습니다.")
+        meta = self.store.get(inst_id)
+        meta["linkedDir"] = str(game.resolve())
+        meta["importedFrom"] = f"prism:{folder.resolve()}"
+        self.store.save(meta)
+        return {"downloaded": 0, "failed": [], "manual": [], "extracted": 0, "linked": str(game.resolve())}
 
     def _copy_prism(self, inst_id: str, folder: Path) -> dict[str, Any]:
         base = self.store.dir_of(inst_id)

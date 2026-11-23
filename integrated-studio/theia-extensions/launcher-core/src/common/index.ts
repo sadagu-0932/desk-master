@@ -29,6 +29,8 @@ export interface Instance {
     path: string;
     /** "연결"로 불러온 인스턴스: 다른 런처의 원본 게임 폴더(이때 path 와 같다) */
     linkedDir?: string | null;
+    /** 공식 런처 항목에 넣는 JVM 인자(최대 메모리 -Xmx 등) */
+    jvmArgs?: string | null;
 }
 
 export interface GameVersion {

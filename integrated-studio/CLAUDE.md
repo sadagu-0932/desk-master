@@ -162,6 +162,9 @@ Theia 확장은 TypeScript로 작성한다. Python 쪽은 `sidecar/` 아래에�
 - 시험: `pytest tests/test_modrinth.py tests/test_launchers.py tests/test_server_runner.py tests/test_official_launcher.py`,
   `npm test -w integrated-studio-server-host`(가짜 공유기·playit API·마인크래프트 상태 응답·LAN 신호로 16개), e2e `scripts/e2e/t14-server.js`.
 - 남은 것: 실제 Windows PC 두 대(한 대는 휴대폰 핫스팟)에서 공유기 UPnP·e4mc·playit·Forge 서버 설치기 확인.
+- 결정(2026-11-23, 사용자): **다른 곳의 인스턴스는 폴더를 그대로 두고 여기서 실행·관리**(불러오기 기본 = 연결, 새 인스턴스 창의 Prism 폴더도 연결).
+  연결 인스턴스 삭제 = 목록에서만 지움(원래 폴더 그대로). 인스턴스 관리 메뉴(카드 … ·오른쪽 클릭): 실행·폴더 열기(파일 탐색기)·작업실·이름 바꾸기·
+  복제(계정 파일 제외)·메모리 설정(jvmArgs -Xmx)·모드 추가·서버로 열기·CommandCrafter·등록 해제·삭제. RPC `duplicate_instance`·`set_instance_memory`·`open_instance_folder`.
 
 ### M9. 패키징 (내 PC용)
 - electron-builder로 Windows 설치 파일 또는 압축 실행판을 만든다. **배포하지 않는다** — 개인 사용 전용.

@@ -68,6 +68,9 @@ def main() -> None:
         "rename_instance": rename_instance,
         "delete_instance": delete_instance,
         "set_cc_enabled": lambda id, enabled: store.set_cc_enabled(id, enabled),
+        "duplicate_instance": lambda id, name=None: store.duplicate(id, name),
+        "set_instance_memory": lambda id, memory_mb=None, java_args=None: store.set_memory(id, memory_mb, java_args),
+        "open_instance_folder": lambda id: store.open_folder(id),
         "set_work_mode": lambda id, mode: store.set_work_mode(id, mode),
         "list_versions": runner.list_versions,
         "list_loader_versions": runner.list_loader_versions,
@@ -129,7 +132,7 @@ def main() -> None:
         "import_in_use": local_import.in_use,
         "sync_now": settings_sync.sync_now,
     }
-    background = {"install", "list_versions", "list_loader_versions", "server_start", "server_stop", "generate_reports", "mod_new", "mod_build", "read_commands", "inspect_import", "import_file",
+    background = {"install", "duplicate_instance", "list_versions", "list_loader_versions", "server_start", "server_stop", "generate_reports", "mod_new", "mod_build", "read_commands", "inspect_import", "import_file",
                   "modrinth_search", "modrinth_versions", "modrinth_install_modpack", "modrinth_add_mod",
                   "cf_key_status", "cf_set_key", "cf_search", "cf_files", "cf_install_modpack", "cf_add_mod"} | official.BACKGROUND | {"ds_create", "ds_set_world", "ds_start", "ds_stop", "host_mods", "e4mc_install", "e4mc_check_crash",
                      "import_detect", "import_inspect_folder", "import_preview", "import_run", "import_in_use"} | {"sync_now", "delete_instance"}

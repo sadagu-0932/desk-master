@@ -26,7 +26,7 @@ export interface CreateInstanceServices {
 }
 
 interface ImportInfo {
-    kind: 'mrpack' | 'curseforge' | 'prism';
+    kind: 'mrpack' | 'curseforge' | 'prism' | 'prism-zip';
     name: string;
     version?: string;
     loader: string;
@@ -42,7 +42,7 @@ type VersionType = GameVersion['type'];
 
 const TYPE_LABEL: Record<VersionType, string> = { release: '정식', snapshot: '스냅샷', old_beta: '베타', old_alpha: '알파' };
 const ICON_COLORS = ['#4f7a2a', '#c95a1c', '#3a6a8a', '#6a5a8a', '#8a6a2a', '#2a7a6a', '#8a3a4a', '#5a5f57'];
-const KIND_LABEL: Record<ImportInfo['kind'], string> = { mrpack: 'Modrinth 모드팩 (.mrpack)', curseforge: 'CurseForge 모드팩 (.zip)', prism: 'Prism Launcher·MultiMC 인스턴스' };
+const KIND_LABEL: Record<ImportInfo['kind'], string> = { mrpack: 'Modrinth 모드팩 (.mrpack)', curseforge: 'CurseForge 모드팩 (.zip)', prism: 'Prism Launcher·MultiMC 인스턴스(연결)', 'prism-zip': 'Prism Launcher·MultiMC 내보내기 (.zip)' };
 
 const LOADERS: { id: Loader; label: string; available: boolean }[] = [
     { id: 'vanilla', label: '없음 (바닐라)', available: true },
@@ -424,7 +424,7 @@ export class CreateInstanceDialog extends ReactDialog<CreateInstanceResult | und
             <ul className='ni-file-kinds ni-muted'>
                 <li><b>.mrpack</b> — Modrinth 모드팩 파일</li>
                 <li><b>.zip</b> — CurseForge 모드팩 파일 (안의 모드를 받으려면 CurseForge API 키 필요)</li>
-                <li><b>폴더</b> — Prism Launcher·MultiMC의 인스턴스 폴더(mods·config·saves 등을 복사)</li>
+                <li><b>폴더</b> — Prism Launcher·MultiMC의 인스턴스 폴더. 폴더는 원래 자리에 그대로 두고 여기서 실행·관리합니다(연결). 다른 런처들을 한꺼번에 찾으려면 서버 패널의 [인스턴스 불러오기]</li>
             </ul>
             {this.importBusy && <div className='ni-empty'>확인하는 중…</div>}
             {this.importError && <div className='ni-empty ni-error'>{this.importError}</div>}

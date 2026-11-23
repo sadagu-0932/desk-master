@@ -305,3 +305,28 @@ def test_install_failure_keeps_import(world):
     res = imp.import_many([{"key": e["key"]}], "copy")
     assert not res["failed"] and "다시 시도" in res["imported"][0]["warning"]
     assert (Path(res["imported"][0]["path"]) / "mods").is_dir()
+
+
+def test_manage_duplicate_memory_delete_linked(world, monkeypatch):
+    imp, store = world["imp"], world["store"]
+    import paths
+    monkeypatch.setattr(paths, "trash", lambda p, b: __import__("shutil").rmtree(p))
+    import instances as inst_mod
+    monkeypatch.setattr(inst_mod, "trash", lambda p, b: __import__("shutil").rmtree(p))
+    e = by_name(imp.detect(), "내 패브릭")
+    linked = imp.import_many([{"key": e["key"]}], "link")["imported"][0]
+    src = Path(linked["path"])
+    before = snapshot(src)
+    dup = store.duplicate(linked["id"])
+    d = Path(dup["path"])
+    assert dup["name"] == "내 패브릭 복사본" and not dup.get("linkedDir") and d == store.dir_of(dup["id"])
+    assert (d / "mods" / "mod0.jar").is_file() and (d / "saves" / "월드" / "level.dat").is_file()
+    assert not (d / "logs").exists() and (d / "instance.json").is_file()
+    m = store.set_memory(dup["id"], 6144)
+    assert m["jvmArgs"].startswith("-Xmx6144M") and "-XX:+UseG1GC" in m["jvmArgs"]
+    assert store.set_memory(dup["id"], 2048, "-Dfoo=1")["jvmArgs"] == "-Xmx2048M -Dfoo=1"
+    with pytest.raises(RpcError):
+        store.set_memory(dup["id"], 100)
+    store.delete(linked["id"])                                     # 연결 인스턴스 삭제 = 목록에서만
+    assert src.is_dir() and snapshot(src) == before                 # 원본 폴더는 그대로
+    assert all(i["id"] != linked["id"] for i in store.list())

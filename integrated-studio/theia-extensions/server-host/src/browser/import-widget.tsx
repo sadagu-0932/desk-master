@@ -35,7 +35,7 @@ export class ImportWidget extends ReactWidget {
     protected entries: DetectedInstance[] = [];
     protected selected = new Set<string>();
     protected versions = new Map<string, string>();
-    protected mode: 'copy' | 'link' = 'copy';
+    protected mode: 'copy' | 'link' = 'link';
     protected preview: ImportPreview | undefined;
     protected result: ImportResult | undefined;
     protected error: string | undefined;
@@ -159,8 +159,8 @@ export class ImportWidget extends ReactWidget {
         const p = this.preview!;
         return <>
             <div className='sh-kinds' role='radiogroup' aria-label='불러오기 방식'>
-                {([['copy', '복사(추천)', '통합 작업실 폴더로 mods·config·saves·resourcepacks·shaderpacks·options.txt·servers.dat 등을 복사합니다. 원본은 그대로.'],
-                    ['link', '연결', '원본 폴더를 그대로 게임 폴더로 씁니다(용량 없음). 두 런처에서 동시에 켜면 안 됩니다 — 실행 전에 확인합니다.']] as const)
+                {([['link', '연결(추천)', '인스턴스 폴더는 원래 자리에 그대로 두고, 여기서 실행·모드 추가·서버 열기를 합니다(용량 없음). 두 런처에서 동시에 켜면 안 됩니다 — 실행 전에 확인합니다. 목록에서 지워도 원래 폴더는 남습니다.'],
+                    ['copy', '복사', '통합 작업실 폴더로 mods·config·saves·resourcepacks·shaderpacks·options.txt·servers.dat 등을 복사합니다. 원본은 그대로.']] as const)
                     .map(([m, t, d]) => <label key={m} className={'sh-kind' + (this.mode === m ? ' selected' : '')}>
                         <input type='radio' checked={this.mode === m} onChange={async () => { this.mode = m; await this.showPreview(); }} />
                         <span><b>{t}</b><span className='sh-muted'>{d}</span></span></label>)}
