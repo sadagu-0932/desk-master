@@ -47,7 +47,7 @@ CF_LOADER_NAME = {v: k for k, v in CF_LOADER.items()}
 MRPACK_HOSTS = modrinth.DOWNLOAD_HOSTS
 KEYRING_SERVICE = "integrated-studio"
 KEYRING_CF = "curseforge-api-key"
-SUPPORTED_LOADERS = ("vanilla", "fabric")
+SUPPORTED_LOADERS = ("vanilla", "fabric", "quilt", "neoforge", "forge")  # 실행·설치는 runner.install(로더별)
 
 
 # ---------------------------------------------------------------- HTTP
@@ -201,7 +201,7 @@ def _loader_from_cf(mod_loaders: list[dict[str, Any]]) -> tuple[str, str | None]
 
 def _require_supported(loader: str) -> None:
     if loader not in SUPPORTED_LOADERS:
-        raise RpcError(f"이 모드팩은 {loader} 로더용입니다. 통합 작업실은 지금 바닐라와 Fabric만 지원합니다.")
+        raise RpcError(f"이 모드팩은 {loader} 로더용입니다. 통합 작업실은 바닐라·Fabric·Quilt·NeoForge·Forge 를 지원합니다.")
 
 
 def _prism_zip_root(names: set[str]) -> str | None:

@@ -249,15 +249,24 @@ def main() -> None:
         check(not (data / "escape.txt").exists() and not (data / "instances/escape.txt").exists(), "zip slip 거부")
         check(not any(i["name"] == "bad" for i in store.list()), "실패한 가져오기는 인스턴스를 남기지 않음")
 
-    print("3) Forge 모드팩은 미지원 안내")
+    print("3) Forge·NeoForge 모드팩도 가져옴, 모르는 로더는 안내")
     fz = data / "forge.mrpack"
     with zipfile.ZipFile(fz, "w") as z:
-        z.writestr("modrinth.index.json", json.dumps({"name": "f", "files": [], "dependencies": {"minecraft": "1.20.1", "forge": "47.2.0"}}))
-    try:
-        imp.import_file(str(fz))
-        check(False, "Forge 거부")
-    except RpcError as e:
-        check("forge" in str(e), f"Forge 거부: {e}")
+        z.writestr("modrinth.index.json", json.dumps({"name": "포지 팩", "files": [], "dependencies": {"minecraft": "1.20.1", "forge": "47.2.0"}}))
+        z.writestr("overrides/config/forge.toml", "x=1")
+    info = imp.inspect_import(str(fz))
+    check(info["loader"] == "forge" and info["supported"], f"Forge 미리 보기: {info}")
+    res = imp.import_file(str(fz))
+    check(res["instance"]["loader"] == "forge" and res["instance"]["loaderVersion"] == "47.2.0", f"Forge 인스턴스: {res['instance']}")
+    nz = data / "neo.mrpack"
+    with zipfile.ZipFile(nz, "w") as z:
+        z.writestr("modrinth.index.json", json.dumps({"name": "네오 팩", "files": [], "dependencies": {"minecraft": "26.3", "neoforge": "26.3.0.115"}}))
+    res = imp.import_file(str(nz))
+    check(res["instance"]["loader"] == "neoforge" and res["instance"]["loaderVersion"] == "26.3.0.115", f"NeoForge 인스턴스: {res['instance']}")
+    bz = data / "odd.mrpack"
+    with zipfile.ZipFile(bz, "w") as z:
+        z.writestr("modrinth.index.json", json.dumps({"name": "x", "files": [], "dependencies": {"minecraft": "26.3", "liteloader": "1"}}))
+    check(imp.inspect_import(str(bz))["loader"] == "vanilla", "모르는 로더 표시는 무시(바닐라로 봄)")
 
     print("4) Prism Launcher 인스턴스 폴더")
     pr = data / "PrismInst"

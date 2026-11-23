@@ -144,3 +144,5 @@
 .ni-addmods-log .lv-warn { color: #e8c468; }
 .ni-addmods-log .lv-error { color: #f07a6a; }
 .studio-addmods-dialog .studio-newinst { height: min(640px, calc(100vh - 170px)); }
+.ni-pack-loader { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.ni-pack-loader select { width: auto; }

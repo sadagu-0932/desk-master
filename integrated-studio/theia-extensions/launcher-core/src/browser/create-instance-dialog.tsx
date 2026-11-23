@@ -73,6 +73,8 @@ export class CreateInstanceDialog extends ReactDialog<CreateInstanceResult | und
     protected selected: string | undefined;
     protected loader: Loader = 'fabric';
     protected loaderInfo = new Map<string, LoaderVersions | 'loading' | Error>();
+    /** 모드팩 찾아보기 로더 필터 */
+    protected packLoader = 'all';
     protected loaderVersion: string | undefined;
     protected ccEnabled = true;
     protected installNow = true;
@@ -144,7 +146,7 @@ export class CreateInstanceDialog extends ReactDialog<CreateInstanceResult | und
             if (this.importBusy) { return '파일을 확인하는 중입니다.'; }
             if (!value) { return '가져올 파일이나 폴더를 고르세요.'; }
             if (this.importInfo && !this.importInfo.supported) {
-                return `${this.importInfo.loader} 로더용이라 가져올 수 없습니다(바닐라·Fabric만 지원).`;
+                return `${this.importInfo.loader} 로더용이라 가져올 수 없습니다(바닐라·Fabric·Quilt·NeoForge·Forge 지원).`;
             }
             if (this.importInfo?.needsKey) { return 'CurseForge 모드팩은 API 키가 필요합니다. 왼쪽 CurseForge 탭에서 키를 저장하세요.'; }
             return '';
@@ -154,8 +156,8 @@ export class CreateInstanceDialog extends ReactDialog<CreateInstanceResult | und
             if (!this.picked[this.source]) { return '모드팩을 고르세요.'; }
             if (!value) { return '버전을 고르세요.'; }
             const v = this.pickedVersion[this.source];
-            if (v && v.loaders.length && !v.loaders.some(l => l === 'fabric' || l === 'minecraft')) {
-                return `이 버전은 ${v.loaders.join(', ')}용입니다(바닐라·Fabric만 지원).`;
+            if (v && v.loaders.length && !v.loaders.some(l => l in LOADER_LABELS || l === 'minecraft')) {
+                return `이 버전은 ${v.loaders.join(', ')}용입니다(바닐라·Fabric·Quilt·NeoForge·Forge 지원).`;
             }
             return '';
         }
@@ -448,8 +450,16 @@ export class CreateInstanceDialog extends ReactDialog<CreateInstanceResult | und
             return <div className='ni-empty'>확인하는 중…</div>;
         }
         const picked = this.picked[platform];
+        const lf = this.packLoader === 'all' ? undefined : this.packLoader;
         return <section className='ni-platform'>
-            <ProjectBrowser manager={this.manager} platform={platform} kind='modpack' loader='fabric' picked={picked}
+            <label className='ni-pack-loader'>로더
+                <select className='theia-select' value={this.packLoader} aria-label='모드팩 로더'
+                    onChange={e => { this.packLoader = e.target.value; this.picked[platform] = undefined; this.pickedVersion[platform] = undefined; this.refresh(); }}>
+                    <option value='all'>전체</option>
+                    {(['fabric', 'neoforge', 'forge', 'quilt'] as const).map(l => <option key={l} value={l}>{LOADER_LABELS[l]}</option>)}
+                </select>
+            </label>
+            <ProjectBrowser key={`${platform}:${this.packLoader}`} manager={this.manager} platform={platform} kind='modpack' loader={lf} picked={picked}
                 onPick={h => {
                     if (h?.id === picked?.id) { return; }
                     this.picked[platform] = h; this.pickedVersion[platform] = undefined; this.autoName(); this.refresh();
@@ -459,10 +469,10 @@ export class CreateInstanceDialog extends ReactDialog<CreateInstanceResult | und
                     {picked?.url && <a href='#' className='ni-link' onClick={e => { e.preventDefault(); this.services.openUrl(picked.url!); }}>페이지 열기</a>}
                 </div>
                 {picked
-                    ? <VersionList manager={this.manager} platform={platform} projectId={picked.id} loader='fabric'
+                    ? <VersionList manager={this.manager} platform={platform} projectId={picked.id} loader={lf}
                         value={this.pickedVersion[platform]?.id}
                         onPick={v => { this.pickedVersion[platform] = v; this.refresh(); }} />
-                    : <div className='ni-empty'>위에서 모드팩을 고르세요. Fabric 모드팩만 보여 줍니다.</div>}
+                    : <div className='ni-empty'>위에서 모드팩을 고르세요. 위 [로더]로 Fabric·NeoForge·Forge·Quilt 만 볼 수 있습니다.</div>}
             </div>
         </section>;
     }
