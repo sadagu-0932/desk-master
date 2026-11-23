@@ -130,14 +130,21 @@ class LocalImporter:
             meta["importedFrom"] = e["key"]
             meta["importedLauncher"] = e["launcher"]
             meta["jvmArgs"] = _jvm_args(e.get("memoryMb"), e.get("javaArgs"))
-            if e["launcher"] == "official" and e.get("versionId") and e["loader"] != "vanilla":
-                meta["versionId"] = e["versionId"]      # 공식 .minecraft 에 이미 설치된 로더 버전
+            if e["launcher"] == "official" and e.get("versionId"):
+                meta["versionId"] = e["versionId"]      # 공식 .minecraft 에 이미 설치된 버전(로더 포함)
+                if e.get("officialInstalled"):
+                    meta["installed"] = True            # 공식 런처에 이미 있으니 여기서 받지 않는다
             if mode == "link":
+                # 원래 폴더를 그대로 쓰고, 이 앱에는 아무것도 설치하지 않는다
                 meta["linkedDir"] = str(game.resolve())
+                if e["launcher"] in ("prism", "multimc") and e.get("launcherInstanceId"):
+                    meta["launchVia"] = {"kind": e["launcher"], "root": e.get("launcherRoot"), "instance": e["launcherInstanceId"]}
+                    meta["installed"] = True            # 게임 파일은 그 런처가 갖고 있다
                 self.store.save(meta)
-            else:
-                self.store.save(meta)
-                self._copy(iid, game, e)
+                notify("progress", {"id": iid, "stage": "import", "text": "연결 완료", "done": True})
+                return self.store.get(iid)
+            self.store.save(meta)
+            self._copy(iid, game, e)
             warning = None
             if self.install:
                 notify("progress", {"id": iid, "stage": "import", "text": "게임·로더 설치 중(없을 때만)"})
@@ -191,6 +198,46 @@ class LocalImporter:
         except Exception:  # noqa: BLE001
             pass
 
+    def migrate_linked(self) -> int:
+        """예전 버전에서 연결한 Prism·MultiMC 인스턴스에 '원래 런처로 실행' 정보를 채운다(이 앱에 설치하지 않게)."""
+        n = 0
+        for m in self.store.list():
+            src = str(m.get("importedFrom") or "")
+            if not m.get("linkedDir") or m.get("launchVia") or not src.startswith(("prism:", "multimc:")):
+                continue
+            folder = Path(src.split(":", 1)[1])
+            if not (folder / "mmc-pack.json").is_file():
+                continue
+            root = launchers.guess_launcher_root(folder)
+            kind = "multimc" if src.startswith("multimc:") or (root and (root / "multimc.cfg").is_file()) else "prism"
+            meta = dict(m)
+            meta["launchVia"] = {"kind": kind, "root": str(root) if root else None, "instance": folder.name}
+            meta["installed"] = True
+            self.store.save(meta)
+            n += 1
+        return n
+
+    # ---------- 연결한 Prism·MultiMC 인스턴스: 그 런처로 바로 실행 ----------
+    def launch_external(self, iid: str) -> dict[str, Any]:
+        meta = self.store.get(iid)
+        via = meta.get("launchVia") or {}
+        kind = via.get("kind")
+        if kind not in ("prism", "multimc"):
+            raise RpcError("이 인스턴스는 원래 런처로 바로 실행할 수 없습니다.")
+        exe = find_launcher_exe(kind, Path(via["root"]) if via.get("root") else None)
+        name = launchers.LAUNCHER_NAMES[kind]
+        if not exe:
+            raise RpcError(f"{name} 실행 파일을 찾지 못했습니다. {name}이(가) 설치돼 있는지 확인하세요.")
+        args = [str(exe)]
+        if via.get("root"):
+            args += ["--dir", str(via["root"])]
+        args += ["--launch", str(via["instance"])]
+        try:
+            subprocess.Popen(args, cwd=str(Path(exe).parent), creationflags=getattr(subprocess, "DETACHED_PROCESS", 0))
+        except OSError as e:
+            raise RpcError(f"{name}을(를) 실행하지 못했습니다: {e}") from e
+        return {"ok": True, "launcher": name, "exe": str(exe)}
+
     # ---------- 연결한 인스턴스: 다른 런처가 쓰는 중인지 ----------
     def in_use(self, iid: str) -> dict[str, Any]:
         meta = self.store.get(iid)
@@ -220,6 +267,27 @@ class LocalImporter:
         except OSError:
             pass
         return {"linked": True, "busy": bool(reasons), "reasons": reasons, "warnings": warnings, "dir": str(game)}
+
+
+def find_launcher_exe(kind: str, root: Path | None) -> Path | None:
+    """Prism Launcher·MultiMC 실행 파일. 포터블(데이터 폴더 안) → 설치판 기본 위치 → PATH."""
+    names = ["prismlauncher.exe", "PrismLauncher.exe", "prismlauncher"] if kind == "prism" else ["MultiMC.exe", "multimc.exe", "MultiMC"]
+    cands: list[Path] = []
+    if root:
+        cands += [root / n for n in names]
+    if kind == "prism":
+        for env in ("LOCALAPPDATA", "PROGRAMFILES", "PROGRAMFILES(X86)"):
+            base = os.environ.get(env)
+            if base:
+                cands += [Path(base) / sub / n for sub in ("Programs/PrismLauncher", "PrismLauncher") for n in names[:2]]
+    for c in cands:
+        if c.is_file():
+            return c
+    for n in names:
+        w = shutil.which(n)
+        if w:
+            return Path(w)
+    return None
 
 
 def _locked(p: Path) -> bool:

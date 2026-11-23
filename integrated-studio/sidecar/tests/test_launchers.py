@@ -336,3 +336,55 @@ def test_manage_duplicate_memory_delete_linked(world, monkeypatch):
     store.delete(linked["id"])                                     # 연결 인스턴스 삭제 = 목록에서만
     assert src.is_dir() and snapshot(src) == before                 # 원본 폴더는 그대로
     assert all(i["id"] != linked["id"] for i in store.list())
+
+
+def test_linked_prism_launches_via_prism_without_install(world, monkeypatch, tmp_path):
+    import os, stat, subprocess as sp
+    imp, store, prism = world["imp"], world["store"], world["prism"]
+    # 포터블 Prism: 데이터 폴더에 실행 파일. 실행되면 받은 인자를 파일에 적는다
+    exe = prism / ("prismlauncher.exe" if os.name == "nt" else "prismlauncher")
+    out = tmp_path / "args.txt"
+    calls = []
+    exe.write_text("#!/bin/sh\n", "utf-8")
+    exe.chmod(exe.stat().st_mode | stat.S_IEXEC)
+    world["installed"].clear()
+    e = by_name(imp.detect(), "Fabric 팩")
+    inst = imp.import_many([{"key": e["key"]}], "link")["imported"][0]
+    assert world["installed"] == []                                   # 연결은 이 앱에 아무것도 설치하지 않음
+    assert inst["installed"] is True and inst["launchVia"]["kind"] == "prism"
+    assert inst["launchVia"]["instance"] == "Fabric 팩" and Path(inst["launchVia"]["root"]) == prism
+    monkeypatch.setattr(sp, "Popen", lambda args, **kw: calls.append(args))
+    r = imp.launch_external(inst["id"])
+    assert r["ok"] and calls[0][0] == str(exe)
+    assert calls[0][1:] == ["--dir", str(prism), "--launch", "Fabric 팩"]
+    # 실행 파일이 없으면 이유를 알려 줌
+    exe.unlink()
+    monkeypatch.setattr("shutil.which", lambda n: None)
+    monkeypatch.delenv("LOCALAPPDATA", raising=False)
+    monkeypatch.delenv("PROGRAMFILES", raising=False)
+    with pytest.raises(RpcError) as err:
+        imp.launch_external(inst["id"])
+    assert "Prism Launcher" in str(err.value)
+
+
+def test_migrate_old_linked_instance(world):
+    imp, store = world["imp"], world["store"]
+    e = by_name(imp.detect(), "Fabric 팩")
+    inst = imp.import_many([{"key": e["key"]}], "link")["imported"][0]
+    meta = store.get(inst["id"])
+    meta.pop("launchVia")
+    meta["installed"] = False                                         # 예전 버전에서 연결한 상태
+    store.save(meta)
+    assert imp.migrate_linked() == 1
+    m = store.get(inst["id"])
+    assert m["launchVia"]["kind"] == "prism" and m["installed"] is True
+    assert imp.migrate_linked() == 0
+
+
+def test_store_change_notifications(tmp_path):
+    store = InstanceStore(tmp_path)
+    seen = []
+    store.on_change = lambda: seen.append(1)
+    i = store.create("알림", "26.3", "vanilla")
+    store.rename(i["id"], "바뀜")
+    assert len(seen) >= 2

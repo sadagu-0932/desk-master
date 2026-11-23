@@ -42,6 +42,7 @@ export class InstanceManager {
     protected _targetId: string | undefined;
     protected _logs: LogEvent[] = [];
     protected _progress = new Map<string, Progress>();
+    protected refreshTimer: ReturnType<typeof setTimeout> | undefined;
     protected _workspaceInstanceId: string | undefined;
     protected _ready: Promise<void>;
     protected _error: string | undefined;
@@ -167,6 +168,11 @@ export class InstanceManager {
             }
             case 'progress':
                 this.handleProgress(params as ProgressEvent);
+                break;
+            case 'instances_changed':
+                // 만들기·불러오기·복제·삭제(서버 패널의 불러오기 포함) → 껐다 켜지 않아도 바로 목록에 반영
+                clearTimeout(this.refreshTimer);
+                this.refreshTimer = setTimeout(() => this.refresh(), 150);
                 break;
             case 'confirm':
                 this.handleConfirm(params as ConfirmEvent);

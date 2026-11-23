@@ -175,8 +175,19 @@ def read_prism_instance(folder: Path, launcher: str = "prism") -> dict[str, Any]
         last = _iso(int(cfg.get("lastLaunchTime", "0")) / 1000)
     except ValueError:
         pass
+    # 그 런처로 바로 실행할 때 쓸 정보: 데이터 폴더(prismlauncher.cfg·multimc.cfg 가 있는 곳)와 인스턴스 id(폴더 이름)
+    root = guess_launcher_root(folder)
     return _entry(launcher, cfg.get("name") or folder.name, folder, game, comps.get("net.minecraft"), loader, lver,
-                  last, mem, java)
+                  last, mem, java, launcherInstanceId=folder.name, launcherRoot=str(root) if root else None)
+
+
+def guess_launcher_root(instance_folder: Path) -> Path | None:
+    """인스턴스 폴더에서 Prism·MultiMC 데이터 폴더를 찾는다(보통 <데이터>/instances/<인스턴스>)."""
+    for cand in (instance_folder.parent.parent, instance_folder.parent):
+        if any((cand / n).is_file() for n in ("prismlauncher.cfg", "multimc.cfg", "accounts.json")) or \
+                any((cand / n).is_file() for n in ("prismlauncher.exe", "MultiMC.exe", "multimc.exe")):
+            return cand
+    return None
 
 
 def _prism_instance_dirs(root: Path) -> list[Path]:
@@ -207,6 +218,7 @@ def detect_prism(roots: Iterable[Path], launcher: str = "prism") -> list[dict[st
                 if folder.is_dir() and not folder.name.startswith(("_", ".")):
                     e = read_prism_instance(folder, launcher)
                     if e:
+                        e["launcherRoot"] = str(root)
                         out.append(e)
     return out
 
@@ -403,8 +415,10 @@ def detect_official(roots: Iterable[Path]) -> list[dict[str, Any]]:
             m = re.search(r"-Xmx(\d+)([GgMm])", p.get("javaArgs") or "")
             if m:
                 mem = int(m.group(1)) * (1024 if m.group(2).lower() == "g" else 1)
+            installed = bool(vid) and (mc / "versions" / vid / f"{vid}.json").is_file()
             e = _entry("official", name, game, game if game.is_dir() else None, version, loader, lver,
-                       _parse_iso(p.get("lastUsed")), mem, p.get("javaArgs"), profileKey=key, versionId=vid)
+                       _parse_iso(p.get("lastUsed")), mem, p.get("javaArgs"), profileKey=key, versionId=vid,
+                       officialInstalled=installed)
             if note:
                 e["note"] = note
                 e["supported"] = False

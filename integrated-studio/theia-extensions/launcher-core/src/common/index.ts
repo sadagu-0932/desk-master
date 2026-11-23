@@ -31,6 +31,8 @@ export interface Instance {
     linkedDir?: string | null;
     /** 공식 런처 항목에 넣는 JVM 인자(최대 메모리 -Xmx 등) */
     jvmArgs?: string | null;
+    /** 연결한 Prism·MultiMC 인스턴스: 그 런처로 바로 실행(이 앱에 설치하지 않음) */
+    launchVia?: { kind: 'prism' | 'multimc'; root?: string | null; instance: string } | null;
 }
 
 export interface GameVersion {

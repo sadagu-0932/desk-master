@@ -32,6 +32,7 @@ def main() -> None:
     data_dir = Path(args.data).resolve()
     data_dir.mkdir(parents=True, exist_ok=True)
     store = InstanceStore(data_dir)
+    store.on_change = lambda: notify("instances_changed", {})   # 만들기·불러오기·삭제 즉시 목록에 반영
     runner = Runner(data_dir, store)
     atexit.register(runner.shutdown)
     packs = Packs(store, runner.mc_dir)
@@ -42,6 +43,10 @@ def main() -> None:
     official = OfficialLauncherRpc(store, runner.mc_dir)  # 공식 런처 연동(M8-1, Windows 전용)
     e4mc = E4mcHost(store, install_fabric=runner.install_fabric_for, register_host=official.register_host_profile)
     local_import = LocalImporter(store, install=runner.install)
+    try:
+        local_import.migrate_linked()
+    except Exception as e:  # noqa: BLE001
+        print(f"[import] 연결 인스턴스 정리 실패: {e}", file=sys.stderr)
     atexit.register(official.shutdown)
     # 설정 동기화(게임 설정·서버 목록·공식 런처 항목): 시작 때·30초마다·게임이 닫힌 뒤
     settings_sync = SettingsSync(store, data_dir, official)
@@ -130,6 +135,7 @@ def main() -> None:
         "import_preview": local_import.preview,
         "import_run": local_import.import_many,
         "import_in_use": local_import.in_use,
+        "launch_external": local_import.launch_external,
         "sync_now": settings_sync.sync_now,
     }
     background = {"install", "duplicate_instance", "list_versions", "list_loader_versions", "server_start", "server_stop", "generate_reports", "mod_new", "mod_build", "read_commands", "inspect_import", "import_file",

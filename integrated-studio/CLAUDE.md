@@ -165,6 +165,10 @@ Theia 확장은 TypeScript로 작성한다. Python 쪽은 `sidecar/` 아래에�
 - 결정(2026-11-23, 사용자): **다른 곳의 인스턴스는 폴더를 그대로 두고 여기서 실행·관리**(불러오기 기본 = 연결, 새 인스턴스 창의 Prism 폴더도 연결).
   연결 인스턴스 삭제 = 목록에서만 지움(원래 폴더 그대로). 인스턴스 관리 메뉴(카드 … ·오른쪽 클릭): 실행·폴더 열기(파일 탐색기)·작업실·이름 바꾸기·
   복제(계정 파일 제외)·메모리 설정(jvmArgs -Xmx)·모드 추가·서버로 열기·CommandCrafter·등록 해제·삭제. RPC `duplicate_instance`·`set_instance_memory`·`open_instance_folder`.
+- 결정(2026-11-23, 사용자): **연결한 외부 인스턴스는 이 앱에 아무것도 설치하지 않는다.** Prism·MultiMC 인스턴스는 그 런처로 바로 실행
+  (`launch_external`: `<exe> --dir <데이터 폴더> --launch <인스턴스 폴더 이름>`, 포터블·설치판·PATH 에서 exe 찾기 — 공식 런처 전용 규칙의 예외).
+  공식 런처 항목은 이미 있는 버전이면 설치 안 함. CurseForge·Modrinth App 은 외부 실행 방법이 없어 공식 런처로(없는 버전만 실행할 때 설치).
+  예전에 연결한 인스턴스는 시작할 때 `migrate_linked` 로 정보 채움. 인스턴스가 바뀌면 사이드카 `instances_changed` 알림 → 목록 즉시 새로고침.
 
 ### M9. 패키징 (내 PC용)
 - electron-builder로 Windows 설치 파일 또는 압축 실행판을 만든다. **배포하지 않는다** — 개인 사용 전용.

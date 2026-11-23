@@ -48,6 +48,15 @@ class InstanceStore:
     def __init__(self, data_dir: Path):
         self.root = (data_dir / "instances").resolve()
         self.root.mkdir(parents=True, exist_ok=True)
+        # 인스턴스가 생기거나 바뀌거나 지워지면 부른다(main.py 가 프런트에 instances_changed 알림을 보내게 연결)
+        self.on_change: Any = None
+
+    def _changed(self) -> None:
+        if self.on_change:
+            try:
+                self.on_change()
+            except Exception:  # noqa: BLE001 - 알림 실패가 저장을 막으면 안 된다
+                pass
 
     # ---------- 조회 ----------
     def dir_of(self, inst_id: str) -> Path:
@@ -86,6 +95,7 @@ class InstanceStore:
         d = self.dir_of(meta["id"])
         clean = {k: v for k, v in meta.items() if k not in ("path", "metaDir")}
         (d / "instance.json").write_text(json.dumps(clean, ensure_ascii=False, indent=2), "utf-8")
+        self._changed()
 
     # ---------- 만들기·지우기 ----------
     def create(self, name: str, version: str, loader: str, loader_version: str | None = None,
@@ -139,6 +149,7 @@ class InstanceStore:
         write_work_mode(d, meta["workMode"])
         (d / ".gitignore").write_text(INSTANCE_GITIGNORE, "utf-8")
         git_init(d)
+        self._changed()
         return self.get(inst_id)
 
     def rename(self, inst_id: str, name: str) -> dict[str, Any]:
@@ -154,6 +165,7 @@ class InstanceStore:
         """앱의 인스턴스 폴더만 휴지통으로. "연결"한 인스턴스의 원본 게임 폴더(linkedDir)는 건드리지 않는다."""
         d = self.dir_of(inst_id)
         trash(d, self.root)
+        self._changed()
 
     # 복제할 때 옮기는 게임 항목(로그·크래시·서버·git·설정 파일은 새로)
     DUPLICATE_SKIP = {"instance.json", ".git", "logs", "crash-reports", "servers", "screenshots", ".theia", ".fabric",

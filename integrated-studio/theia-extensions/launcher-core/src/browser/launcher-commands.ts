@@ -235,6 +235,10 @@ export class LauncherCommandContribution implements CommandContribution {
             this.messages.info(`${inst.name}은(는) 이미 실행 중입니다. 다시 켜려면 게임 창을 닫은 뒤 실행하세요.`);
             return;
         }
+        if (inst.launchVia) {
+            await this.externalPlay(inst);
+            return;
+        }
         if (inst.linkedDir) {
             // 다른 런처 폴더를 "연결"한 인스턴스: 그 런처나 게임이 이 폴더를 쓰는 중이면 실행하지 않는다(M10)
             const use = await this.manager.call<{ busy: boolean; reasons: string[]; warnings?: string[] }>('import_in_use', { id: inst.id });
@@ -269,11 +273,26 @@ export class LauncherCommandContribution implements CommandContribution {
         }
     }
 
+    /** 연결한 Prism·MultiMC 인스턴스: 원래 런처로 바로 실행. 이 앱에는 아무것도 설치하지 않는다. */
+    protected async externalPlay(inst: Instance): Promise<void> {
+        const name = inst.launchVia!.kind === 'prism' ? 'Prism Launcher' : 'MultiMC';
+        const use = await this.manager.call<{ busy: boolean; reasons: string[] }>('import_in_use', { id: inst.id });
+        if (use.busy) {
+            this.messages.warn(`${inst.name}: 이미 이 폴더로 게임이 켜져 있습니다. ${use.reasons.join(' ')}`);
+            return;
+        }
+        await this.manager.call('launch_external', { id: inst.id });
+        await this.manager.call('official_tail_log', { id: inst.id }).catch(() => undefined);   // 게임 로그·실행 상태
+        await this.manager.setTarget(inst.id);
+        await this.registry.executeCommand(TaskCommandIds.GAME_LOG_TOGGLE).catch(() => undefined);
+        this.messages.info(`${name}(으)로 '${inst.name}'을(를) 실행합니다. 원래 폴더·설정 그대로이고 이 앱에는 아무것도 설치하지 않습니다.`);
+    }
+
     /** 인스턴스 관리 메뉴(카드의 … 버튼·오른쪽 클릭) */
     protected async manage(i: Instance): Promise<void> {
         const running = this.manager.isRunning(i.id);
         const items: Array<{ label: string; description?: string; cmd: string }> = [
-            { label: '$(play) 실행', description: running ? '실행 중' : '공식 런처로', cmd: StudioCommands.LAUNCH.id },
+            { label: '$(play) 실행', description: running ? '실행 중' : i.launchVia ? `${i.launchVia.kind === 'prism' ? 'Prism Launcher' : 'MultiMC'}로(원래 런처)` : '공식 런처로', cmd: StudioCommands.LAUNCH.id },
             { label: '$(folder) 폴더 열기', description: i.linkedDir ? `연결된 원래 폴더: ${i.path}` : i.path, cmd: StudioCommands.OPEN_FOLDER.id },
             { label: '$(window) 작업실에서 열기', cmd: StudioCommands.OPEN_WORKSPACE.id },
             { label: '$(edit) 이름 바꾸기', cmd: StudioCommands.RENAME.id },

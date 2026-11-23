@@ -404,9 +404,14 @@ class Importers:
         game = next((folder / d for d in (".minecraft", "minecraft") if (folder / d).is_dir()), None)
         if not game:
             raise RpcError("인스턴스 안에 .minecraft 폴더가 없습니다.")
+        from .launchers import guess_launcher_root
         meta = self.store.get(inst_id)
         meta["linkedDir"] = str(game.resolve())
         meta["importedFrom"] = f"prism:{folder.resolve()}"
+        root = guess_launcher_root(folder)
+        kind = "multimc" if root and (root / "multimc.cfg").is_file() else "prism"
+        meta["launchVia"] = {"kind": kind, "root": str(root) if root else None, "instance": folder.name}
+        meta["installed"] = True   # 게임 파일은 원래 런처가 갖고 있다 — 여기서 받지 않는다
         self.store.save(meta)
         return {"downloaded": 0, "failed": [], "manual": [], "extracted": 0, "linked": str(game.resolve())}
 

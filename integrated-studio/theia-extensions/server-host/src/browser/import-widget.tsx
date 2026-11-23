@@ -184,7 +184,9 @@ export class ImportWidget extends ReactWidget {
     protected renderDone(): React.ReactNode {
         const r = this.result!;
         return <>
-            <div className='sh-note'>{r.imported.length}개를 불러왔습니다{r.failed.length ? `, ${r.failed.length}개 실패` : ''}. 버전·로더는 필요할 때만 설치했습니다.</div>
+            <div className='sh-note'>{r.imported.length}개를 불러왔습니다{r.failed.length ? `, ${r.failed.length}개 실패` : ''}. {this.mode === 'link'
+                ? '원래 폴더를 그대로 연결했고 이 앱에는 아무것도 설치하지 않았습니다. Prism·MultiMC 인스턴스는 실행하면 그 런처로 바로 켭니다.'
+                : '버전·로더는 필요할 때만 설치했습니다.'}</div>
             {r.imported.map(i => <section key={i.id} className='sh-card'>
                 <div className='sh-card-head'><b className='sh-name'>{i.name}</b><span className='sh-muted'>{i.version} · {LOADER_LABELS[i.loader] ?? i.loader}</span></div>
                 {i.linkedDir && <div className='sh-small sh-muted'>연결: {i.linkedDir}</div>}
