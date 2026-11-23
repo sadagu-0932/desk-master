@@ -49,6 +49,8 @@ interface ImportReport {
     extracted: number;
     failed: string[];
     manual: string[];
+    /** 연결한 폴더(받은 것 없음) */
+    linked?: string;
 }
 
 /** 명령 인자는 인스턴스 id(문자열)이거나 없으면 현재 인스턴스 */
@@ -371,7 +373,7 @@ export class LauncherCommandContribution implements CommandContribution {
             },
             pickFolder: async () => {
                 const uri = await this.fileDialog.showOpenDialog({
-                    title: 'Prism Launcher·MultiMC 인스턴스 폴더', canSelectFiles: false, canSelectFolders: true,
+                    title: '연결할 인스턴스 폴더 (Prism·MultiMC·CurseForge·Modrinth·.minecraft)', canSelectFiles: false, canSelectFolders: true,
                 });
                 return uri ? FileUri.fsPath(uri) : undefined;
             },
@@ -409,10 +411,10 @@ export class LauncherCommandContribution implements CommandContribution {
     /** 가져오기는 뒤에서 진행하고 결과(받은 수, 실패, 직접 받아야 할 모드)를 알려 준다 */
     protected async runImport(result: Exclude<CreateInstanceResult, { kind: 'custom' }>): Promise<void> {
         const look = { name: result.look.name ?? null, group: result.look.group ?? null, icon: result.look.icon ?? null };
-        const progress = await this.messages.showProgress({ text: '모드팩 가져오는 중…' });
+        const progress = await this.messages.showProgress({ text: result.kind === 'file' ? '가져오는 중…' : '모드팩 가져오는 중…' });
         try {
             const res = result.kind === 'file'
-                ? await this.manager.call<ImportReport>('import_file', { path: result.path, ...look })
+                ? await this.manager.call<ImportReport>('import_file', { path: result.path, version: result.version ?? null, ...look })
                 : result.kind === 'modrinth'
                     ? await this.manager.call<ImportReport>('modrinth_install_modpack', { version_id: result.versionId, ...look })
                     : await this.manager.call<ImportReport>('cf_install_modpack', { mod_id: result.modId, file_id: result.fileId, ...look });
@@ -426,8 +428,11 @@ export class LauncherCommandContribution implements CommandContribution {
                 res.failed.length ? `받지 못한 파일 ${res.failed.length}개` : '',
                 res.manual.length ? `직접 받아야 할 모드 ${res.manual.length}개(제작자가 외부 다운로드를 막음)` : '',
             ].filter(Boolean).join(', ');
-            const msg = `'${res.instance.name}' 가져오기 완료 — 파일 ${res.downloaded}개 받음, ${res.extracted}개 풀어 넣음.`
-                + (extra ? ` ${extra}: 목록은 게임 로그 탭에 있습니다.` : ' F5로 실행하면 게임 파일을 받습니다.');
+            const msg = res.linked
+                ? `'${res.instance.name}'을(를) 연결했습니다 — 원래 폴더(${res.linked}) 그대로이고 아무것도 받지 않았습니다.`
+                    + (res.instance.launchVia ? ` 실행하면 ${res.instance.launchVia.kind === 'prism' ? 'Prism Launcher' : 'MultiMC'}가 켭니다.` : '')
+                : `'${res.instance.name}' 가져오기 완료 — 파일 ${res.downloaded}개 받음, ${res.extracted}개 풀어 넣음.`
+                    + (extra ? ` ${extra}: 목록은 게임 로그 탭에 있습니다.` : ' F5로 실행하면 게임 파일을 받습니다.');
             const open = '작업실에서 열기';
             const a = extra ? await this.messages.warn(msg, open) : await this.messages.info(msg, open);
             if (a === open) {

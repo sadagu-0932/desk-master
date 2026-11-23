@@ -14,7 +14,7 @@ export interface InstanceLook {
 
 export type CreateInstanceResult =
     | { kind: 'custom'; options: CreateInstanceOptions; installNow: boolean }
-    | { kind: 'file'; path: string; look: InstanceLook }
+    | { kind: 'file'; path: string; look: InstanceLook; version?: string }
     | { kind: 'modrinth'; versionId: string; look: InstanceLook }
     | { kind: 'curseforge'; modId: string; fileId: string; look: InstanceLook };
 
@@ -26,7 +26,10 @@ export interface CreateInstanceServices {
 }
 
 interface ImportInfo {
-    kind: 'mrpack' | 'curseforge' | 'prism' | 'prism-zip';
+    kind: 'mrpack' | 'curseforge' | 'prism' | 'prism-zip' | 'folder';
+    launcherName?: string;
+    needsVersion?: boolean;
+    note?: string;
     name: string;
     version?: string;
     loader: string;
@@ -42,7 +45,7 @@ type VersionType = GameVersion['type'];
 
 const TYPE_LABEL: Record<VersionType, string> = { release: '정식', snapshot: '스냅샷', old_beta: '베타', old_alpha: '알파' };
 const ICON_COLORS = ['#4f7a2a', '#c95a1c', '#3a6a8a', '#6a5a8a', '#8a6a2a', '#2a7a6a', '#8a3a4a', '#5a5f57'];
-const KIND_LABEL: Record<ImportInfo['kind'], string> = { mrpack: 'Modrinth 모드팩 (.mrpack)', curseforge: 'CurseForge 모드팩 (.zip)', prism: 'Prism Launcher·MultiMC 인스턴스(연결)', 'prism-zip': 'Prism Launcher·MultiMC 내보내기 (.zip)' };
+const KIND_LABEL: Record<ImportInfo['kind'], string> = { mrpack: 'Modrinth 모드팩 (.mrpack)', curseforge: 'CurseForge 모드팩 (.zip)', prism: 'Prism Launcher·MultiMC 인스턴스(연결)', 'prism-zip': 'Prism Launcher·MultiMC 내보내기 (.zip)', folder: '인스턴스 폴더(연결)' };
 
 const LOADERS: { id: Loader; label: string; available: boolean }[] = [
     { id: 'vanilla', label: '없음 (바닐라)', available: true },
@@ -73,6 +76,8 @@ export class CreateInstanceDialog extends ReactDialog<CreateInstanceResult | und
     protected selected: string | undefined;
     protected loader: Loader = 'fabric';
     protected loaderInfo = new Map<string, LoaderVersions | 'loading' | Error>();
+    /** 버전을 모르는 폴더를 연결할 때 사용자가 적는 게임 버전 */
+    protected importVersion = '';
     /** 모드팩 찾아보기 로더 필터 */
     protected packLoader = 'all';
     protected loaderVersion: string | undefined;
@@ -128,7 +133,8 @@ export class CreateInstanceDialog extends ReactDialog<CreateInstanceResult | und
                     },
                 } : undefined;
             case 'file':
-                return this.importPath && this.importInfo ? { kind: 'file', path: this.importPath, look: this.look } : undefined;
+                return this.importPath && this.importInfo
+                    ? { kind: 'file', path: this.importPath, look: this.look, version: this.importVersion.trim() || undefined } : undefined;
             case 'modrinth': {
                 const v = this.pickedVersion.modrinth;
                 return v ? { kind: 'modrinth', versionId: v.id, look: this.look } : undefined;
@@ -145,6 +151,9 @@ export class CreateInstanceDialog extends ReactDialog<CreateInstanceResult | und
         if (this.source === 'file') {
             if (this.importBusy) { return '파일을 확인하는 중입니다.'; }
             if (!value) { return '가져올 파일이나 폴더를 고르세요.'; }
+            if (this.importInfo?.needsVersion && !/^\d+\.\d+(\.\d+)?$/.test(this.importVersion.trim())) {
+                return '이 폴더의 게임 버전을 찾지 못했습니다. 게임 버전을 적어 주세요(예: 26.3).';
+            }
             if (this.importInfo && !this.importInfo.supported) {
                 return `${this.importInfo.loader} 로더용이라 가져올 수 없습니다(바닐라·Fabric·Quilt·NeoForge·Forge 지원).`;
             }
@@ -254,6 +263,7 @@ export class CreateInstanceDialog extends ReactDialog<CreateInstanceResult | und
         if (!p) { return; }
         this.importPath = p;
         this.importInfo = undefined;
+        this.importVersion = '';
         this.importError = '';
         this.importBusy = true;
         this.refresh();
@@ -418,25 +428,30 @@ export class CreateInstanceDialog extends ReactDialog<CreateInstanceResult | und
                     <span className='codicon codicon-file-zip' aria-hidden='true' /> 모드팩 파일 고르기 (.mrpack / .zip)
                 </button>
                 <button className='theia-button secondary' onClick={() => this.choose(true)}>
-                    <span className='codicon codicon-folder' aria-hidden='true' /> Prism·MultiMC 인스턴스 폴더 고르기
+                    <span className='codicon codicon-folder' aria-hidden='true' /> 인스턴스 폴더 연결 (어느 런처든)
                 </button>
             </div>
             <ul className='ni-file-kinds ni-muted'>
                 <li><b>.mrpack</b> — Modrinth 모드팩 파일</li>
                 <li><b>.zip</b> — CurseForge 모드팩 파일 (안의 모드를 받으려면 CurseForge API 키 필요)</li>
-                <li><b>폴더</b> — Prism Launcher·MultiMC의 인스턴스 폴더. 폴더는 원래 자리에 그대로 두고 여기서 실행·관리합니다(연결). 다른 런처들을 한꺼번에 찾으려면 서버 패널의 [인스턴스 불러오기]</li>
+                <li><b>폴더</b> — Prism·MultiMC·CurseForge·Modrinth App 인스턴스 폴더, 또는 mods·saves 가 든 게임 폴더(.minecraft).
+                    폴더는 원래 자리에 그대로 두고 바로 연결합니다 — 아무것도 받지 않습니다. Prism·MultiMC 는 실행하면 그 런처가 켭니다.</li>
             </ul>
             {this.importBusy && <div className='ni-empty'>확인하는 중…</div>}
             {this.importError && <div className='ni-empty ni-error'>{this.importError}</div>}
             {info && this.importPath && <div className={'ni-file-card' + (info.supported ? '' : ' bad')}>
-                <div className='ni-subtitle'>{KIND_LABEL[info.kind]}</div>
+                <div className='ni-subtitle'>{info.kind === 'folder' ? `${info.launcherName ?? '폴더'} 인스턴스 (연결 — 받는 것 없음)` : KIND_LABEL[info.kind]}</div>
                 <h3>{info.name}{info.packVersion ? <span className='ni-muted'> {info.packVersion}</span> : ''}</h3>
                 <div className='studio-tags'>
                     <span className='ni-type'>Java {info.version ?? '?'}</span>
                     <span className={'ni-type' + (info.supported ? ' t-release' : ' t-snapshot')}>{info.loader}{info.loaderVersion ? ` ${info.loaderVersion}` : ''}</span>
-                    <span className='ni-type'>{info.kind === 'prism' ? `모드 ${info.files}개` : `받을 파일 ${info.files}개`}</span>
+                    <span className='ni-type'>{info.kind === 'prism' || info.kind === 'folder' ? `모드 ${info.files}개` : `받을 파일 ${info.files}개`}</span>
                 </div>
                 <div className='ni-mono ni-muted ni-path' title={this.importPath}>{this.importPath}</div>
+                {info.needsVersion && <label className='ni-field'>게임 버전(로그에서 못 찾음)
+                    <input className='theia-input' placeholder='예: 26.3' value={this.importVersion}
+                        onChange={e => { this.importVersion = e.target.value; this.refresh(); }} />
+                </label>}
             </div>}
         </section>;
     }

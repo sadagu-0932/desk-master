@@ -450,11 +450,52 @@ def detect_all(roots: dict[str, list[Path]] | None = None) -> list[dict[str, Any
     return out
 
 
+_LOG_PATTERNS = [
+    (re.compile(r"Loading Minecraft (\S+) with Fabric Loader (\S+)"), "fabric"),
+    (re.compile(r"Loading Minecraft (\S+) with Quilt Loader (\S+)"), "quilt"),
+]
+
+
+def version_from_logs(game: Path) -> tuple[str | None, str, str | None]:
+    """게임 폴더의 로그로 (게임 버전, 로더, 로더 버전)을 알아낸다. 모르면 (None, "vanilla", None)."""
+    texts = []
+    for f in (game / "logs" / "latest.log", game / "logs" / "debug.log"):
+        try:
+            if f.is_file():
+                texts.append(f.read_bytes()[:400_000].decode("utf-8", "replace"))
+        except OSError:
+            continue
+    text = "\n".join(texts)
+    for rx, loader in _LOG_PATTERNS:
+        m = rx.search(text)
+        if m:
+            return m.group(1), loader, m.group(2)
+    mc = re.search(r"--fml\.mcVersion,? (\S+?)[,\s\]]", text)
+    nf = re.search(r"--fml\.neoForgeVersion,? (\S+?)[,\s\]]", text)
+    fg = re.search(r"--fml\.forgeVersion,? (\S+?)[,\s\]]", text)
+    if mc and nf:
+        return mc.group(1), "neoforge", nf.group(1)
+    if mc and fg:
+        return mc.group(1), "forge", fg.group(1)
+    m = re.search(r"Minecraft Version:? (\d+\.\d+(?:\.\d+)?)", text) or re.search(r"Starting minecraft (?:client|server) version (\S+)", text)
+    if m:
+        return m.group(1), "vanilla", None
+    return None, "vanilla", None
+
+
 def inspect_folder(path: Path) -> list[dict[str, Any]]:
-    """직접 고른 폴더: 인스턴스 하나, 또는 인스턴스들이 든 폴더."""
+    """직접 고른 폴더: 인스턴스 하나, 또는 인스턴스들이 든 폴더. 어느 런처 것이든(또는 그냥 게임 폴더) 알아본다."""
     path = Path(path)
     if not path.is_dir():
         return []
+    # Prism·MultiMC 인스턴스 안의 게임 폴더(.minecraft / minecraft)를 고른 경우 → 인스턴스로
+    if path.name in (".minecraft", "minecraft") and (path.parent / "mmc-pack.json").is_file():
+        path = path.parent
+    # Modrinth App 프로필 폴더 하나(<앱>/profiles/<이름>)
+    if path.parent.name == "profiles" and (path.parent.parent / "app.db").is_file():
+        hits = [e for e in detect_modrinth([path.parent.parent]) if Path(e["source"]).resolve() == path.resolve()]
+        if hits:
+            return [{**hits[0], "key": f"modrinth:{hits[0]['source']}"}]
     for reader in (read_prism_instance, read_cf_instance):
         e = reader(path)
         if e:
@@ -477,12 +518,14 @@ def inspect_folder(path: Path) -> list[dict[str, Any]]:
         for e in many:
             e["key"] = f"{e['launcher']}:{e['source']}"
         return many
-    # 그냥 게임 폴더(.minecraft 같은): 버전은 사용자가 고른다
+    # 그냥 게임 폴더(.minecraft 같은): 로그에서 버전을 찾고, 없으면 사용자가 고른다
     game = path / ".minecraft" if (path / ".minecraft").is_dir() else path
-    if any((game / d).exists() for d in ("mods", "saves", "options.txt", "resourcepacks")):
-        e = _entry("folder", path.name, path, game, None, "vanilla")
-        e["supported"] = False
-        e["note"] = "게임 버전을 알 수 없어 직접 골라야 합니다."
+    if any((game / d).exists() for d in ("mods", "saves", "options.txt", "resourcepacks", "logs")):
+        version, loader, lver = version_from_logs(game)
+        e = _entry("folder", path.name, path, game, version, loader, lver)
+        if not version:
+            e["supported"] = False
+            e["note"] = "게임 버전을 로그에서 찾지 못해 직접 골라야 합니다."
         e["key"] = f"folder:{path}"
         return [e]
     return []

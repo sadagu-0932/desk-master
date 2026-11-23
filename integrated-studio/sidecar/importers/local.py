@@ -137,6 +137,11 @@ class LocalImporter:
             if mode == "link":
                 # 원래 폴더를 그대로 쓰고, 이 앱에는 아무것도 설치하지 않는다
                 meta["linkedDir"] = str(game.resolve())
+                if not meta.get("installed"):
+                    have = official_version_id(e["version"], e["loader"], e.get("loaderVersion"), self.official_dirs())
+                    if have:
+                        meta["versionId"] = have
+                        meta["installed"] = True        # 공식 런처에 이미 있는 버전 → 실행할 때도 받지 않음
                 if e["launcher"] in ("prism", "multimc") and e.get("launcherInstanceId"):
                     meta["launchVia"] = {"kind": e["launcher"], "root": e.get("launcherRoot"), "instance": e["launcherInstanceId"]}
                     meta["installed"] = True            # 게임 파일은 그 런처가 갖고 있다
@@ -217,6 +222,10 @@ class LocalImporter:
             n += 1
         return n
 
+    def official_dirs(self) -> list[Path]:
+        roots = self.roots or launchers.default_roots()
+        return [Path(p) for p in roots.get("official", [])]
+
     # ---------- 연결한 Prism·MultiMC 인스턴스: 그 런처로 바로 실행 ----------
     def launch_external(self, iid: str) -> dict[str, Any]:
         meta = self.store.get(iid)
@@ -267,6 +276,21 @@ class LocalImporter:
         except OSError:
             pass
         return {"linked": True, "busy": bool(reasons), "reasons": reasons, "warnings": warnings, "dir": str(game)}
+
+
+def official_version_id(mc: str, loader: str, lver: str | None, mc_dirs: list[Path]) -> str | None:
+    """공식 런처 .minecraft/versions 에 이미 있는 실행 버전 id(없으면 None)."""
+    if not mc:
+        return None
+    ids = {"vanilla": [mc]}.get(loader, [])
+    if lver:
+        ids = {"fabric": [f"fabric-loader-{lver}-{mc}"], "quilt": [f"quilt-loader-{lver}-{mc}"],
+               "neoforge": [f"neoforge-{lver}"], "forge": [f"{mc}-forge-{lver}", f"{mc}-forge{mc}-{lver}"]}.get(loader, ids)
+    for d in mc_dirs:
+        for vid in ids:
+            if (d / "versions" / vid / f"{vid}.json").is_file():
+                return vid
+    return None
 
 
 def find_launcher_exe(kind: str, root: Path | None) -> Path | None:

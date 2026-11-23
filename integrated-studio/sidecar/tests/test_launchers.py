@@ -388,3 +388,45 @@ def test_store_change_notifications(tmp_path):
     i = store.create("알림", "26.3", "vanilla")
     store.rename(i["id"], "바뀜")
     assert len(seen) >= 2
+
+
+def test_connect_any_folder_from_new_instance_window(world, tmp_path):
+    """새 인스턴스 창 → 폴더 고르기: 어느 런처 폴더든 연결, 받기 없음, 버전은 로그에서."""
+    from importers import Importers
+    store = world["store"]
+    imp = Importers(store, tmp_path / "d")
+    imp._local().roots = {"official": [world["mc"]]}
+    # 1) CurseForge 인스턴스 폴더
+    info = imp.inspect_import(str(world["cf"]))
+    assert info["kind"] == "folder" and info["launcherName"] == "CurseForge" and info["version"] == "26.3"
+    r = imp.import_file(str(world["cf"]))
+    assert Path(r["instance"]["path"]) == world["cf"].resolve() and r["downloaded"] == 0
+    # 2) Prism 인스턴스 안의 minecraft 폴더를 골라도 Prism 인스턴스로 연결(원래 런처로 실행)
+    inner = world["prism"] / "inst-moved" / "Fabric 팩" / "minecraft"
+    info = imp.inspect_import(str(inner))
+    assert info["kind"] == "prism" and info["loader"] == "fabric"
+    r = imp.import_file(str(inner))
+    assert r["instance"]["launchVia"]["kind"] == "prism" and r["instance"]["installed"] is True
+    # 3) 그냥 게임 폴더: Fabric 로그로 버전 알아냄 + 공식 .minecraft 에 그 버전이 있으면 받지 않음
+    g = tmp_path / "그냥" / ".minecraft"
+    game_content(g)
+    w(g / "logs" / "latest.log", "[12:00:00] [main/INFO]: Loading Minecraft 26.3 with Fabric Loader 0.20.1\n")
+    vid = "fabric-loader-0.20.1-26.3"
+    w(world["mc"] / "versions" / vid / f"{vid}.json", "{}")
+    info = imp.inspect_import(str(g.parent))
+    assert (info["version"], info["loader"], info["loaderVersion"]) == ("26.3", "fabric", "0.20.1")
+    r = imp.import_file(str(g.parent))
+    assert r["instance"]["installed"] is True and r["instance"]["versionId"] == vid
+    # 4) 버전을 모르는 폴더는 버전을 받아서 연결
+    h = tmp_path / "모름"
+    w(h / "saves" / "w" / "level.dat", b"x")
+    info = imp.inspect_import(str(h))
+    assert info["needsVersion"] is True
+    with pytest.raises(RpcError):
+        imp.import_file(str(h))
+    r = imp.import_file(str(h), version="26.3")
+    assert r["instance"]["version"] == "26.3" and r["instance"]["linkedDir"]
+    # 5) 아무것도 아닌 폴더
+    (tmp_path / "빈").mkdir()
+    with pytest.raises(RpcError):
+        imp.inspect_import(str(tmp_path / "빈"))

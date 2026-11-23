@@ -169,6 +169,9 @@ Theia 확장은 TypeScript로 작성한다. Python 쪽은 `sidecar/` 아래에�
   (`launch_external`: `<exe> --dir <데이터 폴더> --launch <인스턴스 폴더 이름>`, 포터블·설치판·PATH 에서 exe 찾기 — 공식 런처 전용 규칙의 예외).
   공식 런처 항목은 이미 있는 버전이면 설치 안 함. CurseForge·Modrinth App 은 외부 실행 방법이 없어 공식 런처로(없는 버전만 실행할 때 설치).
   예전에 연결한 인스턴스는 시작할 때 `migrate_linked` 로 정보 채움. 인스턴스가 바뀌면 사이드카 `instances_changed` 알림 → 목록 즉시 새로고침.
+  새 인스턴스 창 [인스턴스 폴더 연결]: 어느 런처 폴더든(Prism·MultiMC·CurseForge·Modrinth 프로필·Prism 안의 minecraft·그냥 .minecraft) 연결,
+  버전은 로그(`Loading Minecraft X with Fabric Loader Y`·`--fml.mcVersion`/`--fml.neoForgeVersion`)에서, 못 찾으면 입력. 공식 .minecraft 에
+  그 버전이 있으면 설치된 것으로 표시(받지 않음). e2e 는 `THEIA_ELECTRON_DISABLE_NATIVE_ELEMENTS=1` 로 Theia 파일 대화 상자를 써서 자동화.
 
 ### M9. 패키징 (내 PC용)
 - electron-builder로 Windows 설치 파일 또는 압축 실행판을 만든다. **배포하지 않는다** — 개인 사용 전용.

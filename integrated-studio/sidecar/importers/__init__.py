@@ -220,7 +220,9 @@ class Importers:
         """고른 파일/폴더가 무엇인지 알아내 미리 보기 정보를 돌려준다."""
         p = Path(path)
         if p.is_dir():
-            return self._inspect_prism(p)
+            if (p / "mmc-pack.json").is_file():
+                return self._inspect_prism(p)
+            return self._inspect_any_folder(p)
         if not p.is_file():
             raise RpcError(f"파일을 찾을 수 없습니다: {path}")
         if not zipfile.is_zipfile(p):
@@ -254,6 +256,28 @@ class Importers:
                         "files": mods, "supported": bool(info.get("version")) and info["loader"] in ALL_LOADERS}
         raise RpcError("모드팩을 알아보지 못했습니다(modrinth.index.json·manifest.json·mmc-pack.json 없음).")
 
+    def _local(self):
+        from .local import LocalImporter
+        if not hasattr(self, "_local_importer"):
+            self._local_importer = LocalImporter(self.store)   # 연결은 설치하지 않으므로 install 없음
+        return self._local_importer
+
+    def _inspect_any_folder(self, p: Path) -> dict[str, Any]:
+        """Prism 이 아닌 폴더: CurseForge·Modrinth App 인스턴스, Prism 의 .minecraft, 그냥 게임 폴더 → 연결."""
+        found = self._local().inspect_folder(str(p))
+        if not found:
+            raise RpcError("인스턴스 폴더를 알아보지 못했습니다. Prism·MultiMC·CurseForge·Modrinth App 인스턴스 폴더나 "
+                           "mods·saves 가 든 게임 폴더(.minecraft)를 골라 주세요.")
+        if len(found) > 1:
+            raise RpcError(f"인스턴스가 {len(found)}개 든 폴더입니다. 서버 패널의 [인스턴스 불러오기]에서 골라 주세요.")
+        e = found[0]
+        if e["launcher"] in ("prism", "multimc"):
+            return self._inspect_prism(Path(e["source"]))
+        return {"kind": "folder", "name": e["name"], "version": e.get("version"), "loader": e["loader"],
+                "loaderVersion": e.get("loaderVersion"), "files": e.get("mods", 0), "supported": bool(e.get("gameDir")),
+                "needsVersion": not e.get("version"), "launcherName": e["launcherName"], "key": e["key"],
+                "gameDir": e.get("gameDir"), "note": e.get("note")}
+
     def _tmp(self) -> Path:
         self.tmp_root.mkdir(parents=True, exist_ok=True)
         return self.tmp_root
@@ -285,10 +309,28 @@ class Importers:
 
     # ============================================================ 파일 가져오기
     def import_file(self, path: str, name: str | None = None, group: str | None = None, icon: str | None = None,
-                    mode: str = "link") -> dict[str, Any]:
+                    mode: str = "link", version: str | None = None) -> dict[str, Any]:
         """mode: Prism·MultiMC 인스턴스 "폴더"는 기본 link(폴더는 그대로 두고 여기서 실행·관리), copy 면 복사.
         압축 파일(.mrpack·zip)은 풀 곳이 필요하므로 항상 앱 폴더로."""
+        pp = Path(path)
+        if pp.name in (".minecraft", "minecraft") and (pp.parent / "mmc-pack.json").is_file():
+            path = str(pp.parent)   # Prism·MultiMC 인스턴스 안의 게임 폴더를 골랐으면 인스턴스 폴더로
         info = self.inspect_import(path)
+        if info["kind"] == "folder":
+            # 어느 런처 폴더든 연결(원래 자리 그대로, 이 앱에는 아무것도 받지 않음)
+            if not (version or info.get("version")):
+                raise RpcError("게임 버전을 골라 주세요.")
+            res = self._local().import_many([{"key": info["key"], "name": name, "version": version}], "link")
+            if res["failed"]:
+                raise RpcError(res["failed"][0]["error"])
+            inst = res["imported"][0]
+            if group or icon:
+                meta = self.store.get(inst["id"])
+                meta["group"] = group or meta.get("group")
+                meta["icon"] = icon or meta.get("icon")
+                self.store.save(meta)
+            return {"instance": self.store.get(inst["id"]), "downloaded": 0, "failed": [], "manual": [], "extracted": 0,
+                    "linked": inst["path"]}
         if info["kind"] in ("prism", "prism-zip"):
             if info["loader"] not in ALL_LOADERS:
                 raise RpcError(f"지원하지 않는 로더입니다: {info['loader']}")
@@ -414,6 +456,7 @@ class Importers:
         meta["installed"] = True   # 게임 파일은 원래 런처가 갖고 있다 — 여기서 받지 않는다
         self.store.save(meta)
         return {"downloaded": 0, "failed": [], "manual": [], "extracted": 0, "linked": str(game.resolve())}
+
 
     def _copy_prism(self, inst_id: str, folder: Path) -> dict[str, Any]:
         base = self.store.dir_of(inst_id)
