@@ -1,0 +1,42 @@
+{
+  "private": true,
+  "name": "integrated-studio-server-host",
+  "version": "0.0.1",
+  "license": "UNLICENSED",
+  "description": "통합 작업실 M10 — 서버 열기(전용·싱글 LAN·외부, e4mc·UPnP·playit 주소) + 다른 런처 인스턴스 불러오기",
+  "files": [
+    "lib",
+    "src"
+  ],
+  "theiaExtensions": [
+    {
+      "frontend": "lib/browser/server-host-frontend-module",
+      "backend": "lib/node/server-host-backend-module"
+    }
+  ],
+  "dependencies": {
+    "@runonflux/nat-upnp": "2.2.0",
+    "@theia/core": "1.77.0",
+    "@theia/filesystem": "1.77.0",
+    "integrated-studio-launcher-core": "0.0.1"
+  },
+  "devDependencies": {
+    "@types/react": "^19.3.0",
+    "rimraf": "6.1.4",
+    "typescript": "~5.9.3"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "clean": "rimraf lib tsconfig.tsbuildinfo",
+    "watch": "tsc -w",
+    "test": "node --test --test-concurrency=1 \"test/*.test.mjs\""
+  },
+  "type": "module",
+  "exports": {
+    "./package.json": "./package.json",
+    "./lib/common": "./lib/common/index.js",
+    "./lib/*.js": "./lib/*.js",
+    "./lib/*": "./lib/*.js",
+    "./*": "./*"
+  }
+}

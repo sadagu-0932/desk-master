@@ -15,7 +15,7 @@
     "postinstall": "node scripts/download-plugins.mjs",
     "download:plugins": "node scripts/download-plugins.mjs",
     "sidecar:setup": "node scripts/setup-sidecar.js",
-    "build:extensions": "npm run build -w integrated-studio-launcher-core -w integrated-studio-theme -w integrated-studio-launcher-ui -w integrated-studio-datapack-tools -w integrated-studio-resourcepack-editor -w integrated-studio-p2p-server",
+    "build:extensions": "npm run build -w integrated-studio-launcher-core -w integrated-studio-theme -w integrated-studio-launcher-ui -w integrated-studio-datapack-tools -w integrated-studio-resourcepack-editor -w integrated-studio-server-host",
     "build": "npm run build:extensions && npm run build -w integrated-studio-electron",
     "rebuild:native": "npm run rebuild -w integrated-studio-electron",
     "start": "npm run start -w integrated-studio-electron",

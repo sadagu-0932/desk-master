@@ -90,6 +90,8 @@ class SettingsSync:
         if off is not None and off.is_dir():
             out.append({"label": "공식 런처", "dir": off, "writable": True, "official": True})
         for inst in self.store.list():
+            if inst.get("linkedDir"):
+                continue   # 다른 런처 폴더를 연결한 인스턴스는 건드리지 않는다
             try:
                 d = self.store.dir_of(inst["id"])
             except Exception:  # noqa: BLE001

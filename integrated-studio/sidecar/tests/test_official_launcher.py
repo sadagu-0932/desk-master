@@ -413,3 +413,31 @@ def test_tail_log_thread(tmp_path):
     finally:
         t.stop()
     assert got == ["a", "b"] and not t.thread.is_alive()
+
+
+def test_forge_generated_libraries_copied(tmp_path):
+    """Forge·NeoForge 설치기가 만든 라이브러리(주소 없음)는 공식 .minecraft 로 복사, 주소 있는 건 런처에 맡긴다."""
+    import json as _json
+    app = tmp_path / "app"
+    off = tmp_path / "official"
+    vid = "neoforge-26.3.0.115"
+    gen = "net/neoforged/neoforge/26.3.0.115/neoforge-26.3.0.115-client.jar"
+    dl = "org/ow2/asm/asm/9.9/asm-9.9.jar"
+    vj = {"id": vid, "inheritsFrom": "26.3", "libraries": [
+        {"name": "gen", "downloads": {"artifact": {"path": gen, "url": ""}}},
+        {"name": "asm", "downloads": {"artifact": {"path": dl, "url": "https://maven.neoforged.net/x.jar"}}},
+        {"name": "evil", "downloads": {"artifact": {"path": "../../evil.jar", "url": ""}}},
+    ]}
+    (app / "versions" / vid).mkdir(parents=True)
+    (app / "versions" / vid / f"{vid}.json").write_text(_json.dumps(vj), "utf-8")
+    for rel in (gen, dl):
+        (app / "libraries" / rel).parent.mkdir(parents=True, exist_ok=True)
+        (app / "libraries" / rel).write_bytes(b"jar")
+    off.mkdir()
+    log: list[str] = []
+    ol._ensure_version_json(off, vid, app, log)
+    assert (off / "versions" / vid / f"{vid}.json").is_file()
+    assert (off / "libraries" / gen).is_file()
+    assert not (off / "libraries" / dl).exists()
+    assert not (tmp_path / "evil.jar").exists()
+    assert any("라이브러리 1개" in m for m in log)

@@ -67,7 +67,7 @@
     "integrated-studio-datapack-tools": "0.0.1",
     "integrated-studio-launcher-core": "0.0.1",
     "integrated-studio-launcher-ui": "0.0.1",
-    "integrated-studio-p2p-server": "0.0.1",
+    "integrated-studio-server-host": "0.0.1",
     "integrated-studio-resourcepack-editor": "0.0.1",
     "integrated-studio-theme": "0.0.1"
   },

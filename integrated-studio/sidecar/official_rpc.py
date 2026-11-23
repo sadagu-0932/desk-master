@@ -74,6 +74,9 @@ def _wrap(fn: Callable[..., Any]) -> Callable[..., Any]:
     return inner
 
 
+HOST_SUFFIX = "-host"   # e4mc 호스트용 항목 키: integrated-studio-<인스턴스 id>-host
+
+
 class OfficialLauncherRpc:
     def __init__(self, store: InstanceStore, app_minecraft_dir: Path, confirmer: Confirmer | None = None):
         self.store = store
@@ -99,16 +102,31 @@ class OfficialLauncherRpc:
         meta = self.store.get(id)
         if not meta.get("installed") or not meta.get("versionId"):
             raise RpcError("먼저 이 인스턴스를 설치해 주세요. 설치한 버전을 공식 런처에 등록합니다.")
-        if meta.get("ccPort"):
+        if meta.get("ccPort") and not meta.get("linkedDir"):
             write_cc_config(self.store.dir_of(id), meta["ccPort"])  # CommandCrafter 포트(공식 런처로 켜도 같은 폴더)
         return {
             "id": meta["id"],
             "name": meta.get("name") or meta["id"],
-            "path": str(self.store.dir_of(id)),
+            "path": meta["path"],   # 게임 폴더(연결한 인스턴스는 원본 폴더)
             "version": meta.get("version"),
             "versionId": meta["versionId"],
             "jvmArgs": meta.get("jvmArgs"),
         }
+
+    def register_host_profile(self, id: str, version_id: str) -> dict[str, Any]:
+        """M10 e4mc: 바닐라 인스턴스를 같은 버전 Fabric 으로 켜는 '호스트용' 항목(같은 게임 폴더, 원래 항목은 그대로)."""
+        with self._profiles_lock:
+            meta = self.store.get(id)
+            instance = {"id": id + HOST_SUFFIX, "name": f"{meta.get('name') or id} (호스트용)", "path": meta["path"],
+                        "version": meta.get("version"), "versionId": version_id, "jvmArgs": meta.get("jvmArgs")}
+            current = ol.registered_profile(instance["id"])
+            if current and self._same_profile(current, instance):
+                return {"ok": True, "unchanged": True, "message": "호스트용 항목이 이미 있습니다."}
+            confirm = (lambda _m: True) if current else self.confirmer.callback(id)
+            result = ol.register_instance(instance, confirm, app_minecraft_dir=self.app_minecraft_dir)
+            if result.get("ok"):
+                _log(id, "공식 런처에 '(호스트용)' 항목을 만들었습니다. 친구에게 열 때는 그 항목으로 실행하세요.", "info")
+            return result
 
     def register_instance(self, id: str) -> dict[str, Any]:
         """처음 등록은 묻는다. 이미 우리 항목이 있으면(동기화 대상) 묻지 않고 맞춘다."""
@@ -155,6 +173,8 @@ class OfficialLauncherRpc:
             return self._forget_locked(id)
 
     def _forget_locked(self, id: str) -> bool:
+        if ol.registered_profile(id + HOST_SUFFIX):
+            ol.unregister_instance(id + HOST_SUFFIX, lambda _m: True)   # e4mc 호스트용 항목도
         if not ol.registered_profile(id):
             return False
         self.tail_stop(id)
@@ -171,7 +191,7 @@ class OfficialLauncherRpc:
     def _remove_orphans_locked(self, existing_ids: set[str]) -> int:
         n = 0
         for iid in ol.registered_ids():
-            if iid not in existing_ids:
+            if iid.removesuffix(HOST_SUFFIX) not in existing_ids:
                 r = ol.unregister_instance(iid, lambda _m: True)
                 if r.get("removed"):
                     _log("", "없어진 인스턴스의 공식 런처 항목을 지웠습니다: " + r["message"], "info")
@@ -202,8 +222,7 @@ class OfficialLauncherRpc:
 
     def tail_log(self, id: str, from_start: bool = False) -> dict[str, Any]:
         """인스턴스 logs/latest.log 를 따라 읽어 게임 로그로 보낸다. 같은 인스턴스는 하나만(다시 부르면 새로 시작)."""
-        d = self.store.dir_of(id)
-        self.store.get(id)  # 없는 인스턴스면 여기서 오류
+        d = self.store.game_dir(id)  # 없는 인스턴스면 여기서 오류(연결한 인스턴스는 원본 폴더)
         self.tail_stop(id)
         tail = ol.tail_log(d, lambda line: self._on_game_line(id, line), from_start=bool(from_start))
         with self._tails_lock:
@@ -251,6 +270,7 @@ class OfficialLauncherRpc:
             "official_is_installed": _wrap(self.is_installed),
             "official_install": _wrap(self.install),
             "official_register_instance": _wrap(self.register_instance),
+            "official_register_host_profile": _wrap(self.register_host_profile),
             "official_unregister_instance": _wrap(self.unregister_instance),
             "official_open_launcher": _wrap(self.open_launcher),
             "official_tail_log": _wrap(self.tail_log),
@@ -261,5 +281,5 @@ class OfficialLauncherRpc:
 
     # 확인을 기다리거나 PowerShell·winget 을 부르는 메서드는 입력 루프를 막지 않게 별도 스레드로.
     # confirm_reply 는 입력 루프에서 바로 처리해야 기다리는 스레드를 깨울 수 있다(여기에 넣지 않음).
-    BACKGROUND = {"official_is_installed", "official_install", "official_register_instance",
+    BACKGROUND = {"official_is_installed", "official_install", "official_register_instance", "official_register_host_profile",
                   "official_unregister_instance", "official_open_launcher"}

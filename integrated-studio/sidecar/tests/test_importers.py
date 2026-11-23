@@ -124,7 +124,11 @@ class Fake(http.server.BaseHTTPRequestHandler):
                                               "hashes": {"sha1": sha1(self.mrpack)}}], "dependencies": []})
         elif p == "/mr/project/modA/version":
             self.send([{"id": "MA1", "name": "Mod A", "version_number": "1", "game_versions": ["26.3"], "loaders": ["fabric"],
-                        "date_published": "2026-10-01", "version_type": "release"}])
+                        "date_published": "2026-10-01", "version_type": "release", "project_id": "modA",
+                        "files": [{"url": f"{self.base}/dl/mod-a.jar", "filename": "mod-a.jar", "primary": True,
+                                   "hashes": {"sha1": sha1(JAR)}}],
+                        "dependencies": [{"project_id": "libB", "dependency_type": "required"},
+                                         {"project_id": "optC", "dependency_type": "optional"}]}])
         elif p == "/mr/version/MA1":
             self.send({"id": "MA1", "files": [{"url": f"{self.base}/dl/mod-a.jar", "filename": "mod-a.jar", "primary": True,
                                                "hashes": {"sha1": sha1(JAR)}}],
@@ -132,7 +136,9 @@ class Fake(http.server.BaseHTTPRequestHandler):
                                         {"project_id": "optC", "dependency_type": "optional"}]})
         elif p == "/mr/project/libB/version":
             self.send([{"id": "LB1", "name": "Lib B", "version_number": "1", "game_versions": ["26.3"], "loaders": ["fabric"],
-                        "date_published": "2026-10-01", "version_type": "release"}])
+                        "date_published": "2026-10-01", "version_type": "release", "project_id": "libB",
+                        "files": [{"url": f"{self.base}/dl/lib-b.jar", "filename": "lib-b.jar", "primary": True,
+                                   "hashes": {"sha1": sha1(DEP_JAR)}}], "dependencies": []}])
         elif p == "/mr/version/LB1":
             self.send({"id": "LB1", "files": [{"url": f"{self.base}/dl/lib-b.jar", "filename": "lib-b.jar", "primary": True,
                                                "hashes": {"sha1": sha1(DEP_JAR)}}], "dependencies": []})

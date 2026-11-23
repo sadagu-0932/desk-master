@@ -1,0 +1,57 @@
+/* M10 서버 패널 · 불러오기 (디자인 토큰은 theme 확장의 색 변수) */
+.sh-root, .imp-root { padding: 8px 12px; font-size: var(--theia-ui-font-size1); color: var(--theia-foreground); overflow-y: auto; height: 100%; box-sizing: border-box; }
+.imp-root { max-width: 980px; }
+.sh-root h3 { font-size: 12px; margin: 14px 0 6px; text-transform: none; }
+.sh-muted { color: var(--theia-descriptionForeground); }
+.sh-small { font-size: 12px; }
+.sh-mono, .sh-code { font-family: var(--theia-code-font-family); }
+.sh-actions { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin: 6px 0; }
+.sh-card { border: 1px solid var(--theia-panel-border); border-radius: 6px; padding: 8px; margin: 6px 0; background: var(--theia-sideBar-background); }
+.sh-card-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.sh-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.sh-chip { font-size: 11px; padding: 0 6px; border-radius: 9px; border: 1px solid var(--theia-panel-border); color: var(--theia-descriptionForeground); white-space: nowrap; }
+.sh-chip.via { border-color: var(--theia-button-background); color: var(--theia-foreground); }
+.sh-chip.fixed { color: var(--theia-testing-iconPassed, #6cc04a); }
+.sh-chip.changing { color: var(--theia-editorWarning-foreground, #d7ba7d); }
+.sh-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--theia-descriptionForeground); flex: none; }
+.sh-dot.on { background: var(--theia-button-background); }
+.sh-dot.busy { background: var(--theia-editorWarning-foreground, #d7ba7d); }
+.sh-address { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin: 6px 0; }
+.sh-code { background: var(--theia-input-background); border: 1px solid var(--theia-input-border, var(--theia-panel-border)); padding: 2px 6px; border-radius: 4px; user-select: all; word-break: break-all; }
+.sh-attempts, .sh-notes { margin: 4px 0; padding-left: 16px; font-size: 12px; }
+.sh-attempts { color: var(--theia-descriptionForeground); list-style: none; padding-left: 0; }
+.sh-notes { color: var(--theia-descriptionForeground); }
+.sh-note { font-size: 12px; margin: 4px 0; padding: 4px 6px; border-left: 3px solid var(--theia-button-background); background: var(--theia-input-background); }
+.sh-note.error { border-left-color: var(--theia-errorForeground); }
+.sh-note.warn { border-left-color: var(--theia-editorWarning-foreground, #d7ba7d); }
+.sh-card-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; align-items: center; }
+.sh-pref { width: auto; }
+.sh-mini { min-width: 0; padding: 0 8px; margin-left: 6px; }
+.sh-mods summary { cursor: pointer; font-size: 12px; }
+.sh-mods ul { margin: 4px 0; padding-left: 18px; font-size: 12px; }
+.sh-lan-row { display: flex; gap: 6px; align-items: center; margin: 3px 0; }
+.sh-setting { margin: 4px 0; }
+.sh-console pre { max-height: 220px; overflow: auto; font-family: var(--theia-code-font-family); font-size: 11px; background: var(--theia-panel-background, #191b18); padding: 6px; margin: 6px 0 4px; white-space: pre-wrap; }
+.sh-console-input { display: flex; gap: 6px; }
+.sh-console-input input { flex: 1; }
+.sh-dialog { display: flex; flex-direction: column; gap: 10px; max-width: 560px; }
+.sh-kinds { display: flex; flex-direction: column; gap: 6px; }
+.sh-kind { display: flex; gap: 8px; align-items: flex-start; padding: 6px 8px; border: 1px solid var(--theia-panel-border); border-radius: 6px; cursor: pointer; }
+.sh-kind.selected { border-color: var(--theia-button-background); background: var(--theia-list-inactiveSelectionBackground); }
+.sh-kind > span { display: flex; flex-direction: column; gap: 2px; }
+.sh-field { display: flex; flex-direction: column; gap: 4px; }
+.sh-row { display: flex; gap: 6px; }
+.sh-row input { flex: 1; }
+.sh-check { display: flex; gap: 6px; align-items: flex-start; }
+.sh-lan-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.sh-lan.selected { outline: 1px solid var(--theia-button-background); }
+.sh-choices { display: flex; flex-direction: column; gap: 6px; }
+.sh-choice { display: flex; flex-direction: column; align-items: flex-start; height: auto; padding: 6px 10px; text-align: left; }
+.imp-table { width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 12px; }
+.imp-table th, .imp-table td { text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--theia-panel-border); }
+.imp-table tbody tr { cursor: pointer; }
+.imp-table tbody tr.selected { background: var(--theia-list-inactiveSelectionBackground); }
+.imp-ver { width: 80px; }
+.imp-running { padding: 20px 0; }
+.sh-root .sh-actions > button { flex: 1 1 140px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sh-root .sh-card-actions > button { white-space: nowrap; }

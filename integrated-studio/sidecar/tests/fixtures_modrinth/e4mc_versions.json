@@ -1,0 +1,234 @@
+[
+ {
+  "id": "HXD8kS5O",
+  "project_id": "qANg5Jrr",
+  "name": "[NeoForge] 6.2.3",
+  "version_number": "6.2.3-neoforge",
+  "game_versions": [
+   "1.20.2",
+   "1.20.3",
+   "1.20.4",
+   "1.20.5",
+   "1.20.6",
+   "1.21",
+   "1.21.1",
+   "1.21.10",
+   "1.21.11",
+   "1.21.2",
+   "1.21.3",
+   "1.21.4",
+   "1.21.5",
+   "1.21.6",
+   "1.21.7",
+   "1.21.8",
+   "1.21.9",
+   "26.1",
+   "26.1.1",
+   "26.1.2",
+   "26.2",
+   "26.3"
+  ],
+  "loaders": [
+   "neoforge"
+  ],
+  "version_type": "release",
+  "date_published": "2026-10-01T18:52:12.139673Z",
+  "files": [
+   {
+    "id": "JrNjIjnc",
+    "hashes": {
+     "sha1": "7127478b19531091257b3f58cd734a638200e481",
+     "sha512": "6d029c61c71503dbf03710a0a944b462fc0351a862db773d4ffe39ffe8d8a205d12a4f031361d82867d365a2335abbdc91859a2777108ca4c9c14fe243b92197"
+    },
+    "url": "https://cdn.modrinth.com/data/qANg5Jrr/versions/HXD8kS5O/e4mc-neoforge-6.2.3.jar",
+    "filename": "e4mc-neoforge-6.2.3.jar",
+    "primary": true
+   },
+   {
+    "id": "Z5cpJeY7",
+    "hashes": {
+     "sha512": "c89d5e7b0dff2befdd2a517d95428be466db80ee5e5341640e60ff7d699c350d6a9aa9a5f5c158d36b115cc80ee6c6939e7a2e138f4a60f8c971c3f0204c9236",
+     "sha1": "7491150e86d57900150c574d2f8eb2b23e8621b8"
+    },
+    "url": "https://cdn.modrinth.com/data/qANg5Jrr/versions/HXD8kS5O/e4mc-neoforge-6.2.3-sources.jar",
+    "filename": "e4mc-neoforge-6.2.3-sources.jar",
+    "primary": false
+   }
+  ],
+  "dependencies": [
+   {
+    "version_id": null,
+    "project_id": "tNmWwdI2",
+    "file_name": null,
+    "dependency_type": "optional"
+   }
+  ]
+ },
+ {
+  "id": "8wsUJ306",
+  "project_id": "qANg5Jrr",
+  "name": "[Fabric -1.21.11] 6.2.3",
+  "version_number": "6.2.3-fabric",
+  "game_versions": [
+   "1.18",
+   "1.18.1",
+   "1.18.2",
+   "1.19",
+   "1.19.1",
+   "1.19.2",
+   "1.19.3",
+   "1.19.4",
+   "1.20",
+   "1.20.1",
+   "1.20.2",
+   "1.20.3",
+   "1.20.4",
+   "1.20.5",
+   "1.20.6",
+   "1.21",
+   "1.21.1",
+   "1.21.10",
+   "1.21.11",
+   "1.21.2",
+   "1.21.3",
+   "1.21.4",
+   "1.21.5",
+   "1.21.6",
+   "1.21.7",
+   "1.21.8",
+   "1.21.9"
+  ],
+  "loaders": [
+   "fabric",
+   "quilt"
+  ],
+  "version_type": "release",
+  "date_published": "2026-10-01T18:52:11.603975Z",
+  "files": [
+   {
+    "id": "ICWvLlQ7",
+    "hashes": {
+     "sha1": "5420209f8560df548625f1defc24ebb94682f0fd",
+     "sha512": "de52773df77c5653500b139781173386e4e779bcfae79a91c93e4c3cd31ba412c3b1110360701efa6433733a6f6cf7738c11cbdafc88fccad786ef7412eabf1a"
+    },
+    "url": "https://cdn.modrinth.com/data/qANg5Jrr/versions/8wsUJ306/e4mc-fabric-6.2.3.jar",
+    "filename": "e4mc-fabric-6.2.3.jar",
+    "primary": true
+   },
+   {
+    "id": "z429h75H",
+    "hashes": {
+     "sha512": "914b32a54b553cbabba11ae87178b20da0fd98a969d0399722c6516297488bebf6dd94d4eb1322a757f7e8960c7dc9b203a5737314381fd39a659f32829e517a",
+     "sha1": "04c3fbf5d869edbc467f09a32b28d1776a9ebf70"
+    },
+    "url": "https://cdn.modrinth.com/data/qANg5Jrr/versions/8wsUJ306/e4mc-fabric-6.2.3-sources.jar",
+    "filename": "e4mc-fabric-6.2.3-sources.jar",
+    "primary": false
+   }
+  ],
+  "dependencies": [
+   {
+    "version_id": null,
+    "project_id": "tNmWwdI2",
+    "file_name": null,
+    "dependency_type": "optional"
+   },
+   {
+    "version_id": null,
+    "project_id": "P7dR8mSH",
+    "file_name": null,
+    "dependency_type": "required"
+   }
+  ]
+ },
+ {
+  "id": "RNDvrMAd",
+  "project_id": "qANg5Jrr",
+  "name": "[Fabric 26.1+] 6.2.3",
+  "version_number": "6.2.3-fabric-modern",
+  "game_versions": [
+   "26.1",
+   "26.1.1",
+   "26.1.2",
+   "26.2",
+   "26.3"
+  ],
+  "loaders": [
+   "fabric",
+   "quilt"
+  ],
+  "version_type": "release",
+  "date_published": "2026-10-01T18:52:11.597787Z",
+  "files": [
+   {
+    "id": "a8L91FFA",
+    "hashes": {
+     "sha1": "78a4feb50b8cb67a80ca172a56e85c9cd79d9fbb",
+     "sha512": "4e5dac0458cd533346d7a9572582a19f2f775371027ff0bfe445e025c2fa16ce22d9da924e73f64806373f82257e32b0e264cb0c29feaaa40fb03b6ff2cae8c9"
+    },
+    "url": "https://cdn.modrinth.com/data/qANg5Jrr/versions/RNDvrMAd/e4mc-fabric-6.2.3-modern.jar",
+    "filename": "e4mc-fabric-6.2.3-modern.jar",
+    "primary": true
+   }
+  ],
+  "dependencies": [
+   {
+    "version_id": null,
+    "project_id": "P7dR8mSH",
+    "file_name": null,
+    "dependency_type": "required"
+   },
+   {
+    "version_id": null,
+    "project_id": "tNmWwdI2",
+    "file_name": null,
+    "dependency_type": "optional"
+   }
+  ]
+ },
+ {
+  "id": "AouleFRY",
+  "project_id": "qANg5Jrr",
+  "name": "[Fabric 26.1+] 6.2.2",
+  "version_number": "6.2.2-fabric-modern",
+  "game_versions": [
+   "26.1",
+   "26.1.1",
+   "26.1.2",
+   "26.2",
+   "26.3"
+  ],
+  "loaders": [
+   "fabric",
+   "quilt"
+  ],
+  "version_type": "release",
+  "date_published": "2026-09-27T14:04:14.491805Z",
+  "files": [
+   {
+    "id": "wjNeijnx",
+    "hashes": {
+     "sha1": "a1b373158fddeb3fa078df9a6e2a24d1b69c2112",
+     "sha512": "01ef0a8c5b76e2cb0effd337bad3350d8807d100d0ec661e01b2ffb20af7b652f756c5eaa11bee233c37905bfd7b573f7a85f3d15bfd2833962c76f02cd59a86"
+    },
+    "url": "https://cdn.modrinth.com/data/qANg5Jrr/versions/AouleFRY/e4mc-fabric-6.2.2-modern.jar",
+    "filename": "e4mc-fabric-6.2.2-modern.jar",
+    "primary": true
+   }
+  ],
+  "dependencies": [
+   {
+    "version_id": null,
+    "project_id": "tNmWwdI2",
+    "file_name": null,
+    "dependency_type": "optional"
+   },
+   {
+    "version_id": null,
+    "project_id": "P7dR8mSH",
+    "file_name": null,
+    "dependency_type": "required"
+   }
+  ]
+ }
+]

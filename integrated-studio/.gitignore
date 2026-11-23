@@ -12,5 +12,7 @@ applications/electron/plugins/
 scripts/e2e/out/
 build-python/
 
-# M10 P2P 서버 키 파일(내보낸 키) — 절대 커밋하지 않는다
+# M10 서버 열기: DDNS 토큰·playit 비밀키는 앱 데이터 폴더(data/) 밖으로 나오지 않는다. 혹시 복사본이 생겨도 커밋 금지
 *.iskey
+playit.toml
+ddns.json

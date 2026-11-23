@@ -3,9 +3,9 @@ import { inject, injectable, postConstruct } from '@theia/core/shared/inversify'
 import { ReactWidget } from '@theia/core/lib/browser/widgets/react-widget';
 import { CommandService } from '@theia/core/lib/common/command';
 import { InstanceManager, StudioCommands } from 'integrated-studio-launcher-core/lib/browser';
-import { Instance } from 'integrated-studio-launcher-core/lib/common';
+import { Instance, LOADER_LABELS } from 'integrated-studio-launcher-core/lib/common';
 
-export const loaderLabel = (i: Instance) => (i.loader === 'fabric' ? 'Fabric' : '바닐라');
+export const loaderLabel = (i: Instance) => LOADER_LABELS[i.loader] ?? i.loader;
 
 /** 사이드바 아래쪽 "인스턴스" 뷰 */
 @injectable()

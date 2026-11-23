@@ -19,7 +19,7 @@ from typing import Any
 from paths import safe_join, trash
 from rpc import RpcError
 
-LOADERS = ("vanilla", "fabric")
+LOADERS = ("vanilla", "fabric", "quilt", "neoforge", "forge")  # quilt·neoforge·forge 는 불러온 인스턴스용
 CC_BASE_PORT = 52853
 WORK_MODES = ("datapack", "mod", "resourcepack")
 
@@ -60,8 +60,16 @@ class InstanceStore:
 
     def get(self, inst_id: str) -> dict[str, Any]:
         meta = json.loads((self.dir_of(inst_id) / "instance.json").read_text("utf-8"))
-        meta["path"] = str(self.dir_of(inst_id))
+        meta["metaDir"] = str(self.dir_of(inst_id))
+        meta["path"] = str(self.game_dir(inst_id, meta))
         return meta
+
+    def game_dir(self, inst_id: str, meta: dict[str, Any] | None = None) -> Path:
+        """게임 폴더. 보통은 인스턴스 폴더, "연결"로 불러온 인스턴스는 다른 런처의 원본 폴더(linkedDir)."""
+        if meta is None:
+            meta = json.loads((self.dir_of(inst_id) / "instance.json").read_text("utf-8"))
+        linked = meta.get("linkedDir")
+        return Path(linked).resolve() if linked else self.dir_of(inst_id)
 
     def list(self) -> list[dict[str, Any]]:
         result = []
@@ -76,7 +84,7 @@ class InstanceStore:
 
     def save(self, meta: dict[str, Any]) -> None:
         d = self.dir_of(meta["id"])
-        clean = {k: v for k, v in meta.items() if k != "path"}
+        clean = {k: v for k, v in meta.items() if k not in ("path", "metaDir")}
         (d / "instance.json").write_text(json.dumps(clean, ensure_ascii=False, indent=2), "utf-8")
 
     # ---------- 만들기·지우기 ----------
@@ -115,7 +123,7 @@ class InstanceStore:
             "name": name,
             "version": version,
             "loader": loader,
-            "loaderVersion": loader_version if loader == "fabric" else None,  # None 이면 설치 때 최신 안정판
+            "loaderVersion": loader_version if loader != "vanilla" else None,  # None 이면 설치 때 최신 안정판
             "group": group,
             "icon": icon,
             "versionId": None,       # 설치 후 실제 실행 버전 id (fabric-loader-... 등)

@@ -56,13 +56,13 @@ jobs:
           python tests/test_sync.py
           python tests/test_cf_key.py
           python -m pip install --disable-pip-version-check pytest
-          python -m pytest -q tests/test_server_runner.py mc_tools/tests
+          python -m pytest -q tests/test_server_runner.py tests/test_modrinth.py tests/test_launchers.py tests/test_official_launcher.py mc_tools/tests
 
       - name: 앱 빌드
         run: npm run build
 
-      - name: P2P 시험 (로컬 DHT 테스트넷)
-        run: npm test -w integrated-studio-p2p-server
+      - name: 서버 열기 시험 (가짜 공유기·playit·LAN 신호·상태 조회)
+        run: npm test -w integrated-studio-server-host
 
       - name: native 모듈을 Electron용으로 재빌드
         run: npm run rebuild:native

@@ -414,14 +414,42 @@ def _ensure_version_json(mc_dir: Path, version_id: str, app_minecraft_dir: Path 
     """공식 런처는 자기 .minecraft/versions 에서만 버전을 찾는다.
     바닐라가 아니면(Fabric 등) 앱이 설치한 버전 JSON 을 복사해 둔다. 라이브러리는 런처가 받는다."""
     dest = mc_dir / "versions" / version_id / f"{version_id}.json"
-    if dest.is_file() or app_minecraft_dir is None:
+    if app_minecraft_dir is None:
         return
     src = app_minecraft_dir / "versions" / version_id / f"{version_id}.json"
-    if not src.is_file():
+    if not dest.is_file():
+        if not src.is_file():
+            return
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dest)
+        log.append(f"버전 정보 {version_id} 를 공식 런처 폴더에 복사했습니다.")
+    _copy_generated_libraries(dest, mc_dir, app_minecraft_dir, log)
+
+
+def _copy_generated_libraries(version_json: Path, mc_dir: Path, app_minecraft_dir: Path, log: list[str]) -> None:
+    """Forge·NeoForge 설치기가 만든 라이브러리(내려받을 주소가 비어 있는 것: 패치된 클라이언트 jar 등)는
+    공식 런처가 받을 수 없으므로 앱 .minecraft 에서 복사한다. 주소가 있는 라이브러리는 런처가 받는다."""
+    try:
+        data = json.loads(version_json.read_text("utf-8"))
+    except (OSError, json.JSONDecodeError):
         return
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(src, dest)
-    log.append(f"버전 정보 {version_id} 를 공식 런처 폴더에 복사했습니다.")
+    copied = 0
+    for lib in data.get("libraries") or []:
+        art = ((lib.get("downloads") or {}).get("artifact")) or {}
+        rel = art.get("path")
+        if not rel or art.get("url"):
+            continue
+        rel_path = Path(rel)
+        if rel_path.is_absolute() or ".." in rel_path.parts:
+            continue
+        src = app_minecraft_dir / "libraries" / rel_path
+        dst = mc_dir / "libraries" / rel_path
+        if src.is_file() and not dst.is_file():
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, dst)
+            copied += 1
+    if copied:
+        log.append(f"설치기가 만든 라이브러리 {copied}개를 공식 런처 폴더에 복사했습니다(Forge·NeoForge).")
 
 
 def register_instance(instance: dict[str, Any], confirm_callback: ConfirmCallback | None = None, *,

@@ -2,7 +2,9 @@
 
 export const LAUNCHER_SERVICE_PATH = '/services/integrated-studio/launcher';
 
-export type Loader = 'vanilla' | 'fabric';
+export type Loader = 'vanilla' | 'fabric' | 'quilt' | 'neoforge' | 'forge';  // quilt·neoforge·forge 는 다른 런처에서 불러온 인스턴스
+
+export const LOADER_LABELS: Record<string, string> = { vanilla: '바닐라', fabric: 'Fabric', quilt: 'Quilt', neoforge: 'NeoForge', forge: 'Forge' };
 export type WorkMode = 'datapack' | 'mod' | 'resourcepack';
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 export type ProcessSource = 'game' | 'server';
@@ -25,6 +27,8 @@ export interface Instance {
     created: number;
     /** 인스턴스 폴더 절대 경로(게임 폴더) */
     path: string;
+    /** "연결"로 불러온 인스턴스: 다른 런처의 원본 게임 폴더(이때 path 와 같다) */
+    linkedDir?: string | null;
 }
 
 export interface GameVersion {

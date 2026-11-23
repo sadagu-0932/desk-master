@@ -3,7 +3,7 @@ import { Command, CommandContribution, CommandRegistry } from '@theia/core/lib/c
 import { MessageService } from '@theia/core/lib/common/message-service';
 import { QuickInputService } from '@theia/core/lib/browser/quick-input';
 import { ConfirmDialog } from '@theia/core/lib/browser/dialogs';
-import { Instance } from '../common/index.js';
+import { Instance, LOADER_LABELS } from '../common/index.js';
 import { CreateInstanceDialog, CreateInstanceResult, CreateInstanceServices } from './create-instance-dialog.js';
 import { AddModsDialog } from './add-mods-dialog.js';
 import { FileDialogService } from '@theia/filesystem/lib/browser/file-dialog/file-dialog-service';
@@ -196,6 +196,15 @@ export class LauncherCommandContribution implements CommandContribution {
             this.messages.info(`${inst.name}은(는) 이미 실행 중입니다. 다시 켜려면 게임 창을 닫은 뒤 실행하세요.`);
             return;
         }
+        if (inst.linkedDir) {
+            // 다른 런처 폴더를 "연결"한 인스턴스: 그 런처나 게임이 이 폴더를 쓰는 중이면 실행하지 않는다(M10)
+            const use = await this.manager.call<{ busy: boolean; reasons: string[]; warnings?: string[] }>('import_in_use', { id: inst.id });
+            if (use.busy) {
+                this.messages.warn(`${inst.name}: 다른 런처·게임이 이 폴더를 쓰고 있어 실행하지 않았습니다. ${use.reasons.join(' ')}`);
+                return;
+            }
+            (use.warnings ?? []).forEach(w => this.messages.warn(w));
+        }
         if (!await this.ensureOfficialLauncher(inst.id)) {
             return;
         }
@@ -256,7 +265,7 @@ export class LauncherCommandContribution implements CommandContribution {
         await this.manager.ready;
         const items = this.manager.instances.map(i => ({
             label: i.name,
-            description: `Java ${i.version} · ${i.loader === 'fabric' ? 'Fabric' : '바닐라'}${this.manager.isRunning(i.id) ? ' · 실행 중' : ''}`,
+            description: `Java ${i.version} · ${LOADER_LABELS[i.loader] ?? i.loader}${this.manager.isRunning(i.id) ? ' · 실행 중' : ''}`,
             id: i.id,
         }));
         const picked = await this.quickInput.showQuickPick(items, { placeholder });

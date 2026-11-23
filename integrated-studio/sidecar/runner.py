@@ -14,6 +14,8 @@ import minecraft_launcher_lib as mll
 
 from instances import InstanceStore, write_cc_config
 from paths import safe_join
+import modrinth
+import server_runner
 from rpc import RpcError, notify
 
 USER_AGENT = "integrated-studio/0.1 (personal launcher)"
@@ -67,6 +69,24 @@ class Runner:
 
     def list_loader_versions(self, version: str, loader: str = "fabric") -> dict[str, Any]:
         """그 게임 버전에서 쓸 수 있는 로더 버전들(새 것부터)과 지원 여부."""
+        if loader == "neoforge":
+            # minecraft-launcher-lib 8.0 은 26.x NeoForge 버전 형식(26.3.0.x)을 모른다 → 메이븐에서 직접
+            try:
+                versions = server_runner.neoforge_versions(version)
+            except Exception as e:  # noqa: BLE001
+                raise RpcError(f"NeoForge 버전 목록을 받지 못했습니다: {e}") from e
+            return {"supported": bool(versions), "versions": versions}
+        if loader in ("forge", "quilt"):
+            ml = mll.mod_loader.get_mod_loader(loader)
+            try:
+                if not ml.is_minecraft_version_supported(version):
+                    return {"supported": False, "versions": []}
+                stable = set(ml.get_loader_versions(version, True))
+                allv = ml.get_loader_versions(version, False)
+            except Exception as e:  # noqa: BLE001 - 네트워크 오류 등
+                raise RpcError(f"{loader} 버전 목록을 받지 못했습니다: {e.__class__.__name__}") from e
+            return {"supported": True, "versions": [{"version": v, "stable": v in stable}
+                                                    for v in sorted(allv, key=server_runner._vkey, reverse=True)]}
         if loader != "fabric":
             raise RpcError(f"지원하지 않는 로더입니다: {loader}")
         try:
@@ -116,19 +136,27 @@ class Runner:
             notify("progress", {"id": id, "stage": "install", "text": f"Java {meta['version']} 설치 중"})
             mll.install.install_minecraft_version(meta["version"], str(self.mc_dir), callback=self._callback(id, "install"))
             version_id = meta["version"]
-            if meta["loader"] == "fabric":
-                notify("progress", {"id": id, "stage": "install", "text": "Fabric 로더 설치 중"})
-                fabric = mll.mod_loader.get_mod_loader("fabric")
-                if not fabric.is_minecraft_version_supported(meta["version"]):
-                    raise RpcError(f"Fabric이 아직 {meta['version']}을 지원하지 않습니다.")
-                version_id = fabric.install(
-                    meta["version"], str(self.mc_dir),
-                    loader_version=meta.get("loaderVersion") or None,
-                    callback=self._callback(id, "install"),
-                    java=self._java_for(meta["version"]),
-                )
-                if meta.get("ccEnabled"):
-                    self._install_commandcrafter(id, meta)
+            loader = meta["loader"]
+            prev = meta.get("versionId")
+            if loader != "vanilla" and prev and (self.mc_dir / "versions" / prev / f"{prev}.json").is_file():
+                version_id = prev   # 이미 설치된 로더 버전(불러온 인스턴스 등)은 다시 설치하지 않는다
+            elif loader != "vanilla":
+                name = {"fabric": "Fabric", "quilt": "Quilt", "neoforge": "NeoForge", "forge": "Forge"}.get(loader, loader)
+                notify("progress", {"id": id, "stage": "install", "text": f"{name} 로더 설치 중"})
+                ml = mll.mod_loader.get_mod_loader(loader)
+                if loader == "neoforge":
+                    version_id = self._install_neoforge(id, meta, ml)
+                else:
+                    if not ml.is_minecraft_version_supported(meta["version"]):
+                        raise RpcError(f"{name}이(가) 아직 {meta['version']}을 지원하지 않습니다.")
+                    version_id = ml.install(
+                        meta["version"], str(self.mc_dir),
+                        loader_version=meta.get("loaderVersion") or None,
+                        callback=self._callback(id, "install"),
+                        java=self._java_for(meta["version"]),
+                    )
+            if loader == "fabric" and meta.get("ccEnabled") and not meta.get("linkedDir"):
+                self._install_commandcrafter(id, meta)
         meta = self.store.get(id)
         meta["versionId"] = version_id
         meta["installed"] = True
@@ -136,38 +164,46 @@ class Runner:
         notify("progress", {"id": id, "stage": "install", "text": "설치 완료", "done": True})
         return self.store.get(id)
 
-    # ---------- Modrinth (CommandCrafter 모드와 필수 의존성) ----------
-    def _modrinth_install(self, project: str, game_version: str, mods_dir: Path, seen: set[str]) -> list[str]:
-        if project in seen:
-            return []
-        seen.add(project)
-        q = urllib.parse.urlencode({
-            "loaders": json.dumps(["fabric"]),
-            "game_versions": json.dumps([game_version]),
-        })
-        versions = _http_json(f"https://api.modrinth.com/v2/project/{project}/version?{q}")
-        if not versions:
-            raise RpcError(f"Modrinth에 {game_version}용 '{project}' 버전이 없습니다.")
-        ver = next((v for v in versions if v.get("version_type") == "release"), versions[0])
-        files = ver.get("files") or []
-        file = next((f for f in files if f.get("primary")), files[0] if files else None)
-        if not file:
-            raise RpcError(f"'{project}' 파일을 찾을 수 없습니다.")
-        name = Path(file["filename"]).name
-        dest = safe_join(mods_dir, name)
-        if not dest.exists():
-            _download(file["url"], dest)
-        installed = [name]
-        for dep in ver.get("dependencies") or []:
-            if dep.get("dependency_type") == "required" and dep.get("project_id"):
-                installed += self._modrinth_install(dep["project_id"], game_version, mods_dir, seen)
-        return installed
+    def _install_neoforge(self, id: str, meta: dict[str, Any], ml: Any) -> str:
+        """NeoForge: 버전은 메이븐에서 직접 고르고(26.x 형식), 설치는 라이브러리의 설치기 실행(--install-client)을 쓴다."""
+        mc = meta["version"]
+        lv = meta.get("loaderVersion")
+        if lv and not lv.startswith(server_runner.neoforge_prefix(mc)):
+            raise RpcError(f"NeoForge {lv} 는 {mc} 용이 아닙니다.")
+        if not lv:
+            vs = server_runner.neoforge_versions(mc)
+            pick = [v["version"] for v in vs if v["stable"]] or [v["version"] for v in vs]
+            if not pick:
+                raise RpcError(f"NeoForge 가 아직 {mc}을 지원하지 않습니다.")
+            lv = pick[0]
+        mll.install.install_minecraft_version(mc, str(self.mc_dir), callback=self._callback(id, "install"))
+        cb = self._callback(id, "install")
+        ml._base.install(mc, str(self.mc_dir), cb, str(self._java_for(mc) or "java"), lv)
+        return f"neoforge-{lv}"
+
+    def install_fabric_for(self, id: str, version: str) -> str:
+        """M10 e4mc: 바닐라 인스턴스의 '호스트용' 실행을 위해 같은 버전 Fabric 을 앱 .minecraft 에 설치(인스턴스는 그대로)."""
+        with self.install_lock:
+            notify("progress", {"id": id, "stage": "install", "text": f"호스트용 Fabric {version} 설치 중"})
+            mll.install.install_minecraft_version(version, str(self.mc_dir), callback=self._callback(id, "install"))
+            fabric = mll.mod_loader.get_mod_loader("fabric")
+            if not fabric.is_minecraft_version_supported(version):
+                raise RpcError(f"Fabric이 아직 {version}을 지원하지 않습니다.")
+            vid = fabric.install(version, str(self.mc_dir), callback=self._callback(id, "install"),
+                                 java=self._java_for(version))
+        notify("progress", {"id": id, "stage": "install", "done": True})
+        return vid
+
+    # ---------- Modrinth (CommandCrafter 모드와 필수 의존성) — 받는 건 전부 modrinth.py ----------
+    def _modrinth_install(self, project: str, game_version: str, mods_dir: Path, loader: str = "fabric") -> list[str]:
+        res = modrinth.install(project, game_version, loader, mods_dir)
+        return [e["filename"] for e in res.installed + res.kept]
 
     def _install_commandcrafter(self, inst_id: str, meta: dict[str, Any]) -> None:
         d = self.store.dir_of(inst_id)
         notify("progress", {"id": inst_id, "stage": "install", "text": "CommandCrafter 모드 받는 중(Modrinth)"})
         try:
-            names = self._modrinth_install("commandcrafter", meta["version"], d / "mods", set())
+            names = self._modrinth_install("commandcrafter", meta["version"], d / "mods", meta["loader"])
             notify("log", {"id": inst_id, "level": "info", "source": "studio",
                            "line": f"CommandCrafter 설치: {', '.join(names)}"})
         except Exception as e:  # noqa: BLE001 - 모드가 없어도 게임은 실행돼야 한다

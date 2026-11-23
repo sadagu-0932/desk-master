@@ -129,24 +129,39 @@ Theia 확장은 TypeScript로 작성한다. Python 쪽은 `sidecar/` 아래에�
   - 언제: 사이드카 시작, 30초마다, 실행 직전, 게임이 닫힌 뒤(3초 뒤), 이름 바꾼 뒤. 수동: 명령 팔레트 "설정 지금 동기화"(RPC `sync_now`).
 - 상태(2026-11-22): 모듈·RPC·UI·동기화 완료. **아직 남은 것**: 실제 Windows PC 확인(설치 감지·winget 출력·.minecraft 위치·등록 항목 표시·Fabric 실행·로그 교체).
 
-### M10. P2P 서버 열기 (포트포워딩 없이)
-- 목표: 호스트는 [서버 열기] 한 번, 친구는 코드 붙여넣고 [참가] 한 번. 게임에는 모드를 쓰지 않는다(바닐라 서버·클라이언트, 연결은 앱이). 비밀번호·화이트리스트 없음 — 코드를 아는 사람은 누구나 참가.
-- 연결: `hyperdht`(holepunchto, 6.36.0 확인) — 공용 DHT 로 상대를 찾고 UDP 홀펀칭으로 직접 연결, 스타형(참가자 → 호스트 한 대).
-  직접 연결 실패(홀펀칭 오류) 시 설정된 중계 노드로 자동 전환(`relayThrough`, README 에는 없고 소스에서 확인 — 중계 노드는 `blind-relay` 서버. 공용 중계는 없으므로
-  `INTEGRATED_STUDIO_P2P_RELAYS` 또는 `data/p2p/settings.json {"relays": [...]}` 에 중계 노드 코드를 넣어야 한다. 없으면 이유를 한국어로 안내).
-- **프로토콜 v1**(참가 전용 앱 feat/join-app 과 호환 — 바꾸지 않는다):
-  - 참가 코드 = `IS1-` + 호스트 공개키 z-base-32
-  - 스트림 첫 바이트 `0x01` = 게임 터널, `0x02` = 정보 요청 → JSON 한 줄 `{"proto":1,"name","version","loader","mode":"dedicated|lan|external","players","max"}` 후 종료
-  - proto 가 다르면 연결하지 않고 안내. 핑·호스트 생존 확인은 주기적인 정보 요청으로.
-- 코드: `theia-extensions/p2p-server/` — `p2p-core`(터널, Theia 비의존), `lan-watcher`(방식 B), `p2p-manager`(호스트·참가 관리), 패널·대화 상자. `sidecar/server_runner.py`(방식 A, servers.dat).
-  - 방식 A 전용 서버: 서버 jar(버전 json downloads.server, Fabric 은 meta.fabricmc.net 서버 런처), EULA 동의 창(자동 동의 금지), server-ip=127.0.0.1·빈 포트·online-mode 선택, 월드 복사, 콘솔, "Done" 뒤 P2P.
-  - 방식 B 싱글 LAN 공개: latest.log 의 `Published LAN server on port {}`(26.3 jar 의 실제 문자열, 언어 무관)로 열고, `Unpublishing…`/`Stopping singleplayer server as player logged out`/`Stopping server`/`Stopping!` 로 닫음. 줄 머리 고정(채팅으로 흉내 불가).
-  - 참가: 정보 확인 → 같은 버전 인스턴스 선택(없으면 만들기) → servers.dat 에 `[P2P] 이름` 추가 → 공식 런처로 실행(게임 실행은 공식 런처로만이라 `--quickPlayMultiplayer` 는 쓰지 않음. 26.3 인자 목록에는 있음).
-  - 서버마다 키(시드)를 `data/p2p/hosts.json`(앱 데이터, git 밖)에 저장 → 다시 열어도 같은 코드, [코드 새로 만들기], [키 내보내기/가져오기](`.iskey`, 인스턴스 폴더 안에는 저장 거부, `.gitignore` 에 `*.iskey`).
-  - 백엔드 번들: hyperdht 는 네이티브 애드온 때문에 `applications/electron/esbuild.mjs` 에서 external.
-  - 시험용 환경 변수: `INTEGRATED_STUDIO_DHT_BOOTSTRAP`(테스트넷), `INTEGRATED_STUDIO_DHT_HOST`(UDP 묶을 주소).
-- 시험: `npm test -w integrated-studio-p2p-server`(로컬 테스트넷 23개 — 호스트1+참가3, 동시 2개, 재연결, 정리, 중계·자동 전환, v1 호환 원시 소켓), `pytest sidecar/tests/test_server_runner.py`(11개), e2e `scripts/e2e/t14-p2p.js`.
-- 참가 전용 프로그램은 feat/join-app 에서 따로 만든다. 그 브랜치의 docs/p2p-protocol.md·test-host 가 생기면 호환 시험을 추가한다.
+### M10. 서버 열기 + 인스턴스 불러오기 (포트포워딩 없이, 친구는 주소만)
+- 결정(2026-11-23, 사용자): 지난 P2P 방식(hyperdht·참가 코드·참가 전용 앱)은 **없앴다**. 호스트는 [서버 열기] 한 번, 친구는 마인크래프트
+  멀티플레이에 주소만 넣는다. 친구 쪽엔 프로그램·모드가 필요 없다(호스트 월드에 콘텐츠 모드가 있을 때만 같은 모드). 보안 설정(비밀번호·화이트리스트)은 넣지 않는다.
+- 같은 날 추가 요청: **Forge 계열(NeoForge·Forge)도 된다** — 불러오기·실행·전용 서버·e4mc(정확히 맞는 파일이 있을 때).
+- 코드
+  - `sidecar/modrinth.py` — Modrinth 에서 받는 건 **전부** 여기로(모드팩·모드 추가·CommandCrafter·e4mc). 게임 버전·로더가 **정확히** 맞는 파일만(가까운 버전 대체 금지),
+    26.1+ Fabric 은 "modern" 파일 우선(e4mc 실제 응답: `e4mc-fabric-6.2.3-modern.jar`), 보조 jar(-sources 등) 제외, 그래도 여럿이면 `Ambiguous`(사용자 선택).
+    sha512(없으면 sha1)로 검증 후 실패면 버림, required 의존만 자동 설치·optional 은 안내, `identify`(POST /version_files)로 여러 파일 해시 식별, `check_mods`.
+  - `sidecar/importers/` — `__init__`(기존 모드팩·Prism zip), `launchers.py`(감지, 읽기 전용), `local.py`(복사/연결, 사용 중 확인).
+    - Prism/MultiMC(`prismlauncher.cfg InstanceDir`, instance.cfg, mmc-pack.json components), CurseForge(`minecraftinstance.json`),
+      Modrinth App(`%APPDATA%\ModrinthApp\app.db`: 2026-06 이후 `instances`+`instance_content_sets`+`instance_launch_overrides`, 그 전 `profiles` — modrinth/code 소스로 확인. DB 는 임시 복사본을 읽기 전용으로),
+      공식 런처(launcher_profiles.json, 우리 항목 제외), 폴더 직접 선택, 압축(.mrpack·CurseForge zip·Prism 내보내기 zip).
+    - 복사: mods·config·saves·resourcepacks·shaderpacks·datapacks·kubejs·defaultconfigs·schematics·options*.txt·servers.dat 만. 원본 무수정.
+      연결: `instance.json` 의 `linkedDir` = 원본 게임 폴더(`store.game_dir`), 우리 파일은 원본에 쓰지 않음, 설정 동기화 제외, 실행 전 `import_in_use`(session.lock·이 폴더로 켠 java·최근 로그·다른 런처 프로세스).
+    - 계정·토큰 파일(accounts.json, launcher_accounts*, launcher_msa_credentials* 등)은 열지도 복사하지도 않는다(`is_account_file`).
+    - 불러온 뒤 버전·로더 설치(없을 때만, 실패해도 인스턴스는 남기고 실행 때 다시), 메모리·자바 인자 → `jvmArgs`.
+  - `sidecar/server_runner.py`
+    - 방식 A 전용 서버 `ServerRunner`: `servers/<srv_id>/`, 바닐라 jar(downloads.server, sha1 검증)·Fabric 서버 런처·**NeoForge(`--install-server`)·Forge(`--installServer`) 공식 메이븐 설치기(.sha256 검증)**
+      → `java @user_jvm_args.txt @libraries/<group>/<버전>/win_args.txt nogui`. 버전: NeoForge = 메이븐 메타데이터에서 `<mc 세 자리>.` 로 시작(26.3 → 26.3.0.x), Forge = promotions_slim `<mc>-recommended`.
+      EULA 창(자동 동의 금지), server-ip 비움(UPnP 로 LAN 주소에서 들어옴), 빈 포트, online-mode 선택, 월드 복사, Done 감지, 콘솔, 서버에서도 도는 모드만 서버 mods/ 로.
+    - 모드 분석: fabric.mod.json environment / quilt.mod.json / mods.toml(displayTest IGNORE_*·clientSideOnly) → "참가자도 같은 모드 필요" 목록. 목록·충돌 후보는 `sidecar/server_host_mods.json`.
+    - e4mc `E4mcHost`: modrinth.py 로 설치(바닐라는 같은 버전 Fabric "(호스트용)" 공식 런처 항목 `integrated-studio-<id>-host`, 원래 인스턴스 그대로), 충돌 모드 선택(이번만 끄기/그대로/UPnP·playit),
+      끄기는 `.disabled`(삭제 금지), e4mc 탓 크래시(crash-reports·latest.log)면 다음 실행부터 자동으로 끔.
+  - `theia-extensions/server-host/` — `lan-watcher`(방식 B, e4mc `Domain assigned: {}` 실제 로그), `lan-discovery`(방식 C, 224.0.2.60:4445 `[MOTD]…[/MOTD][AD]포트[/AD]` — 26.3 client.jar LanServerPinger 확인),
+    `slp`(Server List Ping), `upnp`(@runonflux/nat-upnp 2.2.0 고정, 사설·CGNAT 거부, 만료 1시간·20분 갱신, 725/718 처리, 닫을 때·앱 끌 때 삭제, 공인 IP 변경 감지, 선택 DDNS — `data/server-host/ddns.json`),
+    `playit`(GitHub 릴리스 `playit-windows-x86_64-signed.exe` sha256 digest 검증·사용자 확인 후 받기, claim 코드 → playit.gg/claim/<코드>, API `/tunnels/*` Agent-Key, 서버마다 고정 터널, 에이전트 자동 켜고 끄기 — playit-agent 2.0.x 소스로 확인),
+    `host-manager`(주소 자동 선택: 싱글 LAN e4mc → UPnP → playit, 전용·외부 UPnP → playit, 실패 이유·고정/매번 바뀜·중계 안내, C 는 열기 전 상태 조회·3번 무응답이면 닫음), 패널·불러오기 화면.
+  - 연결 코드: `instances.py`(로더 5종, `linkedDir`), `runner.py`(로더별 설치, NeoForge 26.x 는 minecraft-launcher-lib 8.0 이 버전 형식을 몰라 메이븐에서 직접 고른 뒤 설치기 실행),
+    `official_launcher.py`(Forge 계열 설치기가 만든 라이브러리 = 주소 없는 것 → 공식 .minecraft 로 복사), `official_rpc.py`(호스트용 항목), `sync.py`(연결 인스턴스 제외), `main.py`(RPC),
+    launcher-core(Loader 타입·로더 이름, 연결 인스턴스 사용 중 확인, 새 인스턴스 창 NeoForge·Forge·Quilt).
+- 시험: `pytest tests/test_modrinth.py tests/test_launchers.py tests/test_server_runner.py tests/test_official_launcher.py`,
+  `npm test -w integrated-studio-server-host`(가짜 공유기·playit API·마인크래프트 상태 응답·LAN 신호로 16개), e2e `scripts/e2e/t14-server.js`.
+- 남은 것: 실제 Windows PC 두 대(한 대는 휴대폰 핫스팟)에서 공유기 UPnP·e4mc·playit·Forge 서버 설치기 확인.
 
 ### M9. 패키징 (내 PC용)
 - electron-builder로 Windows 설치 파일 또는 압축 실행판을 만든다. **배포하지 않는다** — 개인 사용 전용.

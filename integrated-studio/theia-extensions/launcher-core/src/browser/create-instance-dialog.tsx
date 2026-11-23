@@ -1,7 +1,7 @@
 import * as React from '@theia/core/shared/react';
 import { ReactDialog } from '@theia/core/lib/browser/dialogs/react-dialog';
 import { DialogError } from '@theia/core/lib/browser/dialogs';
-import { CreateInstanceOptions, GameVersion, Loader, LoaderVersions } from '../common/index.js';
+import { CreateInstanceOptions, GameVersion, Loader, LOADER_LABELS, LoaderVersions } from '../common/index.js';
 import { InstanceManager } from './instance-manager.js';
 import { CurseForgeKeyForm, Platform, ProjectBrowser, ProjectHit, ProjectVersion, VersionList } from './project-browser.js';
 
@@ -44,12 +44,14 @@ const TYPE_LABEL: Record<VersionType, string> = { release: '정식', snapshot: '
 const ICON_COLORS = ['#4f7a2a', '#c95a1c', '#3a6a8a', '#6a5a8a', '#8a6a2a', '#2a7a6a', '#8a3a4a', '#5a5f57'];
 const KIND_LABEL: Record<ImportInfo['kind'], string> = { mrpack: 'Modrinth 모드팩 (.mrpack)', curseforge: 'CurseForge 모드팩 (.zip)', prism: 'Prism Launcher·MultiMC 인스턴스' };
 
-const LOADERS: { id: Loader | 'neoforge' | 'quilt'; label: string; available: boolean }[] = [
+const LOADERS: { id: Loader; label: string; available: boolean }[] = [
     { id: 'vanilla', label: '없음 (바닐라)', available: true },
     { id: 'fabric', label: 'Fabric', available: true },
-    { id: 'neoforge', label: 'NeoForge', available: false },
-    { id: 'quilt', label: 'Quilt', available: false },
+    { id: 'neoforge', label: 'NeoForge', available: true },
+    { id: 'forge', label: 'Forge', available: true },
+    { id: 'quilt', label: 'Quilt', available: true },
 ];
+const lkey = (loader: string, version: string): string => `${loader}:${version}`;
 
 /**
  * 새 인스턴스 창 (Prism Launcher의 "인스턴스 추가" 배치를 참고).
@@ -118,7 +120,7 @@ export class CreateInstanceDialog extends ReactDialog<CreateInstanceResult | und
                 return this.selected ? {
                     kind: 'custom', installNow: this.installNow, options: {
                         name: this.name.trim(), version: this.selected, loader: this.loader,
-                        loaderVersion: this.loader === 'fabric' ? this.loaderVersion : undefined,
+                        loaderVersion: this.loader !== 'vanilla' ? this.loaderVersion : undefined,
                         group: this.group.trim() || undefined, icon: this.icon,
                         ccEnabled: this.loader === 'fabric' ? this.ccEnabled : false,
                     },
@@ -159,11 +161,12 @@ export class CreateInstanceDialog extends ReactDialog<CreateInstanceResult | und
         }
         if (!value || value.kind !== 'custom') { return '버전을 고르세요.'; }
         if (!value.options.name) { return '이름을 입력하세요.'; }
-        if (value.options.loader === 'fabric') {
-            const info = this.loaderInfo.get(value.options.version);
-            if (info === 'loading' || info === undefined) { return 'Fabric 로더 목록을 불러오는 중입니다.'; }
-            if (info instanceof Error) { return `Fabric 로더 목록을 받지 못했습니다: ${info.message}`; }
-            if (!info.supported) { return `Fabric이 ${value.options.version}을(를) 아직 지원하지 않습니다. 로더를 "없음"으로 바꾸세요.`; }
+        if (value.options.loader !== 'vanilla') {
+            const name = LOADER_LABELS[value.options.loader] ?? value.options.loader;
+            const info = this.loaderInfo.get(lkey(value.options.loader, value.options.version));
+            if (info === 'loading' || info === undefined) { return `${name} 로더 목록을 불러오는 중입니다.`; }
+            if (info instanceof Error) { return `${name} 로더 목록을 받지 못했습니다: ${info.message}`; }
+            if (!info.supported) { return `${name}이(가) ${value.options.version}을(를) 아직 지원하지 않습니다. 로더를 바꾸세요.`; }
         }
         return '';
     }
@@ -211,24 +214,25 @@ export class CreateInstanceDialog extends ReactDialog<CreateInstanceResult | und
         this.autoName();
         this.loaderVersion = undefined;
         this.refresh();
-        if (id && this.loader === 'fabric') { this.loadLoaderVersions(id); }
+        if (id && this.loader !== 'vanilla') { this.loadLoaderVersions(id); }
     }
 
     protected async loadLoaderVersions(version: string): Promise<void> {
-        const cached = this.loaderInfo.get(version);
+        const key = lkey(this.loader, version);
+        const cached = this.loaderInfo.get(key);
         if (cached && !(cached instanceof Error)) { this.pickDefaultLoader(version); return; }
-        this.loaderInfo.set(version, 'loading');
+        this.loaderInfo.set(key, 'loading');
         this.update();
         try {
-            this.loaderInfo.set(version, await this.manager.listLoaderVersions(version, 'fabric'));
+            this.loaderInfo.set(key, await this.manager.listLoaderVersions(version, this.loader));
         } catch (e) {
-            this.loaderInfo.set(version, e instanceof Error ? e : new Error(String(e)));
+            this.loaderInfo.set(key, e instanceof Error ? e : new Error(String(e)));
         }
         this.pickDefaultLoader(version);
     }
 
     protected pickDefaultLoader(version: string): void {
-        const info = this.loaderInfo.get(version);
+        const info = this.loaderInfo.get(lkey(this.loader, version));
         if (this.selected === version && info && info !== 'loading' && !(info instanceof Error) && !this.loaderVersion) {
             this.loaderVersion = (info.versions.find(v => v.stable) ?? info.versions[0])?.version;
         }
@@ -237,8 +241,9 @@ export class CreateInstanceDialog extends ReactDialog<CreateInstanceResult | und
 
     protected setLoader(id: Loader): void {
         this.loader = id;
+        this.loaderVersion = undefined;
         this.refresh();
-        if (id === 'fabric' && this.selected) { this.loadLoaderVersions(this.selected); }
+        if (id !== 'vanilla' && this.selected) { this.loadLoaderVersions(this.selected); }
     }
 
     // ---------- 파일 가져오기 ----------
@@ -354,7 +359,7 @@ export class CreateInstanceDialog extends ReactDialog<CreateInstanceResult | und
     }
 
     protected renderLoader(): React.ReactNode {
-        const info = this.selected ? this.loaderInfo.get(this.selected) : undefined;
+        const info = this.selected ? this.loaderInfo.get(lkey(this.loader, this.selected)) : undefined;
         return <section className='ni-loader' aria-label='모드 로더'>
             <div className='ni-loader-kinds' role='radiogroup' aria-label='모드 로더'>
                 <div className='ni-subtitle'>모드 로더</div>
@@ -367,7 +372,7 @@ export class CreateInstanceDialog extends ReactDialog<CreateInstanceResult | und
             <div className='ni-loader-versions'>
                 {this.loader === 'vanilla'
                     ? <div className='ni-empty'>모드 없이 바닐라로 만듭니다. 데이터팩과 리소스팩은 쓸 수 있습니다.</div>
-                    : this.renderFabricVersions(info)}
+                    : this.renderLoaderVersions(info)}
             </div>
             <aside className='ni-loader-options'>
                 <div className='ni-subtitle'>함께 설치</div>
@@ -381,17 +386,18 @@ export class CreateInstanceDialog extends ReactDialog<CreateInstanceResult | und
         </section>;
     }
 
-    protected renderFabricVersions(info: LoaderVersions | 'loading' | Error | undefined): React.ReactNode {
+    protected renderLoaderVersions(info: LoaderVersions | 'loading' | Error | undefined): React.ReactNode {
         if (!this.selected) { return <div className='ni-empty'>먼저 게임 버전을 고르세요.</div>; }
-        if (info === undefined || info === 'loading') { return <div className='ni-empty'>Fabric 로더 목록 불러오는 중…</div>; }
+        const name = LOADER_LABELS[this.loader] ?? this.loader;
+        if (info === undefined || info === 'loading') { return <div className='ni-empty'>{name} 로더 목록 불러오는 중…</div>; }
         if (info instanceof Error) {
-            return <div className='ni-empty ni-error'>Fabric 로더 목록을 받지 못했습니다: {info.message}
-                <button className='theia-button secondary' onClick={() => { this.loaderInfo.delete(this.selected!); this.loadLoaderVersions(this.selected!); }}>다시 시도</button>
+            return <div className='ni-empty ni-error'>{name} 로더 목록을 받지 못했습니다: {info.message}
+                <button className='theia-button secondary' onClick={() => { this.loaderInfo.delete(lkey(this.loader, this.selected!)); this.loadLoaderVersions(this.selected!); }}>다시 시도</button>
             </div>;
         }
-        if (!info.supported) { return <div className='ni-empty ni-warn'>Fabric이 {this.selected}을(를) 아직 지원하지 않습니다.</div>; }
-        return <div className='ni-table ni-table-small' role='listbox' aria-label='Fabric 로더 버전'>
-            <div className='ni-row ni-head ni-row-2' aria-hidden='true'><span>Fabric 로더 버전</span><span /></div>
+        if (!info.supported) { return <div className='ni-empty ni-warn'>{name}이(가) {this.selected}을(를) 아직 지원하지 않습니다.</div>; }
+        return <div className='ni-table ni-table-small' role='listbox' aria-label={`${name} 로더 버전`}>
+            <div className='ni-row ni-head ni-row-2' aria-hidden='true'><span>{name} 로더 버전</span><span /></div>
             {info.versions.map((v, i) => <div key={v.version} role='option' aria-selected={v.version === this.loaderVersion} tabIndex={-1}
                 className={'ni-row ni-row-2' + (v.version === this.loaderVersion ? ' selected' : '')}
                 onClick={() => { this.loaderVersion = v.version; this.update(); }}>

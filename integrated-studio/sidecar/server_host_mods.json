@@ -1,0 +1,94 @@
+{
+  "_설명": "서버 열기(M10)에서 쓰는 모드 목록. id 는 fabric.mod.json·quilt.mod.json·mods.toml 의 모드 id(소문자). hostOnly = 참가자에게 필요 없는 것, libraries = 다른 콘텐츠 모드가 있을 때만 참가자에게 필요한 라이브러리.",
+  "networkConflicts": [
+    {
+      "id": "viafabricplus",
+      "name": "ViaFabricPlus",
+      "why": "접속 프로토콜을 바꿔 e4mc 연결과 부딪칠 수 있음"
+    },
+    {
+      "id": "viafabric",
+      "name": "ViaFabric",
+      "why": "접속 프로토콜을 바꿔 e4mc 연결과 부딪칠 수 있음"
+    },
+    {
+      "id": "world-host",
+      "name": "World Host",
+      "why": "LAN 공개를 자체 방식으로 바꿈"
+    },
+    {
+      "id": "worldhost",
+      "name": "World Host",
+      "why": "LAN 공개를 자체 방식으로 바꿈"
+    },
+    {
+      "id": "essential",
+      "name": "Essential",
+      "why": "월드 공유(초대) 기능이 LAN 공개를 바꿈"
+    },
+    {
+      "id": "essential-container",
+      "name": "Essential",
+      "why": "월드 공유(초대) 기능이 LAN 공개를 바꿈"
+    },
+    {
+      "id": "lan-plus",
+      "name": "LAN Plus",
+      "why": "LAN 공개 포트·설정을 바꿈"
+    },
+    {
+      "id": "lanserverproperties",
+      "name": "LAN Server Properties",
+      "why": "LAN 공개 포트·설정을 바꿈"
+    },
+    {
+      "id": "custom-lan",
+      "name": "Custom LAN",
+      "why": "LAN 공개 포트·설정을 바꿈"
+    },
+    {
+      "id": "playit",
+      "name": "playit.gg 모드",
+      "why": "자체 터널을 열어 e4mc 와 겹침"
+    },
+    {
+      "id": "e4mc-fork",
+      "name": "e4mc 다른 판",
+      "why": "같은 기능을 두 번 엶"
+    }
+  ],
+  "hostOnly": [
+    "e4mc",
+    "e4mc_minecraft",
+    "world-host",
+    "worldhost",
+    "essential",
+    "essential-container",
+    "lan-plus",
+    "lanserverproperties",
+    "custom-lan",
+    "commandcrafter",
+    "modmenu",
+    "fabricloader",
+    "java",
+    "minecraft",
+    "quilt_loader",
+    "neoforge",
+    "forge"
+  ],
+  "libraries": [
+    "fabric-api",
+    "quilted_fabric_api",
+    "architectury",
+    "cloth-config",
+    "cloth-config2",
+    "owo",
+    "geckolib",
+    "kotlinforfabric",
+    "fabric-language-kotlin",
+    "forgeconfigapiport",
+    "balm",
+    "yet_another_config_lib_v3",
+    "yacl"
+  ]
+}
