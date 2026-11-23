@@ -309,10 +309,16 @@ def test_install_failure_keeps_import(world):
 
 def test_manage_duplicate_memory_delete_linked(world, monkeypatch):
     imp, store = world["imp"], world["store"]
+    # 휴지통 대신 임시 폴더로 옮긴다(Windows 에서 .git 객체는 읽기 전용이라 바로 지우면 거부됨 — 실제 앱은 휴지통 사용)
+    bin_dir = world["tmp"] / "휴지통"
+    bin_dir.mkdir()
+
+    def fake_trash(p, _base):
+        __import__("shutil").move(str(p), str(bin_dir / Path(p).name))
     import paths
-    monkeypatch.setattr(paths, "trash", lambda p, b: __import__("shutil").rmtree(p))
+    monkeypatch.setattr(paths, "trash", fake_trash)
     import instances as inst_mod
-    monkeypatch.setattr(inst_mod, "trash", lambda p, b: __import__("shutil").rmtree(p))
+    monkeypatch.setattr(inst_mod, "trash", fake_trash)
     e = by_name(imp.detect(), "내 패브릭")
     linked = imp.import_many([{"key": e["key"]}], "link")["imported"][0]
     src = Path(linked["path"])
