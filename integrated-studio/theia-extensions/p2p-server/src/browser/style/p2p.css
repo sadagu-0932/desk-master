@@ -1,0 +1,37 @@
+/* M10 P2P 서버 패널 — 디자인 토큰(CLAUDE.md 4장) */
+.studio-p2p { background: #1f221e; color: #d6dbd2; overflow: auto; }
+.p2p-root { padding: 10px 12px 24px; display: flex; flex-direction: column; gap: 8px; font-size: 12px; }
+.p2p-root h3 { margin: 10px 0 2px; font-size: 12px; font-weight: 600; color: #d6dbd2; display: flex; gap: 6px; align-items: baseline; }
+.p2p-actions { display: flex; gap: 6px; }
+.p2p-actions .theia-button { flex: 1; margin: 0; display: flex; align-items: center; justify-content: center; gap: 4px; }
+.p2p-muted { color: #9aa395; }
+.p2p-small { font-size: 11px; }
+.p2p-mono, .p2p-code, .p2p-console pre { font-family: 'JetBrains Mono', monospace; }
+.p2p-card { background: #232621; border: 1px solid #2c302a; border-radius: 6px; padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; }
+.p2p-card.state-open, .p2p-card.state-connected { border-color: #34502a; }
+.p2p-card.state-error { border-color: #8a3a2a; }
+.p2p-card-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.p2p-name { font-size: 13px; }
+.p2p-chip { font-size: 10px; padding: 1px 6px; border-radius: 9px; background: #2c302a; color: #9aa395; }
+.p2p-dot { width: 8px; height: 8px; border-radius: 50%; background: #4a5046; flex: none; }
+.p2p-dot.on { background: #6cc04a; }
+.p2p-dot.busy { background: #e0a43a; }
+.p2p-code-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.p2p-code-row .theia-button { margin: 0; }
+.p2p-code { background: #1b1d1a; border: 1px solid #3a4037; border-radius: 4px; padding: 2px 6px; font-size: 11px; word-break: break-all; user-select: all; }
+.p2p-mini { margin: 0 0 0 6px !important; padding: 0 6px !important; min-width: 0 !important; height: 20px; }
+.p2p-note { background: #1b1d1a; border-left: 3px solid #5a9440; padding: 4px 8px; color: #9aa395; }
+.p2p-note.error { border-left-color: #c95a3a; color: #e6b8a8; }
+.p2p-peers { margin: 0; padding-left: 16px; color: #9aa395; }
+.p2p-card-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.p2p-card-actions .theia-button { margin: 0; display: flex; align-items: center; gap: 4px; }
+.p2p-console pre { background: #191b18; border: 1px solid #2c302a; margin: 0; padding: 6px; height: 180px; overflow: auto; font-size: 11px; white-space: pre-wrap; }
+.p2p-console-input { display: flex; gap: 6px; margin-top: 4px; }
+.p2p-console-input .theia-input { flex: 1; }
+.p2p-dialog { display: flex; flex-direction: column; gap: 10px; min-width: 460px; max-width: 560px; color: #d6dbd2; }
+.p2p-field { display: flex; flex-direction: column; gap: 4px; }
+.p2p-check { display: flex; gap: 6px; align-items: center; }
+.p2p-kinds { display: flex; flex-direction: column; gap: 6px; }
+.p2p-kind { display: flex; gap: 8px; align-items: flex-start; padding: 8px; border: 1px solid #3a4037; border-radius: 6px; cursor: pointer; }
+.p2p-kind.selected { border-color: #6cc04a; background: #2c3a26; }
+.p2p-kind > span { display: flex; flex-direction: column; gap: 2px; }

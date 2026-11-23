@@ -129,6 +129,25 @@ Theia 확장은 TypeScript로 작성한다. Python 쪽은 `sidecar/` 아래에�
   - 언제: 사이드카 시작, 30초마다, 실행 직전, 게임이 닫힌 뒤(3초 뒤), 이름 바꾼 뒤. 수동: 명령 팔레트 "설정 지금 동기화"(RPC `sync_now`).
 - 상태(2026-11-22): 모듈·RPC·UI·동기화 완료. **아직 남은 것**: 실제 Windows PC 확인(설치 감지·winget 출력·.minecraft 위치·등록 항목 표시·Fabric 실행·로그 교체).
 
+### M10. P2P 서버 열기 (포트포워딩 없이)
+- 목표: 호스트는 [서버 열기] 한 번, 친구는 코드 붙여넣고 [참가] 한 번. 게임에는 모드를 쓰지 않는다(바닐라 서버·클라이언트, 연결은 앱이). 비밀번호·화이트리스트 없음 — 코드를 아는 사람은 누구나 참가.
+- 연결: `hyperdht`(holepunchto, 6.36.0 확인) — 공용 DHT 로 상대를 찾고 UDP 홀펀칭으로 직접 연결, 스타형(참가자 → 호스트 한 대).
+  직접 연결 실패(홀펀칭 오류) 시 설정된 중계 노드로 자동 전환(`relayThrough`, README 에는 없고 소스에서 확인 — 중계 노드는 `blind-relay` 서버. 공용 중계는 없으므로
+  `INTEGRATED_STUDIO_P2P_RELAYS` 또는 `data/p2p/settings.json {"relays": [...]}` 에 중계 노드 코드를 넣어야 한다. 없으면 이유를 한국어로 안내).
+- **프로토콜 v1**(참가 전용 앱 feat/join-app 과 호환 — 바꾸지 않는다):
+  - 참가 코드 = `IS1-` + 호스트 공개키 z-base-32
+  - 스트림 첫 바이트 `0x01` = 게임 터널, `0x02` = 정보 요청 → JSON 한 줄 `{"proto":1,"name","version","loader","mode":"dedicated|lan|external","players","max"}` 후 종료
+  - proto 가 다르면 연결하지 않고 안내. 핑·호스트 생존 확인은 주기적인 정보 요청으로.
+- 코드: `theia-extensions/p2p-server/` — `p2p-core`(터널, Theia 비의존), `lan-watcher`(방식 B), `p2p-manager`(호스트·참가 관리), 패널·대화 상자. `sidecar/server_runner.py`(방식 A, servers.dat).
+  - 방식 A 전용 서버: 서버 jar(버전 json downloads.server, Fabric 은 meta.fabricmc.net 서버 런처), EULA 동의 창(자동 동의 금지), server-ip=127.0.0.1·빈 포트·online-mode 선택, 월드 복사, 콘솔, "Done" 뒤 P2P.
+  - 방식 B 싱글 LAN 공개: latest.log 의 `Published LAN server on port {}`(26.3 jar 의 실제 문자열, 언어 무관)로 열고, `Unpublishing…`/`Stopping singleplayer server as player logged out`/`Stopping server`/`Stopping!` 로 닫음. 줄 머리 고정(채팅으로 흉내 불가).
+  - 참가: 정보 확인 → 같은 버전 인스턴스 선택(없으면 만들기) → servers.dat 에 `[P2P] 이름` 추가 → 공식 런처로 실행(게임 실행은 공식 런처로만이라 `--quickPlayMultiplayer` 는 쓰지 않음. 26.3 인자 목록에는 있음).
+  - 서버마다 키(시드)를 `data/p2p/hosts.json`(앱 데이터, git 밖)에 저장 → 다시 열어도 같은 코드, [코드 새로 만들기], [키 내보내기/가져오기](`.iskey`, 인스턴스 폴더 안에는 저장 거부, `.gitignore` 에 `*.iskey`).
+  - 백엔드 번들: hyperdht 는 네이티브 애드온 때문에 `applications/electron/esbuild.mjs` 에서 external.
+  - 시험용 환경 변수: `INTEGRATED_STUDIO_DHT_BOOTSTRAP`(테스트넷), `INTEGRATED_STUDIO_DHT_HOST`(UDP 묶을 주소).
+- 시험: `npm test -w integrated-studio-p2p-server`(로컬 테스트넷 23개 — 호스트1+참가3, 동시 2개, 재연결, 정리, 중계·자동 전환, v1 호환 원시 소켓), `pytest sidecar/tests/test_server_runner.py`(11개), e2e `scripts/e2e/t14-p2p.js`.
+- 참가 전용 프로그램은 feat/join-app 에서 따로 만든다. 그 브랜치의 docs/p2p-protocol.md·test-host 가 생기면 호환 시험을 추가한다.
+
 ### M9. 패키징 (내 PC용)
 - electron-builder로 Windows 설치 파일 또는 압축 실행판을 만든다. **배포하지 않는다** — 개인 사용 전용.
 - 서명이 없어서 SmartScreen 경고가 뜨는 건 그대로 둔다.

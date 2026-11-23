@@ -11,3 +11,6 @@ applications/electron/plugins/
 *.tsbuildinfo
 scripts/e2e/out/
 build-python/
+
+# M10 P2P 서버 키 파일(내보낸 키) — 절대 커밋하지 않는다
+*.iskey
