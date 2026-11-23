@@ -59,12 +59,19 @@ def free_port() -> int:
 
 
 def port_free(port: int) -> bool:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        try:
-            s.bind(("0.0.0.0", port))
-            return True
-        except OSError:
+    """그 포트를 아무도 안 쓰는지. Windows 는 127.0.0.1 에 다른 프로그램이 듣고 있어도 0.0.0.0 묶기가 성공하므로
+    실제로 접속해 보는 것까지 확인한다."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as c:
+        c.settimeout(0.5)
+        if c.connect_ex(("127.0.0.1", port)) == 0:
             return False
+    for host in ("0.0.0.0", "127.0.0.1"):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            try:
+                s.bind((host, port))
+            except OSError:
+                return False
+    return True
 
 
 def _http_json(url: str) -> Any:
@@ -742,7 +749,7 @@ class E4mcHost:
         """e4mc 를 켠 실행 뒤: crash-reports 와 latest.log 에서 e4mc 탓으로 보이는 오류를 찾는다.
         찾으면 다음 실행부터 e4mc 를 끄고(.disabled) 다음 방식으로 넘어가라고 알린다."""
         meta = self.store.get(id)
-        since = float(meta.get("e4mcSession") or 0)
+        since = float(meta.get("e4mcSession") or 0) - 5   # 파일 시각 단위·시계 차이(Windows) 여유
         game = self.store.game_dir(id)
         evidence = None
         crashes = sorted((game / "crash-reports").glob("crash-*.txt"), key=lambda p: p.stat().st_mtime, reverse=True) \
