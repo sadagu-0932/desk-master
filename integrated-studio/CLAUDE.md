@@ -176,6 +176,8 @@ Theia 확장은 TypeScript로 작성한다. Python 쪽은 `sidecar/` 아래에�
   [실행] = 그 파일 실행(`launch_linked`, 없어졌으면 다시 만듦). 파일이 원래 런처를 연다(`importers/launchfile.py`): Prism·MultiMC `--dir … --launch …`,
   CurseForge·Modrinth App 은 앱을 연다(못 찾으면 curseforge:// · modrinth://), 공식·그냥 폴더는 공식 런처(등록 후). CurseForge·Modrinth 도 이제 받지 않음.
   파일 첫 줄 표식이 있는 것만 우리 것(같은 이름 남의 파일은 안 덮음), 목록에서 지우면 그 파일만 지움. 탐색기에서 더블클릭해도 같다.
+  만들기·불러오기·복제 뒤 `InstanceManager.ensureVisible`(사용자 요청 2026-11-25): 1초·3초 뒤 다시 읽고, 10초 뒤에도 목록·화면에 없으면 창 다시 불러오기
+  (앱 재시작과 같은 효과, 백엔드·사이드카·게임 로그는 그대로). 보이면 아무것도 안 함.
   RPC 인자 이름 점검 시험 `tests/test_rpc_args.py`(프런트·백엔드의 `.call('이름', {…})` ↔ 사이드카 핸들러) — 'iid'/'id' 불일치로 연결 실행이 통째로 안 되던 문제 재발 방지.
 
 ### M9. 패키징 (내 PC용)

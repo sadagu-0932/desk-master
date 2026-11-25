@@ -129,6 +129,7 @@ export class LauncherCommandContribution implements CommandContribution {
                 }
                 const copy = await this.manager.call<Instance>('duplicate_instance', { id: i.id, name });
                 await this.manager.refresh();
+                this.manager.ensureVisible(copy.id, copy.name);
                 this.messages.info(`'${copy.name}'을(를) 만들었습니다.`);
             }),
         });
@@ -405,6 +406,7 @@ export class LauncherCommandContribution implements CommandContribution {
         }
         if (result.kind === 'custom') {
             const inst = await this.manager.create(result.options);
+            this.manager.ensureVisible(inst.id, inst.name);
             if (result.installNow) {
                 // 설치는 뒤에서 진행(진행률은 알림에 표시). 창을 막지 않는다
                 this.manager.install(inst.id)
@@ -434,6 +436,7 @@ export class LauncherCommandContribution implements CommandContribution {
                     : await this.manager.call<ImportReport>('cf_install_modpack', { mod_id: result.modId, file_id: result.fileId, ...look });
             progress.cancel();
             await this.manager.refresh();
+            this.manager.ensureVisible(res.instance.id, res.instance.name);
             await this.manager.setTarget(res.instance.id);
             const id = res.instance.id;
             for (const f of res.failed) { this.manager.log(id, `받지 못함: ${f}`, 'warn', 'studio'); }

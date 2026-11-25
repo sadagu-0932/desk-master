@@ -6,6 +6,7 @@ import { StorageService } from '@theia/core/lib/browser/storage-service';
 import { FileUri } from '@theia/core/lib/common/file-uri';
 import { WorkspaceService } from '@theia/workspace/lib/browser/workspace-service';
 import { ConfirmDialog } from '@theia/core/lib/browser/dialogs';
+import { WindowService } from '@theia/core/lib/browser/window/window-service';
 import {
     ConfirmEvent, CreateInstanceOptions, GameVersion, LoaderVersions, Instance, LauncherClient, LauncherService, Loader, LogEvent, ProgressEvent,
     ServerStartResult, StateEvent, WorkMode
@@ -36,6 +37,7 @@ export class InstanceManager {
     @inject(MessageService) protected readonly messages: MessageService;
     @inject(StorageService) protected readonly storage: StorageService;
     @inject(WorkspaceService) protected readonly workspace: WorkspaceService;
+    @inject(WindowService) protected readonly windowService: WindowService;
 
     protected _instances: Instance[] = [];
     protected _running = new Map<string, RunState>();
@@ -109,6 +111,37 @@ export class InstanceManager {
         this._targetId = id;
         await this.storage.setData(TARGET_KEY, id);
         this.fire();
+    }
+
+    /**
+     * 만들기·불러오기 뒤 새 인스턴스가 목록·화면에 꼭 보이게(사용자 요청 2026-11-25):
+     * 1초·3초 뒤 다시 읽고, 10초 뒤에도 목록이나 화면에 없으면 창을 다시 불러온다(앱 재시작과 같은 효과, 사이드카·게임 로그는 그대로).
+     */
+    ensureVisible(id: string, name?: string): void {
+        const shown = (): boolean => {
+            const inList = this._instances.some(i => i.id === id);
+            const label = name ?? this.find(id)?.name;
+            const els = [...document.querySelectorAll('.studio-row-name, .studio-inst-card h3')];
+            const onScreen = !els.length || !label || els.some(e => (e.textContent ?? '').includes(label));
+            return inList && onScreen;
+        };
+        const wait = (ms: number) => new Promise(r => setTimeout(r, ms));
+        (async () => {
+            for (const ms of [1000, 2000]) {
+                await wait(ms);
+                await this.refresh();
+                if (shown()) {
+                    return;
+                }
+            }
+            await wait(7000);
+            await this.refresh();
+            if (!shown()) {
+                this.messages.info('새 인스턴스가 목록에 안 보여서 창을 다시 불러옵니다.');
+                await wait(800);
+                this.windowService.reload();
+            }
+        })().catch(() => undefined);
     }
 
     async refresh(): Promise<void> {

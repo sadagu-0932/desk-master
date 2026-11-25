@@ -103,6 +103,7 @@ export class ImportWidget extends ReactWidget {
             this.result = await this.store.service.importRun(
                 [...this.selected].map(key => ({ key, version: this.versions.get(key) || undefined })), this.mode);
             await this.instances.refresh();
+            this.result.imported.forEach(i => this.instances.ensureVisible(i.id, i.name));
             this.step = 'done';
         } catch (e) {
             this.error = (e as Error).message;
