@@ -214,12 +214,13 @@ class InstanceStore:
         self.save(meta)
         return self.get(inst_id)
 
-    def open_folder(self, inst_id: str) -> dict[str, Any]:
-        """게임 폴더를 파일 탐색기(Windows 탐색기)로 연다."""
+    def open_folder(self, inst_id: str, which: str | None = None) -> dict[str, Any]:
+        """게임 폴더(which="source" 면 연결한 원래 인스턴스 폴더 = 실행 파일이 있는 곳)를 파일 탐색기로 연다."""
         import os
         import subprocess
         import sys
-        d = Path(self.get(inst_id)["path"])
+        meta = self.get(inst_id)
+        d = Path(meta.get("sourceDir") or meta["path"]) if which == "source" else Path(meta["path"])
         if not d.is_dir():
             raise RpcError(f"폴더가 없습니다: {d}")
         if sys.platform == "win32":

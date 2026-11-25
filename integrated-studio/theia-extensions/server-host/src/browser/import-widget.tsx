@@ -185,11 +185,12 @@ export class ImportWidget extends ReactWidget {
         const r = this.result!;
         return <>
             <div className='sh-note'>{r.imported.length}개를 불러왔습니다{r.failed.length ? `, ${r.failed.length}개 실패` : ''}. {this.mode === 'link'
-                ? '원래 폴더를 그대로 연결했고 이 앱에는 아무것도 설치하지 않았습니다. Prism·MultiMC 인스턴스는 실행하면 그 런처로 바로 켭니다.'
+                ? '원래 폴더를 그대로 연결했고 이 앱에는 아무것도 설치하지 않았습니다. 각 원래 폴더 안에 실행 파일(통합 작업실 실행.cmd)을 만들었고, [실행]하면 그 파일이 원래 런처를 엽니다.'
                 : '버전·로더는 필요할 때만 설치했습니다.'}</div>
             {r.imported.map(i => <section key={i.id} className='sh-card'>
                 <div className='sh-card-head'><b className='sh-name'>{i.name}</b><span className='sh-muted'>{i.version} · {LOADER_LABELS[i.loader] ?? i.loader}</span></div>
                 {i.linkedDir && <div className='sh-small sh-muted'>연결: {i.linkedDir}</div>}
+                {i.launchFile && <div className='sh-small sh-muted'>실행 파일: {i.launchFile} — [실행]하면 이 파일이 원래 런처를 엽니다</div>}
                 {i.warning && <div className='sh-note warn'>{i.warning}</div>}
                 <div className='sh-card-actions'>
                     <button className='theia-button' onClick={() => this.commands.executeCommand(ServerHostCommands.HOST_INSTANCE.id, i.id)}>

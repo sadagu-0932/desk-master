@@ -21,7 +21,7 @@ from instances import InstanceStore
 from paths import safe_join
 from rpc import RpcError, notify
 
-from . import launchers
+from . import launchers, launchfile
 
 COPY_ITEMS = ["mods", "config", "saves", "resourcepacks", "shaderpacks", "datapacks", "kubejs", "defaultconfigs",
               "schematics", "options.txt", "optionsof.txt", "optionsshaders.txt", "servers.dat"]
@@ -144,10 +144,20 @@ class LocalImporter:
                         meta["installed"] = True        # 공식 런처에 이미 있는 버전 → 실행할 때도 받지 않음
                 if e["launcher"] in ("prism", "multimc") and e.get("launcherInstanceId"):
                     meta["launchVia"] = {"kind": e["launcher"], "root": e.get("launcherRoot"), "instance": e["launcherInstanceId"]}
-                    meta["installed"] = True            # 게임 파일은 그 런처가 갖고 있다
+                # 원래 인스턴스 폴더 경로는 항상 저장하고, 그 안에 실행 파일을 만든다(실행하면 그 파일이 원래 런처를 연다)
+                meta["sourceDir"] = str(Path(e.get("source") or game).resolve())
+                meta["launchKind"] = launchfile.kind_for(e["launcher"])
+                if meta["launchKind"] != "official":
+                    meta["installed"] = True            # 게임 파일은 그 런처가 갖고 있다 — 여기서 받지 않음
                 self.store.save(meta)
+                out = self.store.get(iid)
+                try:
+                    self.ensure_launch_file(iid)
+                    out = self.store.get(iid)
+                except OSError as ex:
+                    out["warning"] = f"원래 폴더에 실행 파일을 만들지 못했습니다({ex}). 실행할 때 다시 시도합니다."
                 notify("progress", {"id": iid, "stage": "import", "text": "연결 완료", "done": True})
-                return self.store.get(iid)
+                return out
             self.store.save(meta)
             self._copy(iid, game, e)
             warning = None
@@ -204,48 +214,97 @@ class LocalImporter:
             pass
 
     def migrate_linked(self) -> int:
-        """예전 버전에서 연결한 Prism·MultiMC 인스턴스에 '원래 런처로 실행' 정보를 채운다(이 앱에 설치하지 않게)."""
+        """예전 버전에서 연결한 인스턴스: 원래 폴더 경로·런처 종류를 채우고 실행 파일을 만든다(이 앱에 설치하지 않게)."""
         n = 0
         for m in self.store.list():
-            src = str(m.get("importedFrom") or "")
-            if not m.get("linkedDir") or m.get("launchVia") or not src.startswith(("prism:", "multimc:")):
+            if not m.get("linkedDir"):
                 continue
-            folder = Path(src.split(":", 1)[1])
-            if not (folder / "mmc-pack.json").is_file():
-                continue
-            root = launchers.guess_launcher_root(folder)
-            kind = "multimc" if src.startswith("multimc:") or (root and (root / "multimc.cfg").is_file()) else "prism"
             meta = dict(m)
-            meta["launchVia"] = {"kind": kind, "root": str(root) if root else None, "instance": folder.name}
-            meta["installed"] = True
-            self.store.save(meta)
-            n += 1
+            src = str(m.get("importedFrom") or "")
+            prefix, _, rest = src.partition(":")
+            changed = False
+            if not meta.get("launchVia") and prefix in ("prism", "multimc") and (Path(rest) / "mmc-pack.json").is_file():
+                folder = Path(rest)
+                root = launchers.guess_launcher_root(folder)
+                kind = "multimc" if prefix == "multimc" or (root and (root / "multimc.cfg").is_file()) else "prism"
+                meta["launchVia"] = {"kind": kind, "root": str(root) if root else None, "instance": folder.name}
+                changed = True
+            if not meta.get("launchKind"):
+                meta["launchKind"] = (meta.get("launchVia") or {}).get("kind") or launchfile.kind_for(prefix or meta.get("importedLauncher"))
+                changed = True
+            if not meta.get("sourceDir"):
+                meta["sourceDir"] = rest if prefix in ("prism", "multimc", "curseforge", "modrinth", "folder") and Path(rest).is_dir() \
+                    else meta["linkedDir"]
+                changed = True
+            if meta["launchKind"] != "official" and not meta.get("installed"):
+                meta["installed"] = True
+                changed = True
+            if changed:
+                self.store.save(meta)
+            if not meta.get("launchFile") or not Path(meta["launchFile"]).is_file():
+                try:
+                    self.ensure_launch_file(m["id"])
+                    changed = True
+                except OSError:
+                    pass
+            n += int(changed)
         return n
+
+    def ensure_launch_file(self, iid: str) -> Path:
+        """원래 인스턴스 폴더 안의 실행 파일을 (다시) 만들고 경로를 저장한다."""
+        meta = self.store.get(iid)
+        folder = Path(meta.get("sourceDir") or meta["linkedDir"])
+        if not folder.is_dir():
+            raise OSError(f"원래 폴더가 없습니다: {folder}")
+        kind = meta.get("launchKind") or "official"
+        via = meta.get("launchVia") or {}
+        exe = None
+        if kind in ("prism", "multimc"):
+            found = find_launcher_exe(kind, Path(via["root"]) if via.get("root") else None)
+            exe = str(found) if found else None
+        path = launchfile.write(meta, folder, exe)
+        if meta.get("launchFile") != str(path):
+            meta["launchFile"] = str(path)
+            self.store.save(meta)
+        return path
+
+    def remove_launch_file(self, iid: str) -> bool:
+        """목록에서 지울 때 우리가 만든 실행 파일만 지운다(표식이 있는 파일만)."""
+        try:
+            f = self.store.get(iid).get("launchFile")
+        except RpcError:
+            return False
+        return launchfile.remove(Path(f)) if f else False
 
     def official_dirs(self) -> list[Path]:
         roots = self.roots or launchers.default_roots()
         return [Path(p) for p in roots.get("official", [])]
 
-    # ---------- 연결한 Prism·MultiMC 인스턴스: 그 런처로 바로 실행 ----------
-    def launch_external(self, iid: str) -> dict[str, Any]:
+    # ---------- 연결한 인스턴스: 원래 폴더의 실행 파일을 실행 ----------
+    def launch_linked(self, iid: str) -> dict[str, Any]:
         meta = self.store.get(iid)
-        via = meta.get("launchVia") or {}
-        kind = via.get("kind")
-        if kind not in ("prism", "multimc"):
-            raise RpcError("이 인스턴스는 원래 런처로 바로 실행할 수 없습니다.")
-        exe = find_launcher_exe(kind, Path(via["root"]) if via.get("root") else None)
-        name = launchers.LAUNCHER_NAMES[kind]
-        if not exe:
-            raise RpcError(f"{name} 실행 파일을 찾지 못했습니다. {name}이(가) 설치돼 있는지 확인하세요.")
-        args = [str(exe)]
-        if via.get("root"):
-            args += ["--dir", str(via["root"])]
-        args += ["--launch", str(via["instance"])]
+        if not meta.get("linkedDir"):
+            raise RpcError("연결한 인스턴스가 아닙니다.")
         try:
-            subprocess.Popen(args, cwd=str(Path(exe).parent), creationflags=getattr(subprocess, "DETACHED_PROCESS", 0))
+            path = self.ensure_launch_file(iid)      # 없어졌거나 런처 위치가 바뀌었으면 다시 만든다
         except OSError as e:
-            raise RpcError(f"{name}을(를) 실행하지 못했습니다: {e}") from e
-        return {"ok": True, "launcher": name, "exe": str(exe)}
+            raise RpcError(f"원래 폴더에 실행 파일을 만들지 못했습니다: {e}") from e
+        meta = self.store.get(iid)
+        kind = meta.get("launchKind") or "official"
+        if kind in ("prism", "multimc"):
+            via = meta.get("launchVia") or {}
+            if not find_launcher_exe(kind, Path(via["root"]) if via.get("root") else None):
+                name = launchfile.KIND_NAMES[kind]
+                raise RpcError(f"{name} 실행 파일을 찾지 못했습니다. {name}이(가) 설치돼 있는지 확인하세요.")
+        try:
+            launchfile.run(path)
+        except OSError as e:
+            raise RpcError(f"실행 파일을 실행하지 못했습니다: {e}") from e
+        return {"ok": True, "kind": kind, "launcher": launchfile.KIND_NAMES[kind], "file": str(path)}
+
+    def launch_external(self, iid: str) -> dict[str, Any]:
+        """예전 이름(호환)."""
+        return self.launch_linked(iid)
 
     # ---------- 연결한 인스턴스: 다른 런처가 쓰는 중인지 ----------
     def in_use(self, iid: str) -> dict[str, Any]:

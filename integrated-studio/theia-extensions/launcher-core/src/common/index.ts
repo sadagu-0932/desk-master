@@ -33,6 +33,12 @@ export interface Instance {
     jvmArgs?: string | null;
     /** 연결한 Prism·MultiMC 인스턴스: 그 런처로 바로 실행(이 앱에 설치하지 않음) */
     launchVia?: { kind: 'prism' | 'multimc'; root?: string | null; instance: string } | null;
+    /** 연결한 원래 인스턴스 폴더(실행 파일이 있는 곳) */
+    sourceDir?: string | null;
+    /** 원래 폴더 안에 만든 실행 파일 — [실행]하면 이 파일이 원래 런처를 연다 */
+    launchFile?: string | null;
+    /** 실행 파일이 여는 런처 */
+    launchKind?: 'prism' | 'multimc' | 'curseforge' | 'modrinth' | 'official' | null;
 }
 
 export interface GameVersion {

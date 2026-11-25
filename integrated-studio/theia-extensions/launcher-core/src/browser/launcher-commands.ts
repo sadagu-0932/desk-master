@@ -53,6 +53,10 @@ interface ImportReport {
     linked?: string;
 }
 
+const LAUNCH_KIND_NAME: Record<string, string> = {
+    prism: 'Prism Launcher', multimc: 'MultiMC', curseforge: 'CurseForge', modrinth: 'Modrinth App', official: '공식 런처',
+};
+
 /** 명령 인자는 인스턴스 id(문자열)이거나 없으면 현재 인스턴스 */
 type IdArg = string | undefined;
 
@@ -143,6 +147,9 @@ export class LauncherCommandContribution implements CommandContribution {
                 await this.manager.refresh();
                 this.messages.info(`${i.name}: 최대 메모리 ${gb.trim() ? gb + 'GB' : '기본값'} (다음 실행부터)`);
             }),
+        });
+        registry.registerCommand({ id: 'studio.instance.openSourceFolder' }, {
+            execute: (id: IdArg) => this.withInstance(id, i => this.manager.call('open_instance_folder', { id: i.id, which: 'source' })),
         });
         registry.registerCommand(StudioCommands.MANAGE, { execute: (id: IdArg) => this.withInstance(id, i => this.manage(i)) });
         registry.registerCommand(StudioCommands.TOGGLE_CC, {
@@ -237,8 +244,8 @@ export class LauncherCommandContribution implements CommandContribution {
             this.messages.info(`${inst.name}은(는) 이미 실행 중입니다. 다시 켜려면 게임 창을 닫은 뒤 실행하세요.`);
             return;
         }
-        if (inst.launchVia) {
-            await this.externalPlay(inst);
+        if (inst.linkedDir && inst.launchKind && inst.launchKind !== 'official') {
+            await this.linkedPlay(inst);   // 원래 폴더의 실행 파일 → Prism·MultiMC·CurseForge·Modrinth App
             return;
         }
         if (inst.linkedDir) {
@@ -267,7 +274,11 @@ export class LauncherCommandContribution implements CommandContribution {
         await this.manager.call('official_tail_log', { id: inst.id });
         await this.manager.setTarget(inst.id);
         await this.registry.executeCommand(TaskCommandIds.GAME_LOG_TOGGLE).catch(() => undefined);
-        const open = await this.manager.call<OfficialResult>('official_open_launcher');
+        // 연결한 인스턴스는 원래 폴더의 실행 파일로 공식 런처를 연다
+        const open = inst.linkedDir
+            ? await this.manager.call<{ ok: boolean }>('launch_linked', { id: inst.id }).then(() => ({ ok: true, message: '' }) as OfficialResult)
+                .catch(e => ({ ok: false, message: e instanceof Error ? e.message : String(e) }) as OfficialResult)
+            : await this.manager.call<OfficialResult>('official_open_launcher');
         if (open.ok) {
             this.messages.info(`공식 런처에서 '통합 작업실 · ${inst.name}'을(를) 고르고 '플레이'를 눌러 주세요. 게임 로그는 아래 '게임 로그' 탭에 나옵니다.`);
         } else {
@@ -275,27 +286,30 @@ export class LauncherCommandContribution implements CommandContribution {
         }
     }
 
-    /** 연결한 Prism·MultiMC 인스턴스: 원래 런처로 바로 실행. 이 앱에는 아무것도 설치하지 않는다. */
-    protected async externalPlay(inst: Instance): Promise<void> {
-        const name = inst.launchVia!.kind === 'prism' ? 'Prism Launcher' : 'MultiMC';
+    /** 연결한 인스턴스: 원래 인스턴스 폴더 안의 실행 파일을 실행 → 원래 런처가 연다. 이 앱에는 아무것도 설치하지 않는다. */
+    protected async linkedPlay(inst: Instance): Promise<void> {
         const use = await this.manager.call<{ busy: boolean; reasons: string[] }>('import_in_use', { id: inst.id });
         if (use.busy) {
             this.messages.warn(`${inst.name}: 이미 이 폴더로 게임이 켜져 있습니다. ${use.reasons.join(' ')}`);
             return;
         }
-        await this.manager.call('launch_external', { id: inst.id });
+        const r = await this.manager.call<{ launcher: string; kind: string; file: string }>('launch_linked', { id: inst.id });
         await this.manager.call('official_tail_log', { id: inst.id }).catch(() => undefined);   // 게임 로그·실행 상태
         await this.manager.setTarget(inst.id);
         await this.registry.executeCommand(TaskCommandIds.GAME_LOG_TOGGLE).catch(() => undefined);
-        this.messages.info(`${name}(으)로 '${inst.name}'을(를) 실행합니다. 원래 폴더·설정 그대로이고 이 앱에는 아무것도 설치하지 않습니다.`);
+        const direct = r.kind === 'prism' || r.kind === 'multimc';
+        this.messages.info(direct
+            ? `${r.launcher}(으)로 '${inst.name}'을(를) 켭니다(원래 폴더의 실행 파일: ${r.file}).`
+            : `${r.launcher}을(를) 열었습니다. '${inst.name}'을(를) 골라 [플레이]를 눌러 주세요(원래 폴더의 실행 파일: ${r.file}).`);
     }
 
     /** 인스턴스 관리 메뉴(카드의 … 버튼·오른쪽 클릭) */
     protected async manage(i: Instance): Promise<void> {
         const running = this.manager.isRunning(i.id);
         const items: Array<{ label: string; description?: string; cmd: string }> = [
-            { label: '$(play) 실행', description: running ? '실행 중' : i.launchVia ? `${i.launchVia.kind === 'prism' ? 'Prism Launcher' : 'MultiMC'}로(원래 런처)` : '공식 런처로', cmd: StudioCommands.LAUNCH.id },
+            { label: '$(play) 실행', description: running ? '실행 중' : i.launchFile ? `원래 폴더의 실행 파일로(${LAUNCH_KIND_NAME[i.launchKind ?? 'official']})` : '공식 런처로', cmd: StudioCommands.LAUNCH.id },
             { label: '$(folder) 폴더 열기', description: i.linkedDir ? `연결된 원래 폴더: ${i.path}` : i.path, cmd: StudioCommands.OPEN_FOLDER.id },
+            ...(i.sourceDir ? [{ label: '$(file-symlink-file) 원래 인스턴스 폴더 열기', description: `실행 파일이 있는 곳: ${i.sourceDir}`, cmd: 'studio.instance.openSourceFolder' }] : []),
             { label: '$(window) 작업실에서 열기', cmd: StudioCommands.OPEN_WORKSPACE.id },
             { label: '$(edit) 이름 바꾸기', cmd: StudioCommands.RENAME.id },
             { label: '$(copy) 복제', description: '모드·설정·월드를 복사한 새 인스턴스', cmd: StudioCommands.DUPLICATE.id },
@@ -429,8 +443,8 @@ export class LauncherCommandContribution implements CommandContribution {
                 res.manual.length ? `직접 받아야 할 모드 ${res.manual.length}개(제작자가 외부 다운로드를 막음)` : '',
             ].filter(Boolean).join(', ');
             const msg = res.linked
-                ? `'${res.instance.name}'을(를) 연결했습니다 — 원래 폴더(${res.linked}) 그대로이고 아무것도 받지 않았습니다.`
-                    + (res.instance.launchVia ? ` 실행하면 ${res.instance.launchVia.kind === 'prism' ? 'Prism Launcher' : 'MultiMC'}가 켭니다.` : '')
+                ? `'${res.instance.name}'을(를) 연결했습니다 — 원래 폴더 그대로이고 아무것도 받지 않았습니다.`
+                    + (res.instance.launchFile ? ` 원래 폴더에 실행 파일을 만들었습니다(${res.instance.launchFile}). [실행]하면 이 파일이 ${LAUNCH_KIND_NAME[res.instance.launchKind ?? 'official']}을(를) 엽니다.` : '')
                 : `'${res.instance.name}' 가져오기 완료 — 파일 ${res.downloaded}개 받음, ${res.extracted}개 풀어 넣음.`
                     + (extra ? ` ${extra}: 목록은 게임 로그 탭에 있습니다.` : ' F5로 실행하면 게임 파일을 받습니다.');
             const open = '작업실에서 열기';

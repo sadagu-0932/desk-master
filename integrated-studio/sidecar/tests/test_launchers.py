@@ -339,32 +339,75 @@ def test_manage_duplicate_memory_delete_linked(world, monkeypatch):
 
 
 def test_linked_prism_launches_via_prism_without_install(world, monkeypatch, tmp_path):
-    import os, stat, subprocess as sp
+    """연결하면 원래 인스턴스 폴더에 실행 파일이 생기고, [실행]은 그 파일을 실행한다 → 파일이 Prism 을 --launch 로 연다."""
+    import os, stat, time as _t
+    from importers import launchfile
     imp, store, prism = world["imp"], world["store"], world["prism"]
-    # 포터블 Prism: 데이터 폴더에 실행 파일. 실행되면 받은 인자를 파일에 적는다
+    out = tmp_path / "prism-args.txt"
     exe = prism / ("prismlauncher.exe" if os.name == "nt" else "prismlauncher")
-    out = tmp_path / "args.txt"
-    calls = []
-    exe.write_text("#!/bin/sh\n", "utf-8")
+    exe.write_text(f'#!/bin/sh\nprintf "%s\\n" "$@" > "{out}"\n', "utf-8")    # 가짜 Prism: 받은 인자를 적는다
     exe.chmod(exe.stat().st_mode | stat.S_IEXEC)
     world["installed"].clear()
     e = by_name(imp.detect(), "Fabric 팩")
     inst = imp.import_many([{"key": e["key"]}], "link")["imported"][0]
-    assert world["installed"] == []                                   # 연결은 이 앱에 아무것도 설치하지 않음
-    assert inst["installed"] is True and inst["launchVia"]["kind"] == "prism"
-    assert inst["launchVia"]["instance"] == "Fabric 팩" and Path(inst["launchVia"]["root"]) == prism
-    monkeypatch.setattr(sp, "Popen", lambda args, **kw: calls.append(args))
-    r = imp.launch_external(inst["id"])
-    assert r["ok"] and calls[0][0] == str(exe)
-    assert calls[0][1:] == ["--dir", str(prism), "--launch", "Fabric 팩"]
-    # 실행 파일이 없으면 이유를 알려 줌
-    exe.unlink()
+    assert world["installed"] == []                                   # 이 앱에 아무것도 설치하지 않음
+    assert inst["installed"] is True and inst["launchKind"] == "prism"
+    src = prism / "inst-moved" / "Fabric 팩"
+    assert Path(inst["sourceDir"]) == src.resolve()                   # 원래 인스턴스 폴더 경로 저장
+    f = Path(inst["launchFile"])
+    assert f.parent == src.resolve() and f.is_file() and launchfile.is_ours(f)   # 같은 폴더 안에 실행 파일
+    text = f.read_text("utf-8")
+    assert str(exe) in text and "--launch" in text and "Fabric 팩" in text
+    win = launchfile.script_text(store.get(inst["id"]), str(exe), windows=True)
+    assert win.startswith("@echo off\r\nchcp 65001") and '--launch "Fabric 팩"' in win and "%LOCALAPPDATA%" in win
+    if os.name != "nt":
+        r = imp.launch_linked(inst["id"])                             # [실행] = 실행 파일 실행
+        assert r["ok"] and r["file"] == str(f)
+        for _ in range(50):
+            if out.exists():
+                break
+            _t.sleep(0.05)
+        assert out.read_text("utf-8").split("\n")[:4] == ["--dir", str(prism), "--launch", "Fabric 팩"]
+    f.unlink()                                                        # 지워도 실행하면 다시 만든다
+    monkeypatch.setattr(launchfile, "run", lambda p: None)
+    imp.launch_linked(inst["id"])
+    assert f.is_file()
+    exe.unlink()                                                      # Prism 이 없으면 이유를 알려 줌
     monkeypatch.setattr("shutil.which", lambda n: None)
     monkeypatch.delenv("LOCALAPPDATA", raising=False)
     monkeypatch.delenv("PROGRAMFILES", raising=False)
     with pytest.raises(RpcError) as err:
-        imp.launch_external(inst["id"])
+        imp.launch_linked(inst["id"])
     assert "Prism Launcher" in str(err.value)
+    assert imp.remove_launch_file(inst["id"]) and not f.exists()      # 목록에서 지우면 우리 파일만 지움
+
+
+def test_curseforge_and_modrinth_link_make_launch_file_no_install(world):
+    from importers import launchfile
+    imp = world["imp"]
+    world["installed"].clear()
+    for name, kind in (("All the Mods", "curseforge"), ("Cobblemon", "modrinth"), ("내 패브릭", "official")):
+        e = by_name(imp.detect(), name)
+        inst = imp.import_many([{"key": e["key"]}], "link")["imported"][0]
+        assert inst["launchKind"] == kind
+        f = Path(inst["launchFile"])
+        assert f.is_file() and f.parent == Path(inst["sourceDir"])
+        win = launchfile.script_text(inst, windows=True)
+        if kind == "curseforge":
+            assert "CurseForge.exe" in win and "curseforge://" in win and inst["installed"] is True
+        elif kind == "modrinth":
+            assert "Modrinth App.exe" in win and "modrinth://" in win and inst["installed"] is True
+        else:
+            assert "MinecraftLauncher.exe" in win and "Microsoft.4297127D64EC6" in win
+    assert world["installed"] == []
+    # 같은 이름의 남의 파일이 있으면 덮지 않는다
+    cf = world["cf"]
+    theirs = cf / launchfile.file_name()
+    theirs.unlink()
+    theirs.write_text("사용자 파일", "utf-8")
+    e = by_name(imp.detect(), "All the Mods")
+    inst = imp.import_many([{"key": e["key"]}], "link")["imported"][0]
+    assert theirs.read_text("utf-8") == "사용자 파일" and Path(inst["launchFile"]) != theirs
 
 
 def test_migrate_old_linked_instance(world):
@@ -378,6 +421,7 @@ def test_migrate_old_linked_instance(world):
     assert imp.migrate_linked() == 1
     m = store.get(inst["id"])
     assert m["launchVia"]["kind"] == "prism" and m["installed"] is True
+    assert Path(m["launchFile"]).is_file()                            # 예전 연결 인스턴스에도 실행 파일
     assert imp.migrate_linked() == 0
 
 

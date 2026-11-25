@@ -172,7 +172,7 @@ export interface ImportPreview {
 }
 
 export interface ImportResult {
-    imported: Array<{ id: string; name: string; version: string; loader: string; path: string; linkedDir?: string | null; warning?: string }>;
+    imported: Array<{ id: string; name: string; version: string; loader: string; path: string; linkedDir?: string | null; launchFile?: string | null; warning?: string }>;
     failed: Array<{ key: string; name: string; error: string }>;
 }
 

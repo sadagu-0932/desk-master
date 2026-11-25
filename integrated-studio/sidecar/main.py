@@ -59,6 +59,7 @@ def main() -> None:
         return result
 
     def delete_instance(id: str):
+        local_import.remove_launch_file(id)   # 연결 인스턴스: 원래 폴더에 만든 실행 파일만 지움(원래 폴더는 그대로)
         try:
             official.forget(id)  # 공식 런처 항목도 지운다(우리 항목만)
         except Exception as e:  # noqa: BLE001 - 항목 정리에 실패해도 삭제는 한다(다음 동기화 때 다시 정리)
@@ -75,7 +76,7 @@ def main() -> None:
         "set_cc_enabled": lambda id, enabled: store.set_cc_enabled(id, enabled),
         "duplicate_instance": lambda id, name=None: store.duplicate(id, name),
         "set_instance_memory": lambda id, memory_mb=None, java_args=None: store.set_memory(id, memory_mb, java_args),
-        "open_instance_folder": lambda id: store.open_folder(id),
+        "open_instance_folder": lambda id, which=None: store.open_folder(id, which),
         "set_work_mode": lambda id, mode: store.set_work_mode(id, mode),
         "list_versions": runner.list_versions,
         "list_loader_versions": runner.list_loader_versions,
@@ -134,8 +135,9 @@ def main() -> None:
         "import_inspect_folder": local_import.inspect_folder,
         "import_preview": local_import.preview,
         "import_run": local_import.import_many,
-        "import_in_use": local_import.in_use,
-        "launch_external": local_import.launch_external,
+        "import_in_use": lambda id: local_import.in_use(id),
+        "launch_external": lambda id: local_import.launch_external(id),
+        "launch_linked": lambda id: local_import.launch_linked(id),
         "sync_now": settings_sync.sync_now,
     }
     background = {"install", "duplicate_instance", "list_versions", "list_loader_versions", "server_start", "server_stop", "generate_reports", "mod_new", "mod_build", "read_commands", "inspect_import", "import_file",

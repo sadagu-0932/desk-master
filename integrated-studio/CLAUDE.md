@@ -172,6 +172,11 @@ Theia 확장은 TypeScript로 작성한다. Python 쪽은 `sidecar/` 아래에�
   새 인스턴스 창 [인스턴스 폴더 연결]: 어느 런처 폴더든(Prism·MultiMC·CurseForge·Modrinth 프로필·Prism 안의 minecraft·그냥 .minecraft) 연결,
   버전은 로그(`Loading Minecraft X with Fabric Loader Y`·`--fml.mcVersion`/`--fml.neoForgeVersion`)에서, 못 찾으면 입력. 공식 .minecraft 에
   그 버전이 있으면 설치된 것으로 표시(받지 않음). e2e 는 `THEIA_ELECTRON_DISABLE_NATIVE_ELEMENTS=1` 로 Theia 파일 대화 상자를 써서 자동화.
+- 결정(2026-11-25, 사용자): **연결 = 원래 폴더 경로를 항상 저장(`sourceDir`) + 그 폴더 안에 실행 파일 `통합 작업실 실행.cmd` 생성(`launchFile`)**.
+  [실행] = 그 파일 실행(`launch_linked`, 없어졌으면 다시 만듦). 파일이 원래 런처를 연다(`importers/launchfile.py`): Prism·MultiMC `--dir … --launch …`,
+  CurseForge·Modrinth App 은 앱을 연다(못 찾으면 curseforge:// · modrinth://), 공식·그냥 폴더는 공식 런처(등록 후). CurseForge·Modrinth 도 이제 받지 않음.
+  파일 첫 줄 표식이 있는 것만 우리 것(같은 이름 남의 파일은 안 덮음), 목록에서 지우면 그 파일만 지움. 탐색기에서 더블클릭해도 같다.
+  RPC 인자 이름 점검 시험 `tests/test_rpc_args.py`(프런트·백엔드의 `.call('이름', {…})` ↔ 사이드카 핸들러) — 'iid'/'id' 불일치로 연결 실행이 통째로 안 되던 문제 재발 방지.
 
 ### M9. 패키징 (내 PC용)
 - electron-builder로 Windows 설치 파일 또는 압축 실행판을 만든다. **배포하지 않는다** — 개인 사용 전용.
