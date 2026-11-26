@@ -73,11 +73,15 @@ def test_windows_link_run_delete(tmp_path):
         res = sc.call("import_file", path=str(inst), name=None, group=None, icon=None, version=None)
         iid = res["instance"]["id"]
         assert Path(res["instance"]["launchFile"]).parent == game.resolve()
+        assert res["instance"]["launchKind"] == "prism"
         assert any(i["id"] == iid for i in sc.call("list_instances"))
         print("in_use:", sc.call("import_in_use", id=iid))
         print("official:", sc.call("official_is_installed"))
         print("touch:", sc.call("official_touch", id=iid))
-        print("launch:", sc.call("launch_linked", id=iid))
+        try:
+            print("launch:", sc.call("launch_linked", id=iid))
+        except AssertionError as e:
+            assert "Prism Launcher 실행 파일을 찾지 못했습니다" in str(e), e   # CI 에는 Prism 이 없음 → 안내 문구
         print("tail:", sc.call("official_tail_log", id=iid))
         print("running:", sc.call("running"))
         print("import_detect:", len(sc.call("import_detect")))

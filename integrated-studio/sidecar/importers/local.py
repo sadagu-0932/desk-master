@@ -147,7 +147,13 @@ class LocalImporter:
                 # 원래 인스턴스 폴더 경로는 항상 저장하고, 그 안의 게임 폴더(.minecraft)에 실행 파일을 만든다.
                 # 실행 = 그 .minecraft 를 게임 폴더로 마인크래프트를 바로 켠다(공식 런처 계정·항목, 사용자 결정 2026-11-26).
                 meta["sourceDir"] = str(Path(e.get("source") or game).resolve())
-                meta["launchKind"] = "official"
+                if meta.get("launchVia"):
+                    # Prism·MultiMC: 앱이 그 런처의 [실행]을 누르는 것과 같게(--launch). 그 런처의 계정·자바·로더, 다운로드 없음
+                    meta["launchKind"] = meta["launchVia"]["kind"]
+                    meta["installed"] = True
+                else:
+                    meta["launchKind"] = "official"
+                    meta["launchKind_checked"] = True
                 self.store.save(meta)
                 out = self.store.get(iid)
                 try:
@@ -233,8 +239,16 @@ class LocalImporter:
                 meta["sourceDir"] = rest if prefix in ("prism", "multimc", "curseforge", "modrinth", "folder") and Path(rest).is_dir() \
                     else meta["linkedDir"]
                 changed = True
-            if meta.get("launchKind") != "official":
-                meta["launchKind"] = "official"
+            want_kind = (meta.get("launchVia") or {}).get("kind") or "official"
+            if meta.get("launchKind") != want_kind:
+                meta["launchKind"] = want_kind
+                changed = True
+            if want_kind in ("prism", "multimc"):
+                if not meta.get("installed"):
+                    meta["installed"] = True
+                    changed = True
+            elif not meta.get("launchKind_checked"):
+                meta["launchKind_checked"] = True
                 # 예전엔 원래 런처가 켜서 '설치됨'으로 표시했다 → 공식 런처에 그 버전이 있을 때만 설치됨
                 have = official_version_id(meta["version"], meta["loader"], meta.get("loaderVersion"), self.official_dirs())
                 meta["installed"] = bool(have)

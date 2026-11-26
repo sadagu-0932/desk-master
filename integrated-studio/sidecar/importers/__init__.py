@@ -454,12 +454,8 @@ class Importers:
         kind = "multimc" if root and (root / "multimc.cfg").is_file() else "prism"
         meta["launchVia"] = {"kind": kind, "root": str(root) if root else None, "instance": folder.name}
         meta["sourceDir"] = str(folder.resolve())
-        meta["launchKind"] = "official"   # .minecraft 를 게임 폴더로 바로 실행(공식 런처 계정)
-        from .local import official_version_id
-        have = official_version_id(meta["version"], meta["loader"], meta.get("loaderVersion"), self._local().official_dirs())
-        if have:
-            meta["versionId"] = have
-            meta["installed"] = True
+        meta["launchKind"] = kind          # 앱이 Prism·MultiMC 의 [실행]을 누르는 것과 같게(--launch), 다운로드 없음
+        meta["installed"] = True
         self.store.save(meta)
         try:
             self._local().ensure_launch_file(inst_id)   # 원래 폴더에 실행 파일
