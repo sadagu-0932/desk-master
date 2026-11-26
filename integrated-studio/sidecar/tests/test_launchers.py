@@ -338,67 +338,57 @@ def test_manage_duplicate_memory_delete_linked(world, monkeypatch):
     assert all(i["id"] != linked["id"] for i in store.list())
 
 
-def test_linked_prism_launches_via_prism_without_install(world, monkeypatch, tmp_path):
-    """연결하면 원래 인스턴스 폴더에 실행 파일이 생기고, [실행]은 그 파일을 실행한다 → 파일이 Prism 을 --launch 로 연다."""
-    import os, stat, time as _t
+def test_linked_prism_runs_minecraft_from_its_minecraft_folder(world, monkeypatch):
+    """연결하면 원래 인스턴스 폴더 경로를 저장하고, 그 안의 게임 폴더(.minecraft)에 실행 파일을 만든다.
+    [실행] = 그 파일 → 그 .minecraft 를 게임 폴더로 마인크래프트(공식 런처 계정·항목)."""
     from importers import launchfile
     imp, store, prism = world["imp"], world["store"], world["prism"]
-    out = tmp_path / "prism-args.txt"
-    exe = prism / ("prismlauncher.exe" if os.name == "nt" else "prismlauncher")
-    exe.write_text(f'#!/bin/sh\nprintf "%s\\n" "$@" > "{out}"\n', "utf-8")    # 가짜 Prism: 받은 인자를 적는다
-    exe.chmod(exe.stat().st_mode | stat.S_IEXEC)
     world["installed"].clear()
     e = by_name(imp.detect(), "Fabric 팩")
     inst = imp.import_many([{"key": e["key"]}], "link")["imported"][0]
-    assert world["installed"] == []                                   # 이 앱에 아무것도 설치하지 않음
-    assert inst["installed"] is True and inst["launchKind"] == "prism"
     src = prism / "inst-moved" / "Fabric 팩"
+    game = src / "minecraft"
     assert Path(inst["sourceDir"]) == src.resolve()                   # 원래 인스턴스 폴더 경로 저장
+    assert Path(inst["path"]) == game.resolve()                       # 게임 폴더 = 인스턴스 안의 .minecraft
     f = Path(inst["launchFile"])
-    assert f.parent == src.resolve() and f.is_file() and launchfile.is_ours(f)   # 같은 폴더 안에 실행 파일
-    text = f.read_text("utf-8")
-    assert str(exe) in text and "--launch" in text and "Fabric 팩" in text
-    win = launchfile.script_text(store.get(inst["id"]), str(exe), windows=True)
-    assert win.startswith("@echo off\r\nchcp 65001") and '--launch "Fabric 팩"' in win and "%LOCALAPPDATA%" in win
-    if os.name != "nt":
-        r = imp.launch_linked(inst["id"])                             # [실행] = 실행 파일 실행
-        assert r["ok"] and r["file"] == str(f)
-        for _ in range(50):
-            if out.exists():
-                break
-            _t.sleep(0.05)
-        assert out.read_text("utf-8").split("\n")[:4] == ["--dir", str(prism), "--launch", "Fabric 팩"]
+    assert f.parent == game.resolve() and launchfile.is_ours(f)       # 실행 파일은 .minecraft 안에
+    assert not (src / launchfile.file_name()).exists()
+    assert inst["launchKind"] == "official"
+    assert world["installed"] == []                                   # 연결할 때는 아무것도 받지 않음
+    assert inst["installed"] is False                                 # 공식 런처에 그 버전이 없으니 처음 실행 때 한 번
+    win = launchfile.script_text(store.get(inst["id"]), windows=True)
+    assert "MinecraftLauncher.exe" in win and "Microsoft.4297127D64EC6" in win
+    ran = []
+    monkeypatch.setattr(launchfile, "run", lambda p: ran.append(p))
+    r = imp.launch_linked(inst["id"])
+    assert r["ok"] and ran == [f]
     f.unlink()                                                        # 지워도 실행하면 다시 만든다
-    monkeypatch.setattr(launchfile, "run", lambda p: None)
     imp.launch_linked(inst["id"])
     assert f.is_file()
-    exe.unlink()                                                      # Prism 이 없으면 이유를 알려 줌
-    monkeypatch.setattr("shutil.which", lambda n: None)
-    monkeypatch.delenv("LOCALAPPDATA", raising=False)
-    monkeypatch.delenv("PROGRAMFILES", raising=False)
-    with pytest.raises(RpcError) as err:
-        imp.launch_linked(inst["id"])
-    assert "Prism Launcher" in str(err.value)
     assert imp.remove_launch_file(inst["id"]) and not f.exists()      # 목록에서 지우면 우리 파일만 지움
+
+
+def test_linked_with_version_already_in_official_needs_no_download(world):
+    imp = world["imp"]
+    vid = "fabric-loader-0.20.1-26.3"
+    w(world["mc"] / "versions" / vid / f"{vid}.json", "{}")
+    for name in ("Fabric 팩", "All the Mods", "Cobblemon"):
+        e = by_name(imp.detect(), name)
+        inst = imp.import_many([{"key": e["key"]}], "link")["imported"][0]
+        assert inst["installed"] is True and inst["versionId"] == vid, name
+        assert Path(inst["launchFile"]).parent == Path(inst["path"])
 
 
 def test_curseforge_and_modrinth_link_make_launch_file_no_install(world):
     from importers import launchfile
     imp = world["imp"]
     world["installed"].clear()
-    for name, kind in (("All the Mods", "curseforge"), ("Cobblemon", "modrinth"), ("내 패브릭", "official")):
+    for name in ("All the Mods", "Cobblemon", "내 패브릭"):
         e = by_name(imp.detect(), name)
         inst = imp.import_many([{"key": e["key"]}], "link")["imported"][0]
-        assert inst["launchKind"] == kind
+        assert inst["launchKind"] == "official"
         f = Path(inst["launchFile"])
-        assert f.is_file() and f.parent == Path(inst["sourceDir"])
-        win = launchfile.script_text(inst, windows=True)
-        if kind == "curseforge":
-            assert "CurseForge.exe" in win and "curseforge://" in win and inst["installed"] is True
-        elif kind == "modrinth":
-            assert "Modrinth App.exe" in win and "modrinth://" in win and inst["installed"] is True
-        else:
-            assert "MinecraftLauncher.exe" in win and "Microsoft.4297127D64EC6" in win
+        assert f.is_file() and f.parent == Path(inst["path"])         # 게임 폴더 안
     assert world["installed"] == []
     # 같은 이름의 남의 파일이 있으면 덮지 않는다
     cf = world["cf"]
@@ -411,17 +401,24 @@ def test_curseforge_and_modrinth_link_make_launch_file_no_install(world):
 
 
 def test_migrate_old_linked_instance(world):
+    """예전 버전(원래 런처로 실행·실행 파일은 인스턴스 폴더) → .minecraft 로 바로 실행·실행 파일은 .minecraft 안으로."""
+    from importers import launchfile
     imp, store = world["imp"], world["store"]
     e = by_name(imp.detect(), "Fabric 팩")
     inst = imp.import_many([{"key": e["key"]}], "link")["imported"][0]
     meta = store.get(inst["id"])
+    old_file = Path(meta["sourceDir"]) / launchfile.file_name()
+    old_file.write_text(f"rem {launchfile.MARKER}\n", "utf-8")
+    Path(meta["launchFile"]).unlink()
+    meta.update(launchKind="prism", launchFile=str(old_file), installed=True)
     meta.pop("launchVia")
-    meta["installed"] = False                                         # 예전 버전에서 연결한 상태
     store.save(meta)
-    assert imp.migrate_linked() == 1
+    assert imp.migrate_linked() >= 1
     m = store.get(inst["id"])
-    assert m["launchVia"]["kind"] == "prism" and m["installed"] is True
-    assert Path(m["launchFile"]).is_file()                            # 예전 연결 인스턴스에도 실행 파일
+    assert m["launchKind"] == "official" and m["launchVia"]["kind"] == "prism"
+    assert m["installed"] is False                                    # 공식 런처에 그 버전이 없음 → 실행 때 한 번
+    assert Path(m["launchFile"]).parent == Path(m["path"]) and Path(m["launchFile"]).is_file()
+    assert not old_file.exists()                                      # 예전 위치의 우리 파일은 지움
     assert imp.migrate_linked() == 0
 
 
@@ -450,7 +447,8 @@ def test_connect_any_folder_from_new_instance_window(world, tmp_path):
     info = imp.inspect_import(str(inner))
     assert info["kind"] == "prism" and info["loader"] == "fabric"
     r = imp.import_file(str(inner))
-    assert r["instance"]["launchVia"]["kind"] == "prism" and r["instance"]["installed"] is True
+    assert r["instance"]["launchVia"]["kind"] == "prism" and r["instance"]["launchKind"] == "official"
+    assert Path(r["instance"]["launchFile"]).parent == inner.resolve()   # 실행 파일은 그 .minecraft 안
     # 3) 그냥 게임 폴더: Fabric 로그로 버전 알아냄 + 공식 .minecraft 에 그 버전이 있으면 받지 않음
     g = tmp_path / "그냥" / ".minecraft"
     game_content(g)

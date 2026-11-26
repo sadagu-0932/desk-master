@@ -275,13 +275,17 @@ export class LauncherCommandContribution implements CommandContribution {
         await this.manager.call('official_tail_log', { id: inst.id });
         await this.manager.setTarget(inst.id);
         await this.registry.executeCommand(TaskCommandIds.GAME_LOG_TOGGLE).catch(() => undefined);
-        // 연결한 인스턴스는 원래 폴더의 실행 파일로 공식 런처를 연다
+        // 공식 런처를 열면 이 인스턴스 항목이 이미 선택돼 있게(lastUsed) → [플레이]만 누르면 된다
+        await this.manager.call('official_touch', { id: inst.id }).catch(() => undefined);
+        // 연결한 인스턴스는 그 .minecraft 안의 실행 파일로 공식 런처를 연다
         const open = inst.linkedDir
             ? await this.manager.call<{ ok: boolean }>('launch_linked', { id: inst.id }).then(() => ({ ok: true, message: '' }) as OfficialResult)
                 .catch(e => ({ ok: false, message: e instanceof Error ? e.message : String(e) }) as OfficialResult)
             : await this.manager.call<OfficialResult>('official_open_launcher');
         if (open.ok) {
-            this.messages.info(`공식 런처에서 '통합 작업실 · ${inst.name}'을(를) 고르고 '플레이'를 눌러 주세요. 게임 로그는 아래 '게임 로그' 탭에 나옵니다.`);
+            this.messages.info(inst.linkedDir
+                ? `공식 런처에 '통합 작업실 · ${inst.name}'이(가) 선택돼 있습니다 — [플레이]를 누르면 ${inst.linkedDir} 를 게임 폴더로 켜집니다.`
+                : `공식 런처에서 '통합 작업실 · ${inst.name}'이(가) 선택돼 있습니다 — [플레이]를 눌러 주세요. 게임 로그는 아래 '게임 로그' 탭에 나옵니다.`);
         } else {
             this.messages.warn(open.message);
         }

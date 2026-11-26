@@ -343,13 +343,16 @@ def write_work_mode(d: Path, mode: str) -> None:
 
 
 def git_init(d: Path) -> None:
+    import os
+    # 입력 없음·창 없음·시간 제한·서명/후크/프롬프트 끔 — 사용자 git 설정(서명 요구 등) 때문에 멈추지 않게
+    kw = dict(cwd=d, check=True, capture_output=True, stdin=subprocess.DEVNULL, timeout=20,
+              env={**os.environ, "GIT_TERMINAL_PROMPT": "0", "GCM_INTERACTIVE": "never"},
+              creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     try:
-        subprocess.run(["git", "init", "-q"], cwd=d, check=True, capture_output=True)
-        subprocess.run(["git", "add", "-A"], cwd=d, check=True, capture_output=True)
+        subprocess.run(["git", "init", "-q"], **kw)
+        subprocess.run(["git", "add", "-A"], **kw)
         subprocess.run(
-            ["git", "-c", "user.name=통합 작업실", "-c", "user.email=studio@localhost",
-             "commit", "-q", "-m", "인스턴스 생성"],
-            cwd=d, check=True, capture_output=True,
-        )
-    except (OSError, subprocess.CalledProcessError):
-        pass  # git이 없어도 인스턴스는 쓸 수 있다
+            ["git", "-c", "user.name=통합 작업실", "-c", "user.email=studio@localhost", "-c", "commit.gpgsign=false",
+             "commit", "-q", "--no-verify", "-m", "인스턴스 생성"], **kw)
+    except (OSError, subprocess.SubprocessError):
+        pass  # git이 없거나 멈춰도 인스턴스는 쓸 수 있다

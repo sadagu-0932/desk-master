@@ -144,11 +144,10 @@ class LocalImporter:
                         meta["installed"] = True        # 공식 런처에 이미 있는 버전 → 실행할 때도 받지 않음
                 if e["launcher"] in ("prism", "multimc") and e.get("launcherInstanceId"):
                     meta["launchVia"] = {"kind": e["launcher"], "root": e.get("launcherRoot"), "instance": e["launcherInstanceId"]}
-                # 원래 인스턴스 폴더 경로는 항상 저장하고, 그 안에 실행 파일을 만든다(실행하면 그 파일이 원래 런처를 연다)
+                # 원래 인스턴스 폴더 경로는 항상 저장하고, 그 안의 게임 폴더(.minecraft)에 실행 파일을 만든다.
+                # 실행 = 그 .minecraft 를 게임 폴더로 마인크래프트를 바로 켠다(공식 런처 계정·항목, 사용자 결정 2026-11-26).
                 meta["sourceDir"] = str(Path(e.get("source") or game).resolve())
-                meta["launchKind"] = launchfile.kind_for(e["launcher"])
-                if meta["launchKind"] != "official":
-                    meta["installed"] = True            # 게임 파일은 그 런처가 갖고 있다 — 여기서 받지 않음
+                meta["launchKind"] = "official"
                 self.store.save(meta)
                 out = self.store.get(iid)
                 try:
@@ -214,7 +213,8 @@ class LocalImporter:
             pass
 
     def migrate_linked(self) -> int:
-        """예전 버전에서 연결한 인스턴스: 원래 폴더 경로·런처 종류를 채우고 실행 파일을 만든다(이 앱에 설치하지 않게)."""
+        """예전 버전에서 연결한 인스턴스: 원래 폴더 경로를 채우고, 실행 방식을 '.minecraft 로 바로 실행'으로 바꾸고,
+        실행 파일을 .minecraft 안으로 옮긴다(예전 위치의 우리 파일은 지움)."""
         n = 0
         for m in self.store.list():
             if not m.get("linkedDir"):
@@ -229,15 +229,22 @@ class LocalImporter:
                 kind = "multimc" if prefix == "multimc" or (root and (root / "multimc.cfg").is_file()) else "prism"
                 meta["launchVia"] = {"kind": kind, "root": str(root) if root else None, "instance": folder.name}
                 changed = True
-            if not meta.get("launchKind"):
-                meta["launchKind"] = (meta.get("launchVia") or {}).get("kind") or launchfile.kind_for(prefix or meta.get("importedLauncher"))
-                changed = True
             if not meta.get("sourceDir"):
                 meta["sourceDir"] = rest if prefix in ("prism", "multimc", "curseforge", "modrinth", "folder") and Path(rest).is_dir() \
                     else meta["linkedDir"]
                 changed = True
-            if meta["launchKind"] != "official" and not meta.get("installed"):
-                meta["installed"] = True
+            if meta.get("launchKind") != "official":
+                meta["launchKind"] = "official"
+                # 예전엔 원래 런처가 켜서 '설치됨'으로 표시했다 → 공식 런처에 그 버전이 있을 때만 설치됨
+                have = official_version_id(meta["version"], meta["loader"], meta.get("loaderVersion"), self.official_dirs())
+                meta["installed"] = bool(have)
+                meta["versionId"] = have or None     # 없으면 실행할 때 한 번 설치(그때 정해짐)
+                changed = True
+            old = meta.get("launchFile")
+            want = Path(meta["linkedDir"]) / launchfile.file_name()
+            if old and Path(old) != want:
+                launchfile.remove(Path(old))
+                meta["launchFile"] = None
                 changed = True
             if changed:
                 self.store.save(meta)
@@ -253,9 +260,9 @@ class LocalImporter:
     def ensure_launch_file(self, iid: str) -> Path:
         """원래 인스턴스 폴더 안의 실행 파일을 (다시) 만들고 경로를 저장한다."""
         meta = self.store.get(iid)
-        folder = Path(meta.get("sourceDir") or meta["linkedDir"])
+        folder = Path(meta["linkedDir"])     # 인스턴스 안의 게임 폴더(.minecraft)
         if not folder.is_dir():
-            raise OSError(f"원래 폴더가 없습니다: {folder}")
+            raise OSError(f"원래 게임 폴더가 없습니다: {folder}")
         kind = meta.get("launchKind") or "official"
         via = meta.get("launchVia") or {}
         exe = None
@@ -415,7 +422,7 @@ def _processes() -> list[tuple[str, str]]:
         out = subprocess.run(
             ["powershell", "-NoProfile", "-Command",
              "Get-CimInstance Win32_Process | ForEach-Object { $_.Name + '|' + $_.CommandLine }"],
-            capture_output=True, text=True, timeout=15, creationflags=0x08000000).stdout
+            capture_output=True, text=True, timeout=15, creationflags=0x08000000, stdin=subprocess.DEVNULL).stdout
     except (OSError, subprocess.SubprocessError):
         return []
     rows = []

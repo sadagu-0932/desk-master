@@ -104,14 +104,14 @@ def _run(args: list[str], timeout: float = 30) -> subprocess.CompletedProcess:
     """짧은 명령 실행(출력 수집). 테스트에서 mock 한다."""
     flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
     return subprocess.run(args, capture_output=True, text=True, encoding="utf-8", errors="replace",
-                          timeout=timeout, creationflags=flags)
+                          timeout=timeout, creationflags=flags, stdin=subprocess.DEVNULL)
 
 
 def _popen(args: list[str]) -> subprocess.Popen:
     """긴 명령 실행(한 줄씩 읽기용). 테스트에서 mock 한다."""
     flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
     return subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-                            encoding="utf-8", errors="replace", creationflags=flags)
+                            encoding="utf-8", errors="replace", creationflags=flags, stdin=subprocess.DEVNULL)
 
 
 def _start_file(target: str) -> None:
@@ -525,6 +525,24 @@ def register_instance(instance: dict[str, Any], confirm_callback: ConfirmCallbac
     msg = f"공식 런처에 '{name}' 항목을 {'갱신' if updated else '추가'}했습니다. 공식 런처의 '플레이'에서 고르세요."
     return {"ok": True, "key": key, "updated": updated, "backup": str(backup),
             "message": " ".join([msg] + log), "warnings": warnings}
+
+
+def touch_profile(instance_id: str, *, minecraft_dir: str | os.PathLike | None = None) -> bool:
+    """우리 항목의 lastUsed 를 지금으로 — 공식 런처를 열면 이 항목이 맨 위·선택된 상태라 [플레이]만 누르면 된다."""
+    if minecraft_dir is None and not _is_windows():
+        return False
+    key = profile_key(instance_id)
+    try:
+        mc_dir, _ = _resolve_mc_dir(minecraft_dir)
+        data = _read_profiles(mc_dir)
+        prof = data["profiles"].get(key)
+        if not prof:
+            return False
+        prof["lastUsed"] = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+        _write_profiles(mc_dir, data)
+        return True
+    except Exception:  # noqa: BLE001 - 순서만 바꾸는 것이라 실패해도 실행은 계속
+        return False
 
 
 def registered_profile(instance_id: str, *, minecraft_dir: str | os.PathLike | None = None) -> dict[str, Any] | None:

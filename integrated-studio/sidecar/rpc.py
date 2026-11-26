@@ -9,7 +9,9 @@ sys.stdout을 stderr로 돌리고, 원래 stdout 핸들은 이 모듈만 쓴다.
 """
 from __future__ import annotations
 
+import io
 import json
+import os
 import sys
 import threading
 import traceback
@@ -19,7 +21,41 @@ from typing import Any, Callable
 for _stream in (sys.stdin, sys.stdout, sys.stderr):
     if hasattr(_stream, "reconfigure"):
         _stream.reconfigure(encoding="utf-8", errors="replace")
-_out = sys.stdout
+
+
+def _isolate_protocol() -> tuple[io.TextIOBase, io.TextIOBase]:
+    """프로토콜 통로(stdin/stdout)를 따로 떼어 내고, 표준 입출력 자리는 비워 둔다.
+
+    사이드카가 띄우는 프로그램(PowerShell·git·자바 설치기 등)은 표준 입력을 물려받는다. 그대로 두면
+    PowerShell 처럼 입력이 끝날 때까지 읽는 프로그램이 앱의 요청을 삼키거나 앱을 끌 때까지 멈춰서
+    만들기·불러오기·실행이 통째로 멈췄다(껐다 켜야 보이던 문제). 그래서:
+      - 프로토콜은 복제한 파일 설명자로만 읽고 쓴다.
+      - 표준 입력 자리는 빈 입력(devnull), 표준 출력 자리는 표준 오류(로그)로 바꾼다.
+      - Windows 는 자식이 GetStdHandle 로 물려받으므로 SetStdHandle 까지 바꾼다.
+    """
+    try:
+        in_fd = os.dup(0)
+        out_fd = os.dup(1)
+        null = os.open(os.devnull, os.O_RDWR)
+        os.dup2(null, 0)
+        os.dup2(2, 1)
+        os.close(null)
+        if sys.platform == "win32":
+            import ctypes
+            import msvcrt
+            k32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+            k32.SetStdHandle(-10, msvcrt.get_osfhandle(0))   # STD_INPUT_HANDLE
+            k32.SetStdHandle(-11, msvcrt.get_osfhandle(1))   # STD_OUTPUT_HANDLE
+        proto_in = io.TextIOWrapper(os.fdopen(in_fd, "rb", buffering=0), encoding="utf-8", errors="replace")
+        proto_out = io.TextIOWrapper(os.fdopen(out_fd, "wb", buffering=0), encoding="utf-8", errors="replace",
+                                     write_through=True)
+        sys.stdin = open(os.devnull, encoding="utf-8")
+        return proto_in, proto_out
+    except (OSError, ValueError, AttributeError):
+        return sys.stdin, sys.stdout   # 떼어 내지 못하면 예전처럼
+
+
+_in, _out = _isolate_protocol()
 sys.stdout = sys.stderr
 _lock = threading.Lock()
 
@@ -58,7 +94,7 @@ def serve(handlers: dict[str, Handler], background: set[str]) -> None:
             traceback.print_exc()
             _write({"id": req_id, "error": {"message": f"{type(e).__name__}: {e}"}})
 
-    for raw in sys.stdin:
+    for raw in _in:
         raw = raw.strip()
         if not raw:
             continue

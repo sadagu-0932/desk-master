@@ -441,3 +441,16 @@ def test_forge_generated_libraries_copied(tmp_path):
     assert not (off / "libraries" / dl).exists()
     assert not (tmp_path / "evil.jar").exists()
     assert any("라이브러리 1개" in m for m in log)
+
+
+def test_touch_profile_makes_it_selected(win, tmp_path, mc):
+    """실행 직전 우리 항목의 lastUsed 를 지금으로 → 공식 런처를 열면 그 항목이 선택돼 있다."""
+    import json as _json
+    inst = instance(tmp_path)
+    ol.register_instance(inst, yes, minecraft_dir=mc)
+    assert ol.touch_profile(inst["id"], minecraft_dir=mc) is True
+    data = _json.loads((mc / ol.PROFILES_FILE).read_text("utf-8"))
+    used = data["profiles"][ol.profile_key(inst["id"])]["lastUsed"]
+    others = [p.get("lastUsed", "") for k, p in data["profiles"].items() if k != ol.profile_key(inst["id"])]
+    assert all(used > o for o in others)
+    assert ol.touch_profile("inst_ffffffff", minecraft_dir=mc) is False   # 없는 항목은 그대로

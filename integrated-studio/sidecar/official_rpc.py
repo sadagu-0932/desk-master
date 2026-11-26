@@ -128,6 +128,11 @@ class OfficialLauncherRpc:
                 _log(id, "공식 런처에 '(호스트용)' 항목을 만들었습니다. 친구에게 열 때는 그 항목으로 실행하세요.", "info")
             return result
 
+    def touch(self, id: str) -> bool:
+        """실행 직전: 공식 런처에서 이 인스턴스 항목이 선택돼 있게(lastUsed)."""
+        with self._profiles_lock:
+            return ol.touch_profile(id)
+
     def register_instance(self, id: str) -> dict[str, Any]:
         """처음 등록은 묻는다. 이미 우리 항목이 있으면(동기화 대상) 묻지 않고 맞춘다."""
         with self._profiles_lock:
@@ -271,6 +276,7 @@ class OfficialLauncherRpc:
             "official_install": _wrap(self.install),
             "official_register_instance": _wrap(self.register_instance),
             "official_register_host_profile": _wrap(self.register_host_profile),
+            "official_touch": lambda id: self.touch(id),
             "official_unregister_instance": _wrap(self.unregister_instance),
             "official_open_launcher": _wrap(self.open_launcher),
             "official_tail_log": _wrap(self.tail_log),

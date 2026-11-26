@@ -453,9 +453,13 @@ class Importers:
         root = guess_launcher_root(folder)
         kind = "multimc" if root and (root / "multimc.cfg").is_file() else "prism"
         meta["launchVia"] = {"kind": kind, "root": str(root) if root else None, "instance": folder.name}
-        meta["installed"] = True   # 게임 파일은 원래 런처가 갖고 있다 — 여기서 받지 않는다
         meta["sourceDir"] = str(folder.resolve())
-        meta["launchKind"] = kind
+        meta["launchKind"] = "official"   # .minecraft 를 게임 폴더로 바로 실행(공식 런처 계정)
+        from .local import official_version_id
+        have = official_version_id(meta["version"], meta["loader"], meta.get("loaderVersion"), self._local().official_dirs())
+        if have:
+            meta["versionId"] = have
+            meta["installed"] = True
         self.store.save(meta)
         try:
             self._local().ensure_launch_file(inst_id)   # 원래 폴더에 실행 파일
