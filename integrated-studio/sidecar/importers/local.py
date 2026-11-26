@@ -433,14 +433,18 @@ def _processes() -> list[tuple[str, str]]:
     if sys.platform != "win32":
         return []
     try:
+        # 출력은 UTF-8 로 받는다. 시스템 코드 페이지(cp949)로 못 읽는 글자가 명령줄에 있으면 Windows 의 Python 은
+        # 읽기 스레드 오류를 삼키고 stdout=None 을 돌려줘서 'splitlines' 오류로 실행이 막혔다.
         out = subprocess.run(
             ["powershell", "-NoProfile", "-Command",
+             "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; "
              "Get-CimInstance Win32_Process | ForEach-Object { $_.Name + '|' + $_.CommandLine }"],
-            capture_output=True, text=True, timeout=15, creationflags=0x08000000, stdin=subprocess.DEVNULL).stdout
-    except (OSError, subprocess.SubprocessError):
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=15,
+            creationflags=0x08000000, stdin=subprocess.DEVNULL).stdout
+    except (OSError, subprocess.SubprocessError, UnicodeError):
         return []
     rows = []
-    for line in out.splitlines():
+    for line in (out or "").splitlines():
         name, _, cmd = line.partition("|")
         if name:
             rows.append((name.strip().lower(), cmd))

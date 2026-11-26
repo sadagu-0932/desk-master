@@ -495,3 +495,28 @@ def test_delete_when_folder_in_use_hides_then_purges(tmp_path, monkeypatch):
     moved = []
     monkeypatch.setattr(inst_mod, "trash", lambda p, b: moved.append(p))
     assert store.purge_pending() == 1 and moved == [d]               # 다음 시작 때 휴지통으로
+
+
+def test_in_use_survives_powershell_returning_none(world, monkeypatch):
+    """Windows: 명령줄에 cp949 로 못 읽는 글자가 있으면 PowerShell 결과가 None 으로 온다 → 실행이 막히면 안 된다."""
+    import subprocess as sp
+    from importers import local as local_mod
+    imp = world["imp"]
+    e = by_name(imp.detect(), "Fabric 팩")
+    inst = imp.import_many([{"key": e["key"]}], "link")["imported"][0]
+    monkeypatch.delenv("INTEGRATED_STUDIO_FAKE_PROCS", raising=False)
+    monkeypatch.setattr(local_mod.sys, "platform", "win32")
+
+    class R:
+        stdout = None
+    seen = {}
+
+    def fake_run(args, **kw):
+        seen.update(kw)
+        seen["cmd"] = args
+        return R()
+    monkeypatch.setattr(sp, "run", fake_run)
+    assert local_mod._processes() == []
+    assert seen["encoding"] == "utf-8" and "OutputEncoding" in seen["cmd"][-1]
+    r = imp.in_use(inst["id"])
+    assert r["linked"] is True

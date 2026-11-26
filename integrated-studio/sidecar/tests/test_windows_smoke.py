@@ -75,7 +75,12 @@ def test_windows_link_run_delete(tmp_path):
         assert Path(res["instance"]["launchFile"]).parent == game.resolve()
         assert res["instance"]["launchKind"] == "prism"
         assert any(i["id"] == iid for i in sc.call("list_instances"))
-        print("in_use:", sc.call("import_in_use", id=iid))
+        # cp949 로 못 읽는 글자가 명령줄에 든 프로세스가 있어도(사용자 PC 재현) 사용 중 확인이 막히면 안 된다
+        odd = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)", "🙂 크리에이트 ⛏ ⁂"])
+        try:
+            print("in_use:", sc.call("import_in_use", id=iid))
+        finally:
+            odd.kill()
         print("official:", sc.call("official_is_installed"))
         print("touch:", sc.call("official_touch", id=iid))
         try:
