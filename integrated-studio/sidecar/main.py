@@ -31,8 +31,14 @@ def main() -> None:
 
     data_dir = Path(args.data).resolve()
     data_dir.mkdir(parents=True, exist_ok=True)
+    import rpc as _rpc
+    _rpc.ERROR_LOG = str(data_dir / "logs" / "sidecar-errors.log")   # 오류 전체 기록(원인 찾기용)
     store = InstanceStore(data_dir)
-    store.on_change = lambda: notify("instances_changed", {})   # 만들기·불러오기·삭제 즉시 목록에 반영
+    store.on_change = lambda: notify("instances_changed", {})
+    try:
+        store.purge_pending()   # 지난번에 쓰는 중이라 못 지운 폴더 정리
+    except Exception as e:  # noqa: BLE001
+        print(f"[store] 지우기 정리 실패: {e}", file=sys.stderr)   # 만들기·불러오기·삭제 즉시 목록에 반영
     runner = Runner(data_dir, store)
     atexit.register(runner.shutdown)
     packs = Packs(store, runner.mc_dir)
@@ -60,6 +66,7 @@ def main() -> None:
 
     def delete_instance(id: str):
         local_import.remove_launch_file(id)   # 연결 인스턴스: 원래 폴더에 만든 실행 파일만 지움(원래 폴더는 그대로)
+        official.tail_stop(id)                # 로그 따라 읽기를 먼저 멈춘다(폴더를 잡고 있지 않게)
         try:
             official.forget(id)  # 공식 런처 항목도 지운다(우리 항목만)
         except Exception as e:  # noqa: BLE001 - 항목 정리에 실패해도 삭제는 한다(다음 동기화 때 다시 정리)

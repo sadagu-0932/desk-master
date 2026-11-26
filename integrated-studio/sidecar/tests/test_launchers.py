@@ -472,3 +472,20 @@ def test_connect_any_folder_from_new_instance_window(world, tmp_path):
     (tmp_path / "빈").mkdir()
     with pytest.raises(RpcError):
         imp.inspect_import(str(tmp_path / "빈"))
+
+
+def test_delete_when_folder_in_use_hides_then_purges(tmp_path, monkeypatch):
+    import instances as inst_mod
+    store = InstanceStore(tmp_path)
+    i = store.create("쓰는 중", "26.3", "vanilla")
+    d = store.dir_of(i["id"])
+
+    def busy(p, b):
+        raise PermissionError(32, "다른 프로세스가 파일을 사용 중이기 때문에 프로세스가 액세스 할 수 없습니다", str(p))
+    monkeypatch.setattr(inst_mod, "trash", busy)
+    store.delete(i["id"])                                            # 오류 없이
+    assert all(x["id"] != i["id"] for i_ in [0] for x in store.list())   # 목록에서는 바로 빠짐
+    assert (d / inst_mod.PENDING_DELETE).is_file()
+    moved = []
+    monkeypatch.setattr(inst_mod, "trash", lambda p, b: moved.append(p))
+    assert store.purge_pending() == 1 and moved == [d]               # 다음 시작 때 휴지통으로

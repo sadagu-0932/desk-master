@@ -75,6 +75,21 @@ def notify(method: str, params: dict) -> None:
     _write({"method": method, "params": params})
 
 
+ERROR_LOG: str | None = None   # main.py 가 data/logs/sidecar-errors.log 로 정한다
+
+
+def _log_error(method: str, tb: str) -> None:
+    if not ERROR_LOG:
+        return
+    try:
+        import datetime
+        os.makedirs(os.path.dirname(ERROR_LOG), exist_ok=True)
+        with open(ERROR_LOG, "a", encoding="utf-8") as f:
+            f.write(f"--- {datetime.datetime.now().isoformat(timespec='seconds')} {method}\n{tb}\n")
+    except OSError:
+        pass
+
+
 Handler = Callable[..., Any]
 
 
@@ -91,8 +106,13 @@ def serve(handlers: dict[str, Handler], background: set[str]) -> None:
         except RpcError as e:
             _write({"id": req_id, "error": {"message": str(e)}})
         except Exception as e:  # noqa: BLE001 - 사이드카가 죽지 않게 모든 오류를 응답으로 돌려준다
-            traceback.print_exc()
-            _write({"id": req_id, "error": {"message": f"{type(e).__name__}: {e}"}})
+            tb = traceback.format_exc()
+            sys.stderr.write(tb)
+            _log_error(method, tb)
+            # 어디서 났는지(가장 안쪽 파일:줄) 를 붙여 보여 준다 — 사용자가 캡처만 보내도 원인을 찾을 수 있게
+            frames = traceback.extract_tb(e.__traceback__)
+            where = f" ({os.path.basename(frames[-1].filename)}:{frames[-1].lineno}, {method})" if frames else ""
+            _write({"id": req_id, "error": {"message": f"{type(e).__name__}: {e}{where}"}})
 
     for raw in _in:
         raw = raw.strip()

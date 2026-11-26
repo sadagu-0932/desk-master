@@ -21,6 +21,7 @@ from rpc import RpcError
 
 LOADERS = ("vanilla", "fabric", "quilt", "neoforge", "forge")  # quilt·neoforge·forge 는 불러온 인스턴스용
 CC_BASE_PORT = 52853
+PENDING_DELETE = "instance.deleted.json"   # 지우려 했는데 폴더가 쓰는 중이었음 → 다음 시작 때 휴지통으로
 WORK_MODES = ("datapack", "mod", "resourcepack")
 
 INSTANCE_GITIGNORE = """# 통합 작업실이 만든 인스턴스 저장소: 직접 만든 것만 추적한다
@@ -164,8 +165,25 @@ class InstanceStore:
     def delete(self, inst_id: str) -> None:
         """앱의 인스턴스 폴더만 휴지통으로. "연결"한 인스턴스의 원본 게임 폴더(linkedDir)는 건드리지 않는다."""
         d = self.dir_of(inst_id)
-        trash(d, self.root)
+        try:
+            trash(d, self.root)
+        except OSError:
+            # Windows: 다른 프로그램(탐색기·작업 공간 감시·게임)이 폴더를 잡고 있으면 옮기지 못한다(WinError 32).
+            # 목록에서는 바로 빼고(instance.json 이름 바꿈), 휴지통 옮기기는 다음에 앱을 켤 때 다시 한다.
+            (d / "instance.json").replace(d / PENDING_DELETE)
         self._changed()
+
+    def purge_pending(self) -> int:
+        """지난번에 쓰는 중이라 못 지운 인스턴스 폴더를 휴지통으로(시작할 때)."""
+        n = 0
+        for d in self.root.glob("inst_*"):
+            if (d / PENDING_DELETE).is_file() and not (d / "instance.json").exists():
+                try:
+                    trash(d, self.root)
+                    n += 1
+                except OSError:
+                    pass
+        return n
 
     # 복제할 때 옮기는 게임 항목(로그·크래시·서버·git·설정 파일은 새로)
     DUPLICATE_SKIP = {"instance.json", ".git", "logs", "crash-reports", "servers", "screenshots", ".theia", ".fabric",
