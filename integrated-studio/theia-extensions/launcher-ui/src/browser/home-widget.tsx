@@ -57,6 +57,15 @@ export class HomeWidget extends ReactWidget {
                     <p className='studio-muted'>마인크래프트 실행 · 데이터팩 · 모드 · 리소스팩{this.appVersion && ` · 버전 ${this.appVersion}`}</p>
                 </div>
             </header>
+            {!this.manager.launcherEnabled && <section className='studio-home-noprism'>
+                <h2>런처 기능이 꺼져 있습니다</h2>
+                <p className='studio-muted'>인스턴스 만들기·실행은 Prism Launcher 가 맡습니다. Prism 이 설치돼 있지 않아 런처 부분(인스턴스 목록·실행·작업)을 숨겼습니다.
+                    코드 편집기·데이터팩 도구·Claude 는 [파일 → 폴더 열기]로 그대로 쓸 수 있습니다.</p>
+                <div className='studio-home-noprism-actions'>
+                    <button className='theia-button' onClick={() => this.commands.executeCommand('studio.prism.install')}>Prism Launcher 설치</button>
+                    <button className='theia-button secondary' onClick={() => this.commands.executeCommand('studio.instance.refresh')}>다시 확인</button>
+                </div>
+            </section>}
             <div className='studio-home-columns'>
                 <main className='studio-home-main'>
                     <div className='studio-home-toolbar'>
@@ -89,8 +98,8 @@ export class HomeWidget extends ReactWidget {
                                     </div>
                                     <div className='studio-mono studio-muted studio-path' title={i.path}>{i.linkedDir ?? i.id}</div>
                                     <div className='studio-card-actions'>
-                                        <button className='theia-button' disabled={running} aria-label={`${i.name} 실행 (공식 런처)`}
-                                            title={running ? '실행 중 — 게임 창을 닫으면 종료됩니다' : '공식 런처로 실행 — 내 MS 계정으로 플레이'}
+                                        <button className='theia-button' disabled={running} aria-label={`${i.name} 실행 (Prism)`}
+                                            title={running ? '실행 중 — 게임 창을 닫으면 종료됩니다' : 'Prism 으로 실행 — Prism 에 로그인한 Microsoft 계정으로 플레이'}
                                             onClick={() => this.run(StudioCommands.LAUNCH.id, i.id)}>
                                             <span className='codicon codicon-play' aria-hidden='true' /> {running ? '실행 중' : '실행'}</button>
                                         <button className='theia-button secondary' title='작업실에서 열기' onClick={() => this.run(StudioCommands.OPEN_WORKSPACE.id, i.id)}>작업실</button>
@@ -122,7 +131,7 @@ export class HomeWidget extends ReactWidget {
                     <section className='studio-card'>
                         <h2>알림</h2>
                         <div className='studio-note'><span className='studio-dot' aria-hidden='true' />
-                            게임은 공식 마인크래프트 런처로 실행됩니다. ‘실행’을 누르면 공식 런처에 이 인스턴스를 등록하고 열어 주니, 런처에서 ‘플레이’를 누르세요. 로그인은 공식 런처가 하고, 이 앱은 계정 정보를 다루지 않습니다.</div>
+                            인스턴스는 Prism Launcher 인스턴스입니다. ‘실행’을 누르면 Prism 이 바로 켭니다(처음이면 게임 파일을 받습니다). 로그인은 Prism 에서 하고, 이 앱은 계정 정보를 다루지 않습니다. Prism 에서 만든 인스턴스도 여기 자동으로 보입니다.</div>
                         <div className='studio-note'><span className='studio-dot warn' aria-hidden='true' />
                             CommandCrafter 모드는 서비스 포트를 모든 네트워크 인터페이스에 엽니다. 공용 네트워크에서는 방화벽에서 이 포트(52853~)의 외부 접속을 막아 두세요.</div>
                     </section>

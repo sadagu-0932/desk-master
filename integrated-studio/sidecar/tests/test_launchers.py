@@ -114,6 +114,8 @@ def world(tmp_path, monkeypatch):
     game_content(tmp_path / "games" / "fab", 2)
     roots = {"prism": [prism], "multimc": [mmc], "curseforge": [cf.parent], "modrinth": [mr], "official": [mc]}
     store = InstanceStore(tmp_path / "data")
+    newprism = tmp_path / "newprism"
+    attach_fake_prism(store, newprism)
     installed = []
     imp = LocalImporter(store, install=lambda iid: installed.append(iid), roots=roots)
     # 계정 파일을 열면 시험 실패
@@ -133,7 +135,24 @@ def world(tmp_path, monkeypatch):
 
     monkeypatch.setattr(Path, "read_text", guarded_read_text)
     return {"imp": imp, "store": store, "installed": installed, "tmp": tmp_path, "prism": prism, "cf": cf, "mc": mc,
-            "mr": mr}
+            "mr": mr, "newprism": newprism}
+
+
+def attach_fake_prism(store: InstanceStore, root: Path) -> None:
+    """main.py 와 같은 방식으로 Prism 연동(새 인스턴스 = root/instances/<이름>, 지우기 = 옮겨 두기)."""
+    import prism
+    trash = root / "_trash"
+
+    def make(name, version, loader, lver):
+        folder = prism.create_instance(root / "instances", name, version, loader, lver)
+        return {"folder": str(folder), "root": str(root)}
+
+    def remove(folder):
+        if folder.is_dir():
+            trash.mkdir(parents=True, exist_ok=True)
+            __import__("shutil").move(str(folder), str(trash / folder.name))
+    store.make_prism_instance = make
+    store.remove_prism_instance = remove
 
 
 def by_name(entries, name):
@@ -192,20 +211,26 @@ def test_preview_sizes_and_warnings(world):
 
 
 def test_copy_import_many_keeps_source_untouched(world):
+    """복사 = 새 Prism 인스턴스로(게임 파일은 Prism 이 실행할 때 받음). 원본은 그대로."""
     imp, store = world["imp"], world["store"]
     es = imp.detect()
     before = {k: snapshot(Path(world[k]) if k != "cf" else world["cf"]) for k in ("prism", "cf", "mr")}
     keys = [by_name(es, n)["key"] for n in ("Fabric 팩", "All the Mods", "Cobblemon", "네오")]
     res = imp.import_many([{"key": k} for k in keys], "copy")
     assert not res["failed"], res["failed"]
-    assert len(res["imported"]) == 4 and len(world["installed"]) == 4   # 설치(없을 때만)는 runner.install 에 맡김
+    assert len(res["imported"]) == 4 and world["installed"] == []       # 앱은 받지 않음
     for inst in res["imported"]:
         d = Path(inst["path"])
-        assert d == store.dir_of(inst["id"])                             # 복사본이 게임 폴더
+        assert d == store.game_dir(inst["id"]) and world["newprism"] in d.parents   # 새 Prism 인스턴스의 게임 폴더
+        assert inst["launchKind"] == "prism" and inst["managed"] is True
         assert (d / "options.txt").is_file() and (d / "saves" / "월드" / "level.dat").is_file()
         assert not (d / "accounts.json").exists() and not (d / "logs" / "latest.log").exists()
     fab = by_name(res["imported"], "Fabric 팩")
     assert (fab["loader"], fab["loaderVersion"], fab["jvmArgs"]) == ("fabric", "0.20.1", "-Xmx6144M -XX:+UseG1GC")
+    cfg = (Path(fab["sourceDir"]) / "instance.cfg").read_text("utf-8")
+    assert "MaxMemAlloc=6144" in cfg and "JvmArgs=-XX:+UseG1GC" in cfg   # Prism 으로 실행하니 Prism 설정에
+    pack = json.loads((Path(fab["sourceDir"]) / "mmc-pack.json").read_text("utf-8"))
+    assert {"uid": "net.fabricmc.fabric-loader", "version": "0.20.1"} in pack["components"]
     assert by_name(res["imported"], "네오")["loader"] == "neoforge"
     assert len(list((Path(fab["path"]) / "mods").glob("*.jar"))) == 3
     after = {k: snapshot(Path(world[k]) if k != "cf" else world["cf"]) for k in ("prism", "cf", "mr")}
@@ -213,21 +238,20 @@ def test_copy_import_many_keeps_source_untouched(world):
     assert by_name(imp.detect(), "Fabric 팩")["importedAs"] == fab["id"]
 
 
-def test_link_import_uses_source_as_game_dir(world):
+def test_non_prism_link_becomes_prism_copy(world):
+    """공식 런처·CurseForge 등은 실행할 런처가 없으니(2026-11-27 공식 런처 실행 없앰) 새 Prism 인스턴스로 복사."""
     imp = world["imp"]
     e = by_name(imp.detect(), "내 패브릭")
-    res = imp.import_many([{"key": e["key"]}], "link")
-    inst = res["imported"][0]
-    assert Path(inst["path"]) == Path(e["gameDir"]).resolve()            # 원본 폴더를 게임 폴더로
-    assert inst["linkedDir"] and inst["metaDir"] != inst["path"]
-    assert inst["versionId"] == "fabric-loader-0.20.1-26.3"              # 공식 .minecraft 에 있던 로더 버전
-    assert not (Path(inst["path"]) / "instance.json").exists()           # 원본 폴더에 우리 파일을 쓰지 않음
-    assert inst["ccEnabled"] is False
+    before = snapshot(Path(e["gameDir"]))
+    inst = imp.import_many([{"key": e["key"]}], "link")["imported"][0]
+    assert inst["launchKind"] == "prism" and world["newprism"] in Path(inst["path"]).parents
+    assert (Path(inst["path"]) / "mods" / "mod0.jar").is_file() and inst["ccEnabled"] is False
+    assert snapshot(Path(e["gameDir"])) == before and not inst.get("launchFile")
 
 
 def test_in_use_detection(world, monkeypatch):
     imp = world["imp"]
-    e = by_name(imp.detect(), "내 패브릭")
+    e = by_name(imp.detect(), "Fabric 팩")
     inst = imp.import_many([{"key": e["key"]}], "link")["imported"][0]
     monkeypatch.setenv("INTEGRATED_STUDIO_FAKE_PROCS", "")
     old = time.time() - 3600
@@ -295,46 +319,30 @@ def test_prism_export_zip(tmp_path):
     assert res["instance"]["loader"] == "neoforge" and res["instance"]["loaderVersion"] == "26.3.1"
 
 
-def test_install_failure_keeps_import(world):
-    imp = world["imp"]
-
-    def boom(iid):
-        raise RuntimeError("네트워크 없음")
-    imp.install = boom
-    e = by_name(imp.detect(), "Fabric 팩")
-    res = imp.import_many([{"key": e["key"]}], "copy")
-    assert not res["failed"] and "다시 시도" in res["imported"][0]["warning"]
-    assert (Path(res["imported"][0]["path"]) / "mods").is_dir()
-
-
 def test_manage_duplicate_memory_delete_linked(world, monkeypatch):
     imp, store = world["imp"], world["store"]
-    # 휴지통 대신 임시 폴더로 옮긴다(Windows 에서 .git 객체는 읽기 전용이라 바로 지우면 거부됨 — 실제 앱은 휴지통 사용)
-    bin_dir = world["tmp"] / "휴지통"
-    bin_dir.mkdir()
-
-    def fake_trash(p, _base):
-        __import__("shutil").move(str(p), str(bin_dir / Path(p).name))
-    import paths
-    monkeypatch.setattr(paths, "trash", fake_trash)
     import instances as inst_mod
-    monkeypatch.setattr(inst_mod, "trash", fake_trash)
-    e = by_name(imp.detect(), "내 패브릭")
+    monkeypatch.setattr(inst_mod, "trash", lambda p, b: __import__("shutil").move(str(p), str(world["tmp"] / ("bin_" + Path(p).name))))
+    e = by_name(imp.detect(), "Fabric 팩")
     linked = imp.import_many([{"key": e["key"]}], "link")["imported"][0]
     src = Path(linked["path"])
-    before = snapshot(src)
     dup = store.duplicate(linked["id"])
     d = Path(dup["path"])
-    assert dup["name"] == "내 패브릭 복사본" and not dup.get("linkedDir") and d == store.dir_of(dup["id"])
+    assert dup["name"] == "Fabric 팩 복사본" and dup["launchKind"] == "prism" and world["newprism"] in d.parents
     assert (d / "mods" / "mod0.jar").is_file() and (d / "saves" / "월드" / "level.dat").is_file()
-    assert not (d / "logs").exists() and (d / "instance.json").is_file()
+    assert not (d / "logs").exists() and not list(d.glob("통합 작업실 실행*"))   # 원래 인스턴스를 켜는 파일은 복사 안 함
     m = store.set_memory(dup["id"], 6144)
     assert m["jvmArgs"].startswith("-Xmx6144M") and "-XX:+UseG1GC" in m["jvmArgs"]
     assert store.set_memory(dup["id"], 2048, "-Dfoo=1")["jvmArgs"] == "-Xmx2048M -Dfoo=1"
+    cfg = (Path(dup["sourceDir"]) / "instance.cfg").read_text("utf-8")
+    assert "MaxMemAlloc=2048" in cfg and "JvmArgs=-Dfoo=1" in cfg
     with pytest.raises(RpcError):
         store.set_memory(dup["id"], 100)
-    store.delete(linked["id"])                                     # 연결 인스턴스 삭제 = 목록에서만
-    assert src.is_dir() and snapshot(src) == before                 # 원본 폴더는 그대로
+    store.rename(dup["id"], "새 이름")
+    assert "name=새 이름" in (Path(dup["sourceDir"]) / "instance.cfg").read_text("utf-8")   # Prism 목록 이름도
+    # Prism 인스턴스 지우기 = Prism 쪽 폴더도 휴지통(목록이 Prism 과 자동 연동이라)
+    store.delete(linked["id"])
+    assert not src.parent.exists() and (world["newprism"] / "_trash" / src.parent.name).is_dir()
     assert all(i["id"] != linked["id"] for i in store.list())
 
 
@@ -374,36 +382,15 @@ def test_linked_prism_runs_minecraft_from_its_minecraft_folder(world, monkeypatc
     assert imp.remove_launch_file(inst["id"]) and not f.exists()
 
 
-def test_linked_with_version_already_in_official_needs_no_download(world):
+def test_curseforge_and_modrinth_become_prism_copies(world):
     imp = world["imp"]
-    vid = "fabric-loader-0.20.1-26.3"
-    w(world["mc"] / "versions" / vid / f"{vid}.json", "{}")
     for name in ("All the Mods", "Cobblemon"):
         e = by_name(imp.detect(), name)
+        before = snapshot(Path(e["gameDir"]))
         inst = imp.import_many([{"key": e["key"]}], "link")["imported"][0]
-        assert inst["installed"] is True and inst["versionId"] == vid, name
-        assert Path(inst["launchFile"]).parent == Path(inst["path"])
-
-
-def test_curseforge_and_modrinth_link_make_launch_file_no_install(world):
-    from importers import launchfile
-    imp = world["imp"]
-    world["installed"].clear()
-    for name in ("All the Mods", "Cobblemon", "내 패브릭"):
-        e = by_name(imp.detect(), name)
-        inst = imp.import_many([{"key": e["key"]}], "link")["imported"][0]
-        assert inst["launchKind"] == "official"
-        f = Path(inst["launchFile"])
-        assert f.is_file() and f.parent == Path(inst["path"])         # 게임 폴더 안
+        assert inst["launchKind"] == "prism" and world["newprism"] in Path(inst["path"]).parents, name
+        assert snapshot(Path(e["gameDir"])) == before                    # 원래 폴더엔 아무것도 쓰지 않음
     assert world["installed"] == []
-    # 같은 이름의 남의 파일이 있으면 덮지 않는다
-    cf = world["cf"]
-    theirs = cf / launchfile.file_name()
-    theirs.unlink()
-    theirs.write_text("사용자 파일", "utf-8")
-    e = by_name(imp.detect(), "All the Mods")
-    inst = imp.import_many([{"key": e["key"]}], "link")["imported"][0]
-    assert theirs.read_text("utf-8") == "사용자 파일" and Path(inst["launchFile"]) != theirs
 
 
 def test_migrate_old_linked_instance(world):
@@ -423,8 +410,7 @@ def test_migrate_old_linked_instance(world):
     m = store.get(inst["id"])
     assert m["launchKind"] == "prism" and m["launchVia"]["kind"] == "prism"   # 앱이 Prism 의 [실행]을 누름
     assert m["installed"] is True
-    assert Path(m["launchFile"]).parent == Path(m["path"]) and Path(m["launchFile"]).is_file()
-    assert not old_file.exists()                                      # 예전 위치의 우리 파일은 지움
+    assert not m.get("launchFile") and not old_file.exists()         # 예전 위치의 우리 파일은 지움(새 파일은 실행할 때 만든다)
     assert imp.migrate_linked() == 0
 
 
@@ -438,7 +424,7 @@ def test_store_change_notifications(tmp_path):
 
 
 def test_connect_any_folder_from_new_instance_window(world, tmp_path):
-    """새 인스턴스 창 → 폴더 고르기: 어느 런처 폴더든 연결, 받기 없음, 버전은 로그에서."""
+    """새 인스턴스 창 → 폴더 고르기: Prism 폴더는 연결, 다른 런처·그냥 폴더는 새 Prism 인스턴스로 복사, 버전은 로그에서."""
     from importers import Importers
     store = world["store"]
     imp = Importers(store, tmp_path / "d")
@@ -447,15 +433,20 @@ def test_connect_any_folder_from_new_instance_window(world, tmp_path):
     info = imp.inspect_import(str(world["cf"]))
     assert info["kind"] == "folder" and info["launcherName"] == "CurseForge" and info["version"] == "26.3"
     r = imp.import_file(str(world["cf"]))
-    assert Path(r["instance"]["path"]) == world["cf"].resolve() and r["downloaded"] == 0
+    assert world["newprism"] in Path(r["instance"]["path"]).parents and r["downloaded"] == 0
+    assert (Path(r["instance"]["path"]) / "mods").is_dir() and r["instance"]["launchKind"] == "prism"
     # 2) Prism 인스턴스 안의 minecraft 폴더를 골라도 Prism 인스턴스로 연결(원래 런처로 실행)
     inner = world["prism"] / "inst-moved" / "Fabric 팩" / "minecraft"
     info = imp.inspect_import(str(inner))
     assert info["kind"] == "prism" and info["loader"] == "fabric"
     r = imp.import_file(str(inner))
     assert r["instance"]["launchVia"]["kind"] == "prism" and r["instance"]["launchKind"] == "prism"
+    newinst = world["newprism"] / "instances"
+    assert not newinst.exists() or "Fabric 팩" not in [d.name for d in newinst.iterdir()]   # 연결은 새 Prism 인스턴스를 만들지 않음
+    again = imp.import_file(str(inner))
+    assert again["instance"]["id"] == r["instance"]["id"]                                    # 두 번 연결해도 하나
     assert Path(r["instance"]["launchFile"]).parent == inner.resolve()   # 실행 파일은 그 .minecraft 안
-    # 3) 그냥 게임 폴더: Fabric 로그로 버전 알아냄 + 공식 .minecraft 에 그 버전이 있으면 받지 않음
+    # 3) 그냥 게임 폴더: Fabric 로그로 버전 알아냄 → 그 버전의 새 Prism 인스턴스
     g = tmp_path / "그냥" / ".minecraft"
     game_content(g)
     w(g / "logs" / "latest.log", "[12:00:00] [main/INFO]: Loading Minecraft 26.3 with Fabric Loader 0.20.1\n")
@@ -464,7 +455,7 @@ def test_connect_any_folder_from_new_instance_window(world, tmp_path):
     info = imp.inspect_import(str(g.parent))
     assert (info["version"], info["loader"], info["loaderVersion"]) == ("26.3", "fabric", "0.20.1")
     r = imp.import_file(str(g.parent))
-    assert r["instance"]["installed"] is True and r["instance"]["versionId"] == vid
+    assert (r["instance"]["loader"], r["instance"]["loaderVersion"]) == ("fabric", "0.20.1")
     # 4) 버전을 모르는 폴더는 버전을 받아서 연결
     h = tmp_path / "모름"
     w(h / "saves" / "w" / "level.dat", b"x")
@@ -473,7 +464,7 @@ def test_connect_any_folder_from_new_instance_window(world, tmp_path):
     with pytest.raises(RpcError):
         imp.import_file(str(h))
     r = imp.import_file(str(h), version="26.3")
-    assert r["instance"]["version"] == "26.3" and r["instance"]["linkedDir"]
+    assert r["instance"]["version"] == "26.3" and r["instance"]["launchKind"] == "prism"
     # 5) 아무것도 아닌 폴더
     (tmp_path / "빈").mkdir()
     with pytest.raises(RpcError):
@@ -536,31 +527,6 @@ def test_win_command_keeps_quotes_for_special_paths():
     rem = next(line for line in text.splitlines() if line.startswith("rem 통합"))
     assert "100%%~ 팩" in rem                     # %~ 가 배치 파일을 멈추지 않게
     assert '--dir "C:\\P (x)" --launch "A & B"' in text
-
-
-def test_duplicate_of_prism_linked_installs_and_skips_launch_file(world):
-    """2) Prism 연결 복제본: '설치됨'을 그대로 옮기면 설치를 건너뛰고 등록에서 막혔다."""
-    imp, store = world["imp"], world["store"]
-    e = by_name(imp.detect(), "Fabric 팩")
-    linked = imp.import_many([{"key": e["key"]}], "link")["imported"][0]
-    assert Path(linked["launchFile"]).is_file()
-    dup = store.duplicate(linked["id"])
-    assert dup["installed"] is False and not dup.get("versionId")
-    assert "공식 런처" in dup["notice"]
-    assert not list(Path(dup["path"]).glob("통합 작업실 실행*"))     # 원래 인스턴스를 켜는 파일은 복사 안 함
-    assert (Path(dup["path"]) / "mods" / "mod0.jar").is_file()
-
-
-def test_duplicate_of_linked_keeps_installed_when_official_has_version(world, monkeypatch):
-    imp, store = world["imp"], world["store"]
-    mc = world["mc"]
-    w(mc / "versions" / "fabric-loader-0.20.1-26.3" / "fabric-loader-0.20.1-26.3.json", "{}")
-    monkeypatch.setenv("APPDATA", str(mc.parent))
-    e = by_name(imp.detect(), "Fabric 팩")
-    linked = imp.import_many([{"key": e["key"]}], "link")["imported"][0]
-    dup = store.duplicate(linked["id"])
-    assert dup["installed"] is True and dup["versionId"] == "fabric-loader-0.20.1-26.3"
-    assert "처음 실행할 때" not in dup["notice"]
 
 
 def test_in_use_detects_prism_java_and_launch_guard(world, monkeypatch):

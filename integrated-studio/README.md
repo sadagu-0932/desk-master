@@ -5,6 +5,9 @@
 
 ## 필요한 것 (내 PC)
 
+설치 파일의 "함께 설치할 프로그램" 화면에서 Python 3(없으면 필수로 체크·고정)과 Prism Launcher(없으면 체크, 끌 수 있음)를 winget 으로 함께 설치한다.
+
+
 | 도구 | 용도 |
 |---|---|
 | Node.js 22~24 (권장 24), npm | 앱 빌드 |
@@ -56,15 +59,16 @@ npm run package:with-python   # Python 포함 설치 파일 (Windows에서만)
 |---|---|
 | 홈 | 상단 막대 왼쪽 “홈” 버튼 또는 Alt+Home (홈 탭을 닫아도 다시 열림) |
 | 인스턴스 만들기 | 홈의 “+ 새 인스턴스” 또는 명령 팔레트 `통합 작업실: 새 인스턴스 만들기` |
-| 실행 | F5, 카드의 “실행”, 인스턴스 뷰의 ▶, 상단 실행 막대 — **항상 공식 런처로**: 공식 런처에 “통합 작업실 · <이름>” 항목을 등록하고 연다. 로그인·플레이는 공식 런처에서, 게임 로그는 이 앱에 나온다 (Windows). 종료는 게임 창을 닫는다 |
+| 실행 | F5, 카드의 “실행”, 인스턴스 뷰의 ▶, 상단 실행 막대 — **Prism Launcher 로**: 인스턴스는 Prism 인스턴스이고, 실행하면 Prism 이 바로 켠다(로그인·자바·게임 파일 받기는 Prism). 게임 로그는 이 앱에 나온다 |
 | 런처 ↔ 작업실 | 앱을 켜면 가벼운 **런처**(홈·인스턴스·실행·서버). 상단 [작업실 열기](또는 인스턴스의 폴더 버튼)를 누르면 그 인스턴스 폴더가 열린 **작업실**이 되고 코드 편집기·데이터팩 도구·CommandCrafter·Claude 를 쓴다. [런처로]를 누르면 편집기 쪽을 꺼서 메모리를 돌려받는다 |
 | 메모리 | 명령 팔레트 `메모리 사용량 보기`(무엇이 얼마나 쓰는지), 인스턴스 … → 메모리 설정(모드 수로 고른 추천값), 서버 카드 [메모리] |
 | 로컬 서버 | F6 (EULA는 `server/eula.txt`를 직접 읽고 true로 바꿔야 한다) |
 | 모드 빌드 후 테스트 | F7 (`mods-src/<모드>`를 `./gradlew build` → `mods/`에 복사 → 재시작) |
 | 리소스팩 적용 | F8 |
-| 설정 동기화 | 자동(시작·30초마다·실행 직전·게임 종료 뒤). 게임 설정(options.txt, 리소스팩 목록 제외)과 서버 목록이 모든 인스턴스·공식 런처에서 같게 유지된다. 공식 런처 파일은 덮기 전에 `~/.integrated-studio/data/sync-backups/`에 백업. 수동: 명령 팔레트 `설정 지금 동기화` |
+| 설정 동기화 | 자동(시작·30초마다·실행 직전·게임 종료 뒤). 통합 작업실이 만든 인스턴스끼리 게임 설정(options.txt, 리소스팩 목록 제외)과 서버 목록을 같게 유지한다(Prism 에 원래 있던 인스턴스는 건드리지 않음). 수동: 명령 팔레트 `설정 지금 동기화` |
 | 서버 열기(친구와 같이) | 왼쪽 막대 “서버” → [서버 열기]: 싱글 LAN 공개 / 전용 서버(바닐라·Fabric·NeoForge·Forge) / 외부 서버(다른 런처로 연 월드). 주소는 자동으로 e4mc → UPnP → playit 순서로 열고 [복사]. 친구는 멀티플레이 → 서버 추가에 주소만 넣으면 됨(프로그램 불필요, 콘텐츠 모드가 있으면 같은 모드만) |
-| 인스턴스 불러오기 | “서버” 패널 [인스턴스 불러오기] 또는 명령 팔레트 → Prism·MultiMC·CurseForge·Modrinth App·공식 런처를 자동으로 찾음(폴더 직접 선택도). 연결(기본: 원래 폴더 그대로, [실행]하면 원래 런처로 켬) 또는 복사. 계정 파일은 건드리지 않음. 끝나면 [서버로 열기] |
+| Prism 연동 | Prism 에서 만들거나 지우거나 이름·버전을 바꾼 인스턴스가 몇 초 안에 여기 반영된다. Prism 이 없으면 런처 부분(홈 인스턴스·목록·실행)을 숨기고 홈에 [Prism Launcher 설치]가 나온다. 예전 인스턴스는 켤 때 [Prism 으로 옮기기]를 묻는다 |
+| 인스턴스 불러오기 | “서버” 패널 [인스턴스 불러오기] → Prism·MultiMC 는 폴더 그대로 연결, CurseForge·Modrinth App·공식 런처·폴더는 새 Prism 인스턴스로 복사. 계정 파일은 건드리지 않음 |
 | /reload | 상단 `/reload` 버튼 — `datapacks/`를 최근 월드로 동기화한 뒤 CommandCrafter(또는 로컬 서버)로 보낸다 |
 | 게임 꺼져 있을 때 자동완성 | 명령 팔레트 `게임 없이 쓸 자동완성 준비(데이터 생성기)` |
 | Claude 작업 종류 | Claude 패널 위 “작업 종류” 또는 상태 표시줄 — 데이터팩 / Fabric 모드 / 리소스팩 |
@@ -87,7 +91,8 @@ npm run package:with-python   # Python 포함 설치 파일 (Windows에서만)
 | `sidecar/paths.py` | 경로 안전 검사·휴지통. 파일을 다루는 코드는 모두 여기를 거친다 |
 | `sidecar/instances.py` | 인스턴스 저장(`instance.json`)·복제·삭제. 바뀌면 `instances_changed` 알림 |
 | `sidecar/runner.py` | 게임·로더 설치, 로컬 서버, 데이터 생성기 |
-| `sidecar/official_launcher.py`, `official_rpc.py` | 공식 런처 감지·설치·항목 등록·로그 따라 읽기 |
+| `sidecar/prism.py`, `prism_sync.py` | Prism 찾기·인스턴스 만들기(instance.cfg·mmc-pack.json)·설치(winget) / 목록 자동 연동·예전 인스턴스 옮기기 |
+| `sidecar/game_log.py` | Prism 으로 켠 게임의 latest.log 따라 읽기·실행 상태, 사용자 확인 창(confirm) |
 | `sidecar/sync.py` | 설정(options.txt·servers.dat) 동기화 |
 | `sidecar/modrinth.py` | Modrinth 에서 받는 건 전부 여기(정확한 버전·해시 검증) |
 | `sidecar/server_runner.py` | 전용 서버(바닐라·Fabric·NeoForge·Forge) |
@@ -115,4 +120,4 @@ npm test -w integrated-studio-server-host
 
 - CommandCrafter 모드는 서비스 포트(인스턴스마다 52853부터)를 **모든 네트워크 인터페이스**에 연다.
   공용 네트워크에서는 방화벽에서 이 포트의 외부 접속을 막아 둔다.
-- 게임은 공식 런처로만 실행한다. 이 앱은 공식 런처의 로그인·토큰 파일을 읽지 않는다. 자체 MS 로그인(M8)은 보류.
+- 게임은 Prism Launcher 로 실행한다(로그인은 Prism). 이 앱은 Prism·공식 런처의 로그인·토큰 파일을 읽지 않는다. 자체 MS 로그인(M8)은 보류.

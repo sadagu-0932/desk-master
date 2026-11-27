@@ -51,6 +51,11 @@ class InstanceStore:
         self.root.mkdir(parents=True, exist_ok=True)
         # 인스턴스가 생기거나 바뀌거나 지워지면 부른다(main.py 가 프런트에 instances_changed 알림을 보내게 연결)
         self.on_change: Any = None
+        # Prism 인스턴스 만들기(main.py 가 연결). 있으면 새 인스턴스 = Prism 인스턴스(게임 폴더는 Prism 쪽),
+        # 없으면(시험 등) 예전처럼 앱 폴더 안에 만든다. (name, version, loader, loader_version) → {folder, root}
+        self.make_prism_instance: Any = None
+        # Prism 인스턴스를 휴지통으로(지우기). (폴더) → None
+        self.remove_prism_instance: Any = None
 
     def _changed(self) -> None:
         if self.on_change:
@@ -100,7 +105,10 @@ class InstanceStore:
 
     # ---------- 만들기·지우기 ----------
     def create(self, name: str, version: str, loader: str, loader_version: str | None = None,
-               group: str | None = None, icon: str | None = None, cc_enabled: bool | None = None) -> dict[str, Any]:
+               group: str | None = None, icon: str | None = None, cc_enabled: bool | None = None,
+               prism: bool = True) -> dict[str, Any]:
+        """새 인스턴스. Prism 연동이면(make_prism_instance) Prism 인스턴스로 만든다. prism=False 는 이미 있는
+        다른 런처 인스턴스를 "연결"할 때(앱 쪽 정보만 만들고 게임 폴더는 원래 것)."""
         name = (name or "").strip()
         if not name:
             raise RpcError("인스턴스 이름을 입력하세요.")
@@ -116,13 +124,19 @@ class InstanceStore:
         if icon and not re.fullmatch(r"#[0-9a-fA-F]{6}", icon):
             icon = None
 
+        prism_info = None
+        if self.make_prism_instance and prism:
+            # 먼저 Prism 인스턴스(없으면 여기서 [prism-missing] 오류 → 프런트가 Prism 설치를 권함)
+            prism_info = self.make_prism_instance(name, version, loader, loader_version if loader != "vanilla" else None)
+
         inst_id = "inst_" + secrets.token_hex(4)
         while (self.root / inst_id).exists():
             inst_id = "inst_" + secrets.token_hex(4)
         d = safe_join(self.root, inst_id)
         d.mkdir(parents=True)
+        game = Path(prism_info["folder"]) / "minecraft" if prism_info else d
         for sub in ("datapacks", "mods", "resourcepacks", "saves", "config"):
-            (d / sub).mkdir()
+            (game / sub).mkdir(parents=True, exist_ok=True)
 
         used = {m.get("ccPort") for m in self.list()}
         port = CC_BASE_PORT
@@ -144,12 +158,21 @@ class InstanceStore:
             "workMode": "datapack",
             "created": time.time(),
         }
+        if prism_info:
+            folder = Path(prism_info["folder"]).resolve()
+            meta.update({
+                "linkedDir": str(game.resolve()), "sourceDir": str(folder),
+                "launchVia": {"kind": "prism", "root": prism_info.get("root"), "instance": folder.name},
+                "launchKind": "prism", "installed": True,     # 게임·로더 파일은 Prism 이 실행할 때 받는다
+                "managed": True,                               # 통합 작업실이 만든 Prism 인스턴스(설정 동기화 대상)
+                "importedFrom": f"prism:{folder}", "importedLauncher": "prism",
+            })
         (d / "instance.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2), "utf-8")
-        write_cc_config(d, port)
-        write_instance_claude_md(d, meta)
-        write_work_mode(d, meta["workMode"])
-        (d / ".gitignore").write_text(INSTANCE_GITIGNORE, "utf-8")
-        git_init(d)
+        write_cc_config(game, port)
+        write_instance_claude_md(game, meta)
+        write_work_mode(game, meta["workMode"])
+        (game / ".gitignore").write_text(INSTANCE_GITIGNORE, "utf-8")
+        git_init(game)
         self._changed()
         return self.get(inst_id)
 
@@ -160,17 +183,52 @@ class InstanceStore:
         meta = self.get(inst_id)
         meta["name"] = name
         self.save(meta)
+        if _prism_folder(meta):
+            import prism   # Prism 목록에서도 같은 이름으로
+            prism.rename_instance(_prism_folder(meta), name)
         return self.get(inst_id)
 
     def delete(self, inst_id: str) -> None:
-        """앱의 인스턴스 폴더만 휴지통으로. "연결"한 인스턴스의 원본 게임 폴더(linkedDir)는 건드리지 않는다."""
+        """인스턴스를 휴지통으로. Prism 인스턴스면 Prism 쪽 폴더도 휴지통으로(앱 목록은 Prism 과 자동 연동이라
+        목록에서만 빼면 다시 나타난다). 그 밖의 "연결"한 원본 폴더는 건드리지 않는다."""
         d = self.dir_of(inst_id)
+        meta = self.get(inst_id)
+        if meta.get("launchKind") == "prism" and meta.get("sourceDir") and self.remove_prism_instance:
+            self.remove_prism_instance(Path(meta["sourceDir"]))
         try:
             trash(d, self.root)
         except OSError:
             # Windows: 다른 프로그램(탐색기·작업 공간 감시·게임)이 폴더를 잡고 있으면 옮기지 못한다(WinError 32).
             # 목록에서는 바로 빼고(instance.json 이름 바꿈), 휴지통 옮기기는 다음에 앱을 켤 때 다시 한다.
             (d / "instance.json").replace(d / PENDING_DELETE)
+        self._changed()
+
+    def forget(self, inst_id: str) -> None:
+        """앱 목록에서만 뺀다(앱 쪽 정보 폴더만 휴지통으로). Prism 에서 이미 지운 인스턴스 등."""
+        d = self.dir_of(inst_id)
+        try:
+            trash(d, self.root)
+        except OSError:
+            (d / "instance.json").replace(d / PENDING_DELETE)
+        self._changed()
+
+    def discard(self, inst_id: str) -> None:
+        """반쯤 만들어진(가져오기 실패) 인스턴스를 버린다: Prism 쪽 폴더도 휴지통으로, 목록에서 바로 빼고(이름 바꿈) 앱 폴더도 휴지통으로."""
+        d = self.dir_of(inst_id)
+        meta = self.get(inst_id)
+        if meta.get("launchKind") == "prism" and meta.get("managed") and meta.get("sourceDir") and self.remove_prism_instance:
+            try:
+                self.remove_prism_instance(Path(meta["sourceDir"]))
+            except Exception:  # noqa: BLE001 - 못 지워도 목록에서는 뺀다
+                pass
+        try:
+            (d / "instance.json").replace(d / "instance.import-failed.json")
+        except OSError:
+            pass
+        try:
+            trash(d, self.root)
+        except OSError:
+            pass
         self._changed()
 
     def purge_pending(self) -> int:
@@ -198,48 +256,29 @@ class InstanceStore:
                           src_meta.get("loaderVersion"), src_meta.get("group"), src_meta.get("icon"),
                           cc_enabled=bool(src_meta.get("ccEnabled")))
         from importers import launchfile
-        from importers.launchers import default_roots, is_account_file   # 계정·토큰 파일은 복사하지 않는다
+        from importers.launchers import is_account_file   # 계정·토큰 파일은 복사하지 않는다
 
         def skip(_d: str, names: list[str]) -> set[str]:
             return {n for n in names if n == "session.lock" or is_account_file(n)}
-        dst = self.dir_of(new["id"])
+        dst = self.game_dir(new["id"])      # Prism 연동이면 새 Prism 인스턴스의 게임 폴더
         for item in src.iterdir():
             if item.name in self.DUPLICATE_SKIP or item.is_symlink() or is_account_file(item.name):
                 continue
             if item.name.startswith(launchfile.BASENAME) and item.is_file() and launchfile.is_ours(item):
-                continue   # 연결 인스턴스의 실행 파일(원래 런처의 원래 인스턴스를 켠다) → 복사본엔 맞지 않음
+                continue   # 원래 인스턴스를 켜는 실행 파일 → 복사본엔 맞지 않음
             target = safe_join(dst, item.name)
             if item.is_dir():
                 shutil.copytree(item, target, dirs_exist_ok=True, ignore=skip)
             else:
                 shutil.copy2(item, target)
-        meta = self.get(new["id"])
-        if src_meta.get("jvmArgs") is not None:
-            meta["jvmArgs"] = src_meta["jvmArgs"]
-        notice = None
-        if src_meta.get("linkedDir"):
-            # 복사본은 앱의 보통 인스턴스(공식 런처로 실행). 원본이 Prism·MultiMC 연결이면 '설치됨'은 그 런처 기준이라
-            # 그대로 옮기면 설치를 건너뛰고 등록에서 막혔다 → 공식 .minecraft 에 그 버전이 실제로 있을 때만 설치됨.
-            from importers.local import official_version_id
-            have = official_version_id(src_meta["version"], src_meta["loader"], src_meta.get("loaderVersion"),
-                                       [Path(d) for d in default_roots().get("official", [])])
-            meta["installed"] = bool(have)
-            meta["versionId"] = have
-            if src_meta.get("launchKind") in ("prism", "multimc"):
-                notice = ("복사본은 원래 런처가 아니라 공식 런처로 실행합니다."
-                          + ("" if have else " 처음 실행할 때 게임·로더를 한 번 설치합니다."))
-        else:
-            for key in ("versionId", "installed"):
-                if src_meta.get(key) is not None:
-                    meta[key] = src_meta[key]
-        self.save(meta)
-        out = self.get(new["id"])
-        if notice:
-            out["notice"] = notice
-        return out
+        if src_meta.get("jvmArgs"):
+            mx = re.search(r"-Xmx(\d+)M", src_meta["jvmArgs"])
+            extra = " ".join(a for a in src_meta["jvmArgs"].split() if not a.startswith("-Xm"))
+            self.set_memory(new["id"], int(mx.group(1)) if mx else None, extra)
+        return self.get(new["id"])
 
     def set_memory(self, inst_id: str, memory_mb: int | None = None, java_args: str | None = None) -> dict[str, Any]:
-        """공식 런처 항목의 JVM 인자(최대 메모리 -Xmx + 추가 인자)."""
+        """최대 메모리 -Xmx + 추가 자바 인자. Prism 인스턴스면 Prism 설정(instance.cfg)에도 쓴다."""
         meta = self.get(inst_id)
         if memory_mb is not None and not (512 <= int(memory_mb) <= 65536):
             raise RpcError("메모리는 512MB ~ 64GB 사이로 정하세요.")
@@ -251,6 +290,10 @@ class InstanceStore:
         parts += [a for a in (extra or "").split() if not re.match(r"-Xm[xs]\d", a)]
         meta["jvmArgs"] = " ".join(parts) or None
         self.save(meta)
+        if _prism_folder(meta):
+            import prism   # Prism 으로 실행하므로 Prism 인스턴스 설정(instance.cfg)에도 쓴다
+            prism.set_memory(_prism_folder(meta), int(memory_mb) if memory_mb else None, " ".join(
+                a for a in parts if not re.match(r"-Xm[xs]\d", a)) or None)
         return self.get(inst_id)
 
     def open_folder(self, inst_id: str, which: str | None = None) -> dict[str, Any]:
@@ -273,8 +316,7 @@ class InstanceStore:
     # ---------- 설정 ----------
     def set_cc_enabled(self, inst_id: str, enabled: bool) -> dict[str, Any]:
         meta = self.get(inst_id)
-        d = self.dir_of(inst_id)
-        mods = d / "mods"
+        mods = self.game_dir(inst_id, meta) / "mods"
         for f in list(mods.glob("commandcrafter*.jar")) + list(mods.glob("commandcrafter*.jar.disabled")):
             on = f.name.endswith(".jar")
             if enabled and not on:
@@ -291,11 +333,19 @@ class InstanceStore:
         meta = self.get(inst_id)
         meta["workMode"] = mode
         self.save(meta)
-        write_work_mode(self.dir_of(inst_id), mode)
+        write_work_mode(self.game_dir(inst_id, meta), mode)
         return self.get(inst_id)
 
 
 # ---------- 인스턴스 안에 쓰는 파일들 ----------
+
+def _prism_folder(meta: dict[str, Any]) -> Path | None:
+    """Prism 인스턴스 폴더(instance.cfg 가 있는 곳). Prism 인스턴스가 아니면 None."""
+    src = meta.get("sourceDir")
+    if meta.get("launchKind") == "prism" and src and (Path(src) / "instance.cfg").is_file():
+        return Path(src)
+    return None
+
 
 def write_cc_config(d: Path, port: int) -> None:
     """CommandCrafter 모드 설정. 인스턴스마다 다른 포트를 쓴다."""

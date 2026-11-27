@@ -60,7 +60,7 @@ class Packs:
                           ensure_ascii=False, indent=2) + "\n"
 
     def list_worlds(self, id: str) -> list[str]:
-        saves = self.store.dir_of(id) / "saves"
+        saves = self.store.game_dir(id) / "saves"
         if not saves.is_dir():
             return []
         worlds = [d for d in saves.iterdir() if (d / "level.dat").is_file()]
@@ -69,12 +69,12 @@ class Packs:
 
     # ---------- 데이터팩 (M5) ----------
     def list_datapacks(self, id: str) -> list[str]:
-        d = self.store.dir_of(id) / "datapacks"
+        d = self.store.game_dir(id) / "datapacks"
         return sorted(p.name for p in d.iterdir() if (p / "pack.mcmeta").is_file()) if d.is_dir() else []
 
     def datapack_new(self, id: str, name: str, namespace: str, description: str = "") -> dict[str, Any]:
         meta = self.store.get(id)
-        base = self.store.dir_of(id)
+        base = self.store.game_dir(id)
         name = _check_name(name, "데이터팩 이름")
         namespace = (namespace or "").strip()
         if not NS_RE.fullmatch(namespace) or namespace == "minecraft":
@@ -96,7 +96,7 @@ class Packs:
 
     def datapack_sync(self, id: str, pack: str, world: str) -> dict[str, Any]:
         """작업용 원본 datapacks/<팩> → saves/<월드>/datapacks/<팩> (원본이 기준, 대상은 통째로 교체)."""
-        base = self.store.dir_of(id)
+        base = self.store.game_dir(id)
         src = safe_join(base, "datapacks", _check_name(pack, "데이터팩"))
         if not (src / "pack.mcmeta").is_file():
             raise RpcError(f"데이터팩이 아닙니다(pack.mcmeta 없음): {pack}")
@@ -113,7 +113,7 @@ class Packs:
 
     def datapack_zip(self, id: str, pack: str) -> dict[str, Any]:
         """.zip 내보내기: 루트에 pack.mcmeta 가 오도록."""
-        base = self.store.dir_of(id)
+        base = self.store.game_dir(id)
         src = safe_join(base, "datapacks", _check_name(pack, "데이터팩"))
         if not (src / "pack.mcmeta").is_file():
             raise RpcError(f"데이터팩이 아닙니다(pack.mcmeta 없음): {pack}")
@@ -157,7 +157,7 @@ class Packs:
 
     # ---------- 리소스팩 (M6) ----------
     def list_resourcepacks(self, id: str) -> list[str]:
-        d = self.store.dir_of(id) / "resourcepacks"
+        d = self.store.game_dir(id) / "resourcepacks"
         if not d.is_dir():
             return []
         return sorted(p.name for p in d.iterdir()
@@ -165,7 +165,7 @@ class Packs:
 
     def resourcepack_new(self, id: str, name: str, description: str = "") -> dict[str, Any]:
         meta = self.store.get(id)
-        root = safe_join(self.store.dir_of(id), "resourcepacks", _check_name(name, "리소스팩 이름"))
+        root = safe_join(self.store.game_dir(id), "resourcepacks", _check_name(name, "리소스팩 이름"))
         if root.exists():
             raise RpcError(f"이미 있는 리소스팩입니다: {name}")
         (root / "assets" / "minecraft" / "textures").mkdir(parents=True)
@@ -178,7 +178,7 @@ class Packs:
         if src.suffix.lower() != ".zip" or not src.is_file():
             raise RpcError("리소스팩 .zip 파일을 고르세요.")
         name = re.sub(r"[^a-z0-9_.\-]", "_", src.stem.lower()) or "pack"
-        base = self.store.dir_of(id)
+        base = self.store.game_dir(id)
         dest = safe_join(base, "resourcepacks", name)
         if dest.exists():
             trash(dest, base)
@@ -203,7 +203,7 @@ class Packs:
 
     def resourcepack_apply(self, id: str, pack: str) -> dict[str, Any]:
         """options.txt 의 resourcePacks 에 file/<팩> 을 맨 위(마지막)로 넣는다. 다음 실행 또는 리소스 다시 불러오기에서 적용."""
-        base = self.store.dir_of(id)
+        base = self.store.game_dir(id)
         safe_join(base, "resourcepacks", pack)
         opts = safe_join(base, "options.txt")
         lines = opts.read_text("utf-8").splitlines() if opts.exists() else []
@@ -263,7 +263,7 @@ class Packs:
             raise RpcError("모드 ID는 소문자로 시작하고 소문자·숫자·_ 만 2~64자.")
         if not re.fullmatch(r"[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+", group or ""):
             raise RpcError("그룹은 com.example 같은 패키지 이름이어야 합니다.")
-        base = self.store.dir_of(id)
+        base = self.store.game_dir(id)
         root = safe_join(base, "mods-src", modid)
         if root.exists():
             raise RpcError(f"이미 있는 모드 폴더입니다: {modid}")
@@ -333,12 +333,12 @@ class Packs:
         return {"path": str(root), "open": str(java_dir / f"{cls}.java"), "versions": v}
 
     def list_mod_projects(self, id: str) -> list[str]:
-        d = self.store.dir_of(id) / "mods-src"
+        d = self.store.game_dir(id) / "mods-src"
         return sorted(p.name for p in d.iterdir() if (p / "build.gradle").is_file()) if d.is_dir() else []
 
     def mod_build(self, id: str, modid: str) -> dict[str, Any]:
         """./gradlew build → build/libs 의 jar(-sources 제외)를 인스턴스 mods/ 에 복사."""
-        base = self.store.dir_of(id)
+        base = self.store.game_dir(id)
         root = safe_join(base, "mods-src", _check_name(modid, "모드 ID"))
         if not (root / "build.gradle").is_file():
             raise RpcError(f"모드 프로젝트가 없습니다: {modid}")
@@ -379,7 +379,7 @@ class Packs:
 
     def open_external(self, id: str, rel: str) -> bool:
         """폴더를 외부 IDE로 연다: IntelliJ(idea) 명령이 있으면 그것, 없으면 OS 기본 프로그램."""
-        target = safe_join(self.store.dir_of(id), rel)
+        target = safe_join(self.store.game_dir(id), rel)
         if not target.exists():
             raise RpcError(f"폴더가 없습니다: {rel}")
         for ide in ("idea", "idea64.exe", "idea.cmd"):

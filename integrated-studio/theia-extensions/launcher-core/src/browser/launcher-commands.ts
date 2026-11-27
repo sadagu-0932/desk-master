@@ -9,7 +9,6 @@ import { AddModsDialog } from './add-mods-dialog.js';
 import { FileDialogService } from '@theia/filesystem/lib/browser/file-dialog/file-dialog-service';
 import { WindowService } from '@theia/core/lib/browser/window/window-service';
 import { FileUri } from '@theia/core/lib/common/file-uri';
-import { isWindows } from '@theia/core/lib/common/os';
 import { InstanceManager } from './instance-manager.js';
 import { TaskCommandIds } from '../common/command-ids.js';
 import { errorMessage, reportErrors } from './report-errors.js';
@@ -17,16 +16,22 @@ import { errorMessage, reportErrors } from './report-errors.js';
 /** 사이드카 local.py NEED_ROOT_TAG 와 같아야 한다 */
 const NEED_ROOT_TAG = '[launcher-root]';
 
-interface OfficialInfo { installed: boolean; message: string }
-interface OfficialResult { ok: boolean; message: string; method?: string | null; removed?: boolean; warnings?: string[] }
+interface PrismInfo { found: boolean; exe?: string | null; root?: string | null; instanceDir?: string | null }
+interface PrismResult { ok: boolean; message: string; cancelled?: boolean; already?: boolean; url?: string }
+/** 사이드카 prism.py MISSING_TAG / importers.local NEEDS_PRISM_TAG 와 같아야 한다 */
+const PRISM_MISSING_TAG = '[prism-missing]';
+const NEEDS_PRISM_TAG = '[needs-prism]';
+/** 사이드카 오류 문구 끝의 "(파일:줄, 요청)"·표식을 떼고 사용자에게 보인다 */
+function plain(msg: string): string {
+    return msg.replace(PRISM_MISSING_TAG, '').replace(NEEDS_PRISM_TAG, '').replace(/\s*\([^()]*\.py:\d+[^()]*\)\s*$/, '').trim();
+}
 
 const CATEGORY = '통합 작업실';
 
 export namespace StudioCommands {
     export const CREATE: Command = { id: 'studio.instance.create', category: CATEGORY, label: '새 인스턴스 만들기' };
-    export const INSTALL: Command = { id: 'studio.instance.install', category: CATEGORY, label: '인스턴스 설치(게임 파일 받기)' };
-    /** 게임 실행은 항상 공식 런처로(로그인·플레이는 공식 런처에서) */
-    export const LAUNCH: Command = { id: 'studio.instance.launch', category: CATEGORY, label: '실행 (공식 런처)' };
+    /** 게임 실행은 Prism Launcher 로(로그인·자바·게임 파일 받기는 Prism, 사용자 결정 2026-11-27) */
+    export const LAUNCH: Command = { id: 'studio.instance.launch', category: CATEGORY, label: '실행 (Prism)' };
     export const STOP: Command = { id: 'studio.instance.stop', category: CATEGORY, label: '중지' };
     export const SELECT_TARGET: Command = { id: 'studio.instance.selectTarget', category: CATEGORY, label: '실행 대상 바꾸기' };
     export const OPEN_WORKSPACE: Command = { id: 'studio.instance.openWorkspace', category: CATEGORY, label: '작업실에서 열기' };
@@ -41,10 +46,10 @@ export namespace StudioCommands {
     export const REFRESH: Command = { id: 'studio.instance.refresh', category: CATEGORY, label: '인스턴스 목록 새로고침' };
     export const ADD_MODS: Command = { id: 'studio.mods.add', category: CATEGORY, label: '모드 추가 (Modrinth·CurseForge)' };
     export const CF_KEY: Command = { id: 'studio.curseforge.key', category: CATEGORY, label: 'CurseForge API 키 지우기' };
-    export const OFFICIAL_UNREGISTER: Command = { id: 'studio.official.unregister', category: CATEGORY, label: '공식 런처에서 등록 해제' };
-    export const OFFICIAL_OPEN: Command = { id: 'studio.official.open', category: CATEGORY, label: '공식 런처 열기' };
-    export const OFFICIAL_INSTALL: Command = { id: 'studio.official.install', category: CATEGORY, label: '공식 런처 설치' };
-    export const SYNC_NOW: Command = { id: 'studio.settings.syncNow', category: CATEGORY, label: '설정 지금 동기화 (게임 설정·서버 목록·공식 런처 항목)' };
+    export const PRISM_OPEN: Command = { id: 'studio.prism.open', category: CATEGORY, label: 'Prism Launcher 열기' };
+    export const PRISM_INSTALL: Command = { id: 'studio.prism.install', category: CATEGORY, label: 'Prism Launcher 설치' };
+    export const PRISM_MIGRATE: Command = { id: 'studio.prism.migrate', category: CATEGORY, label: '예전 인스턴스를 Prism 으로 옮기기' };
+    export const SYNC_NOW: Command = { id: 'studio.settings.syncNow', category: CATEGORY, label: '설정 지금 동기화 (게임 설정·서버 목록)' };
     export const SIDECAR_STATUS: Command = { id: 'studio.sidecar.status', category: CATEGORY, label: '사이드카 상태 보기' };
 }
 
@@ -59,7 +64,7 @@ interface ImportReport {
 }
 
 const LAUNCH_KIND_NAME: Record<string, string> = {
-    prism: 'Prism Launcher', multimc: 'MultiMC', curseforge: 'CurseForge', modrinth: 'Modrinth App', official: '공식 런처',
+    prism: 'Prism Launcher', multimc: 'MultiMC', curseforge: 'CurseForge', modrinth: 'Modrinth App', official: '(옮기기 필요)',
 };
 
 /** 명령 인자는 인스턴스 id(문자열)이거나 없으면 현재 인스턴스 */
@@ -78,18 +83,12 @@ export class LauncherCommandContribution implements CommandContribution {
     registerCommands(registry: CommandRegistry): void {
         this.registry = registry;
         registry.registerCommand(StudioCommands.CREATE, { execute: () => this.guard(() => this.create()) });
-        registry.registerCommand(StudioCommands.INSTALL, {
-            execute: (id: IdArg) => this.withInstance(id, async i => {
-                await this.manager.install(i.id);
-                this.messages.info(`${i.name} 설치가 끝났습니다.`);
-            })
-        });
         registry.registerCommand(StudioCommands.LAUNCH, {
-            execute: (id: IdArg) => this.withInstance(id, i => this.officialPlay(i)),
+            execute: (id: IdArg) => this.withInstance(id, i => this.play(i)),
         });
         registry.registerCommand(StudioCommands.STOP, {
-            // 공식 런처가 켠 게임은 이 앱의 프로세스가 아니라서 끌 수 없다
-            execute: () => this.messages.info('게임은 공식 런처가 실행했습니다. 게임 창을 닫아 종료해 주세요.'),
+            // Prism 이 켠 게임은 이 앱의 프로세스가 아니라서 끌 수 없다
+            execute: () => this.messages.info('게임은 Prism Launcher 가 실행했습니다. 게임 창을 닫아 종료해 주세요.'),
         });
         registry.registerCommand(StudioCommands.SELECT_TARGET, { execute: () => this.guard(() => this.selectTarget()) });
         registry.registerCommand(StudioCommands.OPEN_WORKSPACE, {
@@ -148,7 +147,7 @@ export class LauncherCommandContribution implements CommandContribution {
                 const recGb = adv ? Math.round(adv.recommendedMb / 102.4) / 10 : undefined;
                 const recText = adv ? ` · 추천 ${recGb}GB (${adv.reason})` : '';
                 const gb = await this.quickInput.input({
-                    prompt: `최대 메모리(GB). 비우면 공식 런처 기본값. 지금: ${curGb ? curGb + 'GB' : '기본값'}${recText}`,
+                    prompt: `최대 메모리(GB). 비우면 Prism 기본값. 지금: ${curGb ? curGb + 'GB' : '기본값'}${recText}`,
                     value: curGb ? String(curGb) : (recGb ? String(recGb) : ''),
                     validateInput: async v => (!v.trim() || (/^\d+(\.\d+)?$/.test(v.trim()) && Number(v) >= 0.5 && Number(v) <= 64)) ? undefined : '0.5 ~ 64 사이 숫자(GB)',
                 });
@@ -182,27 +181,23 @@ export class LauncherCommandContribution implements CommandContribution {
                 this.messages.info('CurseForge API 키를 지웠습니다.');
             })
         });
-        registry.registerCommand(StudioCommands.OFFICIAL_UNREGISTER, {
-            execute: (id: IdArg) => this.withInstance(id, async i => {
-                const r = await this.manager.call<OfficialResult>('official_unregister_instance', { id: i.id });
-                this.messages.info(r.message);
-            }),
+        registry.registerCommand(StudioCommands.PRISM_OPEN, {
+            execute: () => this.guard(() => this.withPrism(() => this.manager.call('prism_open'))),
         });
-        registry.registerCommand(StudioCommands.OFFICIAL_OPEN, {
-            execute: () => this.guard(async () => this.report(await this.manager.call<OfficialResult>('official_open_launcher'))),
-        });
-        registry.registerCommand(StudioCommands.OFFICIAL_INSTALL, {
-            execute: () => this.guard(() => this.ensureOfficialLauncher(this.manager.current?.id ?? '', true)),
-        });
+        registry.registerCommand(StudioCommands.PRISM_INSTALL, { execute: () => this.guard(() => this.installPrism(true)) });
+        registry.registerCommand(StudioCommands.PRISM_MIGRATE, { execute: () => this.guard(() => this.migrateToPrism(true)) });
         registry.registerCommand(StudioCommands.SYNC_NOW, {
             execute: () => this.guard(async () => {
-                const r = await this.manager.call<{ options: string[]; servers: string[]; profiles: number }>('sync_now');
-                const n = r.options.length + r.servers.length + r.profiles;
-                this.messages.info(n ? `동기화했습니다 — 게임 설정 ${r.options.length}곳, 서버 목록 ${r.servers.length}곳, 공식 런처 항목 ${r.profiles}개.`
+                const r = await this.manager.call<{ options: string[]; servers: string[] }>('sync_now');
+                const n = r.options.length + r.servers.length;
+                this.messages.info(n ? `동기화했습니다 — 게임 설정 ${r.options.length}곳, 서버 목록 ${r.servers.length}곳.`
                     : '이미 모두 맞춰져 있습니다.');
             }),
         });
-        registry.registerCommand(StudioCommands.REFRESH, { execute: () => this.manager.refresh() });
+        registry.registerCommand(StudioCommands.REFRESH, {
+            execute: async () => { await this.manager.call('prism_sync').catch(() => undefined); await this.manager.refreshPrism(); await this.manager.refresh(); },
+        });
+        this.manager.ready.then(() => this.startupCheck()).catch(() => undefined);
         registry.registerCommand(StudioCommands.SIDECAR_STATUS, {
             execute: async () => {
                 const s = await this.manager.call<{ version: string; data: string }>('ping').catch(e => e as Error);
@@ -215,95 +210,113 @@ export class LauncherCommandContribution implements CommandContribution {
         });
     }
 
-    protected report(r: OfficialResult): void {
-        if (r.ok) {
-            this.messages.info(r.message);
-        } else {
-            this.messages.warn(r.message);
+    /** 켤 때: Prism 이 있고 옮기지 않은 예전 인스턴스가 있으면 옮기기를 권한다(‘나중에’면 하루에 한 번만) */
+    protected async startupCheck(): Promise<void> {
+        if (!this.manager.prism?.found) {
+            return;
         }
+        const key = 'studio.prismMigrate.askedAt';
+        let last = 0;
+        try { last = Number(window.localStorage.getItem(key) ?? 0); } catch { /* 저장소를 못 쓰면 매번 묻는다 */ }
+        if (Date.now() - last < 24 * 3600 * 1000) {
+            return;
+        }
+        try { window.localStorage.setItem(key, String(Date.now())); } catch { /* 무시 */ }
+        await this.migrateToPrism(false);
     }
 
-    /** 공식 런처가 있으면 true. 없으면 설치를 권한다(확인 창은 사이드카가 confirm 알림으로 띄운다). */
-    protected async ensureOfficialLauncher(id: string, explicit = false): Promise<boolean> {
-        let info = await this.manager.call<OfficialInfo>('official_is_installed');
-        if (info.installed) {
+    /** Prism 설치(확인 창은 사이드카가 confirm 알림으로 띄운다). 설치되면 true */
+    protected async installPrism(explicit = false): Promise<boolean> {
+        const before = await this.manager.call<PrismInfo>('prism_status');
+        if (before.found) {
             if (explicit) {
-                this.messages.info(info.message);
+                this.messages.info(`Prism Launcher 가 이미 설치돼 있습니다(${before.exe}).`);
             }
             return true;
         }
-        if (!isWindows) {
-            this.messages.warn(info.message);
-            return false;
+        const r = await this.manager.call<PrismResult>('prism_install', { id: this.manager.current?.id ?? '' });
+        if (r.ok) {
+            this.messages.info(r.message);
+            await this.manager.refreshPrism();
+            return true;
         }
-        const r = await this.manager.call<OfficialResult>('official_install', { id });
-        if (!r.ok || r.method !== 'winget') {
-            this.report(r);  // 취소, 실패, 또는 Store 페이지에서 사용자가 직접 설치
-            return false;
+        if (!r.cancelled) {
+            const open = r.url ? '내려받기 페이지 열기' : undefined;
+            const a = await this.messages.warn(r.message, ...(open ? [open] : []));
+            if (a && r.url) {
+                this.windows.openNewWindow(r.url, { external: true });
+            }
         }
-        info = await this.manager.call<OfficialInfo>('official_is_installed');
-        if (!info.installed) {
-            this.messages.warn('공식 런처를 설치했지만 아직 찾지 못했습니다. 잠시 뒤 다시 눌러 주세요.');
-        }
-        return info.installed;
+        return false;
     }
 
-    /**
-     * 공식 런처로 플레이: (필요하면 게임 설치) → 공식 런처 확인·설치 → "설치" 항목 등록 → 로그 따라 읽기 → 런처 열기.
-     * 로그인과 '플레이' 버튼은 공식 런처에서 사용자가 한다. 이 앱은 계정 정보를 다루지 않는다.
-     */
-    protected async officialPlay(inst: Instance): Promise<void> {
+    /** Prism 이 필요한 작업: Prism 이 없다는 오류면 설치를 권하고, 설치되면 한 번 더 시도한다 */
+    protected async withPrism<T>(fn: () => Promise<T>): Promise<T | undefined> {
+        try {
+            return await fn();
+        } catch (e) {
+            const msg = errorMessage(e);
+            if (!msg.includes(PRISM_MISSING_TAG)) {
+                throw e;
+            }
+            const install = 'Prism 설치';
+            if (await this.messages.warn(plain(msg), install) === install && await this.installPrism()) {
+                return fn();
+            }
+            return undefined;
+        }
+    }
+
+    /** 예전 인스턴스(앱 폴더·공식 런처·CurseForge 등) → Prism 인스턴스로 옮기기(사용자 결정 2026-11-27) */
+    async migrateToPrism(explicit = false, only?: string[]): Promise<void> {
+        const all = await this.manager.call<Array<{ id: string; name: string; linked: boolean }>>('prism_migrate_candidates');
+        const list = only ? all.filter(c => only.includes(c.id)) : all;
+        if (!list.length) {
+            if (explicit) {
+                this.messages.info('옮길 예전 인스턴스가 없습니다. 모든 인스턴스가 Prism 인스턴스입니다.');
+            }
+            return;
+        }
+        const names = list.map(c => c.name).join(', ');
+        const ok = await new ConfirmDialog({
+            title: '예전 인스턴스를 Prism 으로 옮기기',
+            msg: `이제 실행은 Prism Launcher 가 맡습니다. 아래 ${list.length}개를 Prism 인스턴스로 옮길까요?\n\n${names}\n\n`
+                + '월드·모드·설정·데이터팩을 새 Prism 인스턴스로 복사합니다. 앱 폴더 안의 예전 것은 휴지통으로 가고(되살릴 수 있음), '
+                + '다른 런처에서 연결한 것은 원래 폴더를 그대로 둡니다.',
+            ok: '옮기기', cancel: '나중에',
+        }).open();
+        if (!ok) {
+            return;
+        }
+        const res = await this.withPrism(() => this.manager.call<{ migrated: Array<{ to: string; name: string }>; failed: Array<{ id: string; error: string }> }>(
+            'prism_migrate', { ids: list.map(c => c.id) }));
+        if (!res) {
+            return;
+        }
+        await this.manager.refresh();
+        res.migrated.forEach(m => this.manager.ensureVisible(m.to, m.name));
+        if (res.failed.length) {
+            this.messages.warn(`${res.migrated.length}개를 옮겼고 ${res.failed.length}개는 실패했습니다: ${res.failed.map(f => plain(f.error)).join(' / ')}`);
+        } else {
+            this.messages.info(`${res.migrated.length}개를 Prism 인스턴스로 옮겼습니다. [실행]하면 Prism 이 게임 파일을 받고 켭니다.`);
+        }
+    }
+
+    /** 실행 = Prism 의 [실행](--launch). 로그인·자바·게임 파일 받기는 Prism. 옮기지 않은 예전 인스턴스면 옮기기를 권한다 */
+    protected async play(inst: Instance): Promise<void> {
         if (this.manager.isRunning(inst.id)) {
             this.messages.info(`${inst.name}은(는) 이미 실행 중입니다. 다시 켜려면 게임 창을 닫은 뒤 실행하세요.`);
             return;
         }
-        if (inst.linkedDir && inst.launchKind && inst.launchKind !== 'official') {
-            await this.linkedPlay(inst);   // 원래 폴더의 실행 파일 → Prism·MultiMC·CurseForge·Modrinth App
+        if (inst.launchKind !== 'prism' && inst.launchKind !== 'multimc') {
+            await this.migrateToPrism(true, [inst.id]);
             return;
         }
-        if (inst.linkedDir) {
-            // 다른 런처 폴더를 "연결"한 인스턴스: 그 런처나 게임이 이 폴더를 쓰는 중이면 실행하지 않는다(M10)
-            const use = await this.manager.call<{ busy: boolean; reasons: string[]; warnings?: string[] }>('import_in_use', { id: inst.id });
-            if (use.busy) {
-                this.messages.warn(`${inst.name}: 다른 런처·게임이 이 폴더를 쓰고 있어 실행하지 않았습니다. ${use.reasons.join(' ')}`);
-                return;
-            }
-            (use.warnings ?? []).forEach(w => this.messages.warn(w));
-        }
-        if (!await this.ensureOfficialLauncher(inst.id)) {
-            return;
-        }
-        if (!inst.installed) {
-            this.messages.info(`${inst.name}을(를) 먼저 설치합니다(게임 파일 받기).`);
-            inst = await this.manager.install(inst.id);
-        }
-        const reg = await this.manager.call<OfficialResult & { unchanged?: boolean }>('official_register_instance', { id: inst.id });
-        if (!reg.ok) {
-            this.messages.info(reg.message);  // 사용자가 '아니오'
-            return;
-        }
-        (reg.warnings ?? []).forEach(w => this.messages.warn(w));
         await this.manager.call('sync_now').catch(() => undefined);  // 실행 직전에 게임 설정·서버 목록을 최신으로
-        await this.manager.call('official_tail_log', { id: inst.id });
-        await this.manager.setTarget(inst.id);
-        await this.registry.executeCommand(TaskCommandIds.GAME_LOG_TOGGLE).catch(() => undefined);
-        // 공식 런처를 열면 이 인스턴스 항목이 이미 선택돼 있게(lastUsed) → [플레이]만 누르면 된다
-        await this.manager.call('official_touch', { id: inst.id }).catch(() => undefined);
-        // 연결한 인스턴스는 그 .minecraft 안의 실행 파일로 공식 런처를 연다
-        const open = inst.linkedDir
-            ? await this.manager.call<{ ok: boolean }>('launch_linked', { id: inst.id }).then(() => ({ ok: true, message: '' }) as OfficialResult)
-                .catch(e => ({ ok: false, message: errorMessage(e) }) as OfficialResult)
-            : await this.manager.call<OfficialResult>('official_open_launcher');
-        if (open.ok) {
-            this.messages.info(inst.linkedDir
-                ? `공식 런처에 '통합 작업실 · ${inst.name}'이(가) 선택돼 있습니다 — [플레이]를 누르면 ${inst.linkedDir} 를 게임 폴더로 켜집니다.`
-                : `공식 런처에서 '통합 작업실 · ${inst.name}'이(가) 선택돼 있습니다 — [플레이]를 눌러 주세요. 게임 로그는 아래 '게임 로그' 탭에 나옵니다.`);
-        } else {
-            this.messages.warn(open.message);
-        }
+        await this.linkedPlay(inst);
     }
 
-    /** 연결한 인스턴스: 원래 인스턴스 폴더 안의 실행 파일을 실행 → 원래 런처가 연다. 이 앱에는 아무것도 설치하지 않는다. */
+    /** Prism·MultiMC 인스턴스: 그 게임 폴더 안의 실행 파일 → 그 런처가 이 인스턴스를 바로 켠다. 이 앱에는 아무것도 설치하지 않는다. */
     protected async linkedPlay(inst: Instance): Promise<void> {
         const use = await this.manager.call<{ busy: boolean; reasons: string[] }>('import_in_use', { id: inst.id });
         if (use.busy) {
@@ -315,6 +328,10 @@ export class LauncherCommandContribution implements CommandContribution {
             r = await this.manager.call<{ launcher: string; kind: string; file: string }>('launch_linked', { id: inst.id });
         } catch (e) {
             const msg = (e as Error).message ?? String(e);
+            if (msg.includes(NEEDS_PRISM_TAG)) {
+                await this.migrateToPrism(true, [inst.id]);
+                return;
+            }
             if (!msg.includes(NEED_ROOT_TAG)) {
                 throw e;
             }
@@ -329,13 +346,10 @@ export class LauncherCommandContribution implements CommandContribution {
             await this.manager.call('set_launcher_root', { id: inst.id, path: FileUri.fsPath(one) });
             r = await this.manager.call<{ launcher: string; kind: string; file: string }>('launch_linked', { id: inst.id });
         }
-        await this.manager.call('official_tail_log', { id: inst.id }).catch(() => undefined);   // 게임 로그·실행 상태
+        await this.manager.call('game_tail_log', { id: inst.id }).catch(() => undefined);   // 게임 로그·실행 상태
         await this.manager.setTarget(inst.id);
         await this.registry.executeCommand(TaskCommandIds.GAME_LOG_TOGGLE).catch(() => undefined);
-        const direct = r.kind === 'prism' || r.kind === 'multimc';
-        this.messages.info(direct
-            ? `${r.launcher}(으)로 '${inst.name}'을(를) 켭니다(원래 폴더의 실행 파일: ${r.file}).`
-            : `${r.launcher}을(를) 열었습니다. '${inst.name}'을(를) 골라 [플레이]를 눌러 주세요(원래 폴더의 실행 파일: ${r.file}).`);
+        this.messages.info(`${r.launcher}(으)로 '${inst.name}'을(를) 켭니다. 처음이면 Prism 에서 Microsoft 계정 로그인과 게임 파일 받기가 먼저 진행됩니다.`);
     }
 
     /** 통합 작업실(화면·확장 실행기·Claude·사이드카·서버)과 게임이 지금 쓰는 메모리 */
@@ -356,19 +370,21 @@ export class LauncherCommandContribution implements CommandContribution {
     protected async manage(i: Instance): Promise<void> {
         const running = this.manager.isRunning(i.id);
         const items: Array<{ label: string; description?: string; cmd: string }> = [
-            { label: '$(play) 실행', description: running ? '실행 중' : i.launchFile ? `원래 폴더의 실행 파일로(${LAUNCH_KIND_NAME[i.launchKind ?? 'official']})` : '공식 런처로', cmd: StudioCommands.LAUNCH.id },
+            { label: '$(play) 실행', description: running ? '실행 중' : LAUNCH_KIND_NAME[i.launchKind ?? 'official'], cmd: StudioCommands.LAUNCH.id },
             { label: '$(folder) 폴더 열기', description: i.linkedDir ? `연결된 원래 폴더: ${i.path}` : i.path, cmd: StudioCommands.OPEN_FOLDER.id },
             ...(i.sourceDir ? [{ label: '$(file-symlink-file) 원래 인스턴스 폴더 열기', description: `실행 파일이 있는 곳: ${i.sourceDir}`, cmd: 'studio.instance.openSourceFolder' }] : []),
             { label: '$(window) 작업실에서 열기', cmd: StudioCommands.OPEN_WORKSPACE.id },
             { label: '$(edit) 이름 바꾸기', cmd: StudioCommands.RENAME.id },
             { label: '$(copy) 복제', description: '모드·설정·월드를 복사한 새 인스턴스', cmd: StudioCommands.DUPLICATE.id },
-            { label: '$(dashboard) 메모리 설정', description: i.jvmArgs ?? '공식 런처 기본값', cmd: StudioCommands.MEMORY.id },
+            { label: '$(dashboard) 메모리 설정', description: i.jvmArgs ?? 'Prism 기본값', cmd: StudioCommands.MEMORY.id },
             { label: '$(extensions) 모드 추가', cmd: StudioCommands.ADD_MODS.id },
             { label: '$(broadcast) 서버로 열기', cmd: 'studio.serverHost.hostInstance' },
             ...(i.loader === 'fabric' ? [{ label: '$(plug) CommandCrafter 켜기/끄기', description: i.ccEnabled ? '지금 켬' : '지금 끔', cmd: StudioCommands.TOGGLE_CC.id }] : []),
-            { label: '$(debug-disconnect) 공식 런처에서 등록 해제', cmd: StudioCommands.OFFICIAL_UNREGISTER.id },
-            { label: i.linkedDir ? '$(close) 목록에서 지우기' : '$(trash) 삭제(휴지통)',
-                description: i.linkedDir ? '원래 폴더는 그대로' : '월드·데이터팩 포함', cmd: StudioCommands.DELETE.id },
+            ...(i.launchKind !== 'prism' && i.launchKind !== 'multimc'
+                ? [{ label: '$(arrow-right) Prism 으로 옮기기', description: '옮겨야 실행할 수 있습니다', cmd: StudioCommands.PRISM_MIGRATE.id }] : []),
+            { label: i.launchKind === 'prism' ? '$(trash) 삭제(휴지통, Prism 에서도)' : i.linkedDir ? '$(close) 목록에서 지우기' : '$(trash) 삭제(휴지통)',
+                description: i.launchKind === 'prism' ? 'Prism 인스턴스 폴더째 휴지통(되살릴 수 있음)' : i.linkedDir ? '원래 폴더는 그대로' : '월드·데이터팩 포함',
+                cmd: StudioCommands.DELETE.id },
         ];
         const pick = await this.quickInput.showQuickPick(items, { placeholder: `${i.name} — ${i.version} · ${LOADER_LABELS[i.loader] ?? i.loader}${i.linkedDir ? ' · 연결됨' : ''}` });
         if (pick) {
@@ -449,19 +465,15 @@ export class LauncherCommandContribution implements CommandContribution {
             return;
         }
         if (result.kind === 'custom') {
-            const inst = await this.manager.create(result.options);
+            const inst = await this.withPrism(() => this.manager.create(result.options));
+            if (!inst) {
+                return;
+            }
             this.manager.ensureVisible(inst.id, inst.name);
-            if (result.installNow) {
-                // 설치는 뒤에서 진행(진행률은 알림에 표시). 창을 막지 않는다
-                this.manager.install(inst.id)
-                    .then(() => this.messages.info(`'${inst.name}' 설치가 끝났습니다. F5로 실행하세요.`, '작업실에서 열기')
-                        .then(a => a && this.manager.openInWorkspace(inst.id)))
-                    .catch(e => this.messages.error(`'${inst.name}' 설치 실패: ${e instanceof Error ? e.message : e}`));
-            } else {
-                const action = await this.messages.info(`'${inst.name}' 인스턴스를 만들었습니다. 처음 실행할 때 게임 파일을 받습니다.`, '작업실에서 열기');
-                if (action) {
-                    await this.manager.openInWorkspace(inst.id);
-                }
+            const action = await this.messages.info(
+                `'${inst.name}' Prism 인스턴스를 만들었습니다. 처음 실행할 때 Prism 이 게임·로더 파일을 받습니다.`, '작업실에서 열기');
+            if (action) {
+                await this.manager.openInWorkspace(inst.id);
             }
             return;
         }
@@ -473,12 +485,15 @@ export class LauncherCommandContribution implements CommandContribution {
         const look = { name: result.look.name ?? null, group: result.look.group ?? null, icon: result.look.icon ?? null };
         const progress = await this.messages.showProgress({ text: result.kind === 'file' ? '가져오는 중…' : '모드팩 가져오는 중…' });
         try {
-            const res = result.kind === 'file'
-                ? await this.manager.call<ImportReport>('import_file', { path: result.path, version: result.version ?? null, ...look })
+            const res = await this.withPrism(() => result.kind === 'file'
+                ? this.manager.call<ImportReport>('import_file', { path: result.path, version: result.version ?? null, ...look })
                 : result.kind === 'modrinth'
-                    ? await this.manager.call<ImportReport>('modrinth_install_modpack', { version_id: result.versionId, ...look })
-                    : await this.manager.call<ImportReport>('cf_install_modpack', { mod_id: result.modId, file_id: result.fileId, ...look });
+                    ? this.manager.call<ImportReport>('modrinth_install_modpack', { version_id: result.versionId, ...look })
+                    : this.manager.call<ImportReport>('cf_install_modpack', { mod_id: result.modId, file_id: result.fileId, ...look }));
             progress.cancel();
+            if (!res) {
+                return;
+            }
             await this.manager.refresh();
             this.manager.ensureVisible(res.instance.id, res.instance.name);
             await this.manager.setTarget(res.instance.id);
@@ -489,9 +504,10 @@ export class LauncherCommandContribution implements CommandContribution {
                 res.failed.length ? `받지 못한 파일 ${res.failed.length}개` : '',
                 res.manual.length ? `직접 받아야 할 모드 ${res.manual.length}개(제작자가 외부 다운로드를 막음)` : '',
             ].filter(Boolean).join(', ');
-            const msg = res.linked
-                ? `'${res.instance.name}'을(를) 연결했습니다 — 원래 폴더 그대로이고 아무것도 받지 않았습니다.`
-                    + (res.instance.launchFile ? ` 원래 폴더에 실행 파일을 만들었습니다(${res.instance.launchFile}). [실행]하면 이 파일이 ${LAUNCH_KIND_NAME[res.instance.launchKind ?? 'official']}을(를) 엽니다.` : '')
+            const msg = res.linked && res.instance.launchKind !== 'prism'
+                ? `'${res.instance.name}'을(를) 연결했습니다 — 원래 폴더 그대로이고 아무것도 받지 않았습니다. [실행]하면 ${LAUNCH_KIND_NAME[res.instance.launchKind ?? 'official']}이(가) 켭니다.`
+                : res.linked
+                    ? `'${res.instance.name}' Prism 인스턴스를 연결했습니다 — 원래 폴더 그대로, [실행]하면 Prism 이 켭니다.`
                 : `'${res.instance.name}' 가져오기 완료 — 파일 ${res.downloaded}개 받음, ${res.extracted}개 풀어 넣음.`
                     + (extra ? ` ${extra}: 목록은 게임 로그 탭에 있습니다.` : ' F5로 실행하면 게임 파일을 받습니다.');
             const open = '작업실에서 열기';

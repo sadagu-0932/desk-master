@@ -81,13 +81,12 @@ def test_windows_link_run_delete(tmp_path):
             print("in_use:", sc.call("import_in_use", id=iid))
         finally:
             odd.kill()
-        print("official:", sc.call("official_is_installed"))
-        print("touch:", sc.call("official_touch", id=iid))
+        print("prism:", sc.call("prism_status"))
         try:
             print("launch:", sc.call("launch_linked", id=iid))
         except AssertionError as e:
             assert "Prism Launcher 실행 파일을 찾지 못했습니다" in str(e), e   # CI 에는 Prism 이 없음 → 안내 문구
-        print("tail:", sc.call("official_tail_log", id=iid))
+        print("tail:", sc.call("game_tail_log", id=iid))
         print("running:", sc.call("running"))
         print("import_detect:", len(sc.call("import_detect")))
         time.sleep(1)

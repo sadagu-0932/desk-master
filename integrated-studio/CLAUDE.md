@@ -212,6 +212,25 @@ Theia 확장은 TypeScript로 작성한다. Python 쪽은 `sidecar/` 아래에�
   Texel 은 탭이 처음 보일 때 불러오기 + [메모리 비우기](자동으로 내리면 내보내지 않은 작업이 사라질 수 있어 수동), LAN 감시는 latest.log 를 1MB 조각으로(StringDecoder),
   자동완성 자료는 지금 버전만, `sidecar/memory.py`(게임 메모리 추천: 모드 수·Forge 계열·PC 메모리 절반 이하 / 서버 메모리 설정, 기본 2GB·작은 PC 는 1/4 /
   명령 "메모리 사용량 보기": 앱 프로세스 트리 + 게임을 종류별로 합산, Windows).
+- **결정(2026-11-27, 사용자): 런처 부분은 Prism Launcher 로 — 공식 런처 실행은 없앤다**(M8-1 "공식 런처로만"을 대체).
+  - 인스턴스 = Prism 인스턴스. `InstanceStore.create` 가 `make_prism_instance`(main.py 연결, `sidecar/prism.py`)로 Prism 인스턴스 폴더
+    (`instance.cfg` + `mmc-pack.json`, 의존 구성 요소는 Prism 이 채움)를 만들고 연결(`linkedDir`=그 minecraft, `launchKind`=prism, `managed`=True).
+    게임·로더 파일은 Prism 이 실행할 때 받는다(앱은 설치하지 않음 — `install` RPC 없앰). 모드팩 가져오기·복제도 같은 길로 Prism 인스턴스가 된다.
+    시험 등 `make_prism_instance` 가 없으면 예전처럼 앱 폴더에 만든다.
+  - 실행 = `launch_linked` → `prismlauncher --dir <데이터> --launch <폴더>`. 게임 로그·상태는 `game_log.py`(`game_tail_log`), 확인 창도 여기(`confirm_reply`).
+  - 이름·메모리는 Prism `instance.cfg` 에도 쓴다(name, OverrideMemory/MaxMemAlloc, JvmArgs). 지우기 = Prism 인스턴스 폴더째 휴지통(목록이 Prism 과 연동이라).
+  - 자동 연동 `prism_sync.PrismSync`(5초마다, 폴더 이름·instance.cfg·mmc-pack.json 수정 시각이 바뀐 때만 읽음): Prism 에 생긴 것 연결(남의 폴더엔 파일 안 씀),
+    지운 것 목록에서 빼기, 이름·버전·로더 맞추기. Prism 찾기: exe(설치판·포터블·PATH) → 데이터(포터블이면 exe 폴더, 아니면 %APPDATA%\PrismLauncher) → cfg InstanceDir.
+  - 불러오기: Prism·MultiMC = 연결, 그 밖(CurseForge·Modrinth·공식·폴더) = 새 Prism 인스턴스로 복사. 예전 인스턴스(앱 폴더·공식 런처 연결 등)는
+    `prism_migrate`(확인 창 뒤, 켤 때 하루 한 번 물음): 새 Prism 인스턴스로 복사(월드·모드·git·전용 서버 설정·메모리), 예전 앱 폴더는 휴지통, 연결 원본은 그대로.
+  - 게임 내용(데이터팩·리소스팩·모드·로컬 서버)은 `store.game_dir`(예전엔 앱 폴더 `dir_of` 를 써서 연결 인스턴스에서 엉뚱한 곳에 썼음). 전용 서버 설정은 앱 폴더 그대로.
+  - 설정 동기화는 통합 작업실이 만든(`managed`) 인스턴스끼리만, 공식 런처 부분 없앰. e4mc: 바닐라는 넣지 않고 UPnP·playit 으로(호스트용 공식 런처 항목 없앰).
+  - **Prism 이 없으면 런처 부분을 숨긴다**(사용자 요청): `InstanceManager.launcherEnabled` → 홈 인스턴스·목록·작업 뷰·실행 막대·상태 표시줄 숨김, 홈에 [Prism Launcher 설치]
+    (`prism_install`: 확인 뒤 winget `PrismLauncher.PrismLauncher`). Prism 이 필요한 작업에서 `[prism-missing]` 오류면 설치를 권한다.
+  - 설치 파일(`applications/electron/resources/installer.nsh`) "함께 설치할 프로그램" 화면: Python 3.11+ 은 있으면 체크 해제·없으면 체크 고정(해제 불가),
+    Prism 은 있으면 체크 해제·없으면 체크(해제 가능). winget 으로 사용자 범위 설치, 실패하면 내려받기 페이지. 조용한 설치(/S)는 없는 것만. `makensis -WX` 로 문법 확인.
+    앱은 PATH 에 아직 없는 새 Python 도 표준 위치(%LOCALAPPDATA%\Programs\Python\Python3xx 등)에서 찾는다(`findSystemPython`, WindowsApps 별칭 제외).
+  - 시험: `tests/test_prism.py`(형식·찾기·만들기/지우기·자동 연동·옮기기), `test_launchers.py`·`test_sync.py` 새 규칙으로. 공식 런처 모듈·시험(`official_launcher.py`·`official_rpc.py`·t13) 삭제.
 ### M9. 패키징 (내 PC용)
 - electron-builder로 Windows 설치 파일 또는 압축 실행판을 만든다. **배포하지 않는다** — 개인 사용 전용.
 - 서명이 없어서 SmartScreen 경고가 뜨는 건 그대로 둔다.

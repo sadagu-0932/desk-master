@@ -139,7 +139,6 @@ export interface E4mcPrepare {
     ambiguous?: Array<{ versionId: string; filename: string; versionNumber?: string }>;
     fallback?: boolean;
     reason?: string;
-    hostProfile?: { ok: boolean; versionId?: string; message?: string };
     installed?: string[];
 }
 

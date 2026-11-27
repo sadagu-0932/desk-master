@@ -68,6 +68,51 @@ export function venvPython(dir: string): string {
     return process.platform === 'win32' ? path.join(dir, 'Scripts', 'python.exe') : path.join(dir, 'bin', 'python');
 }
 
+/** Python 버전 숫자(예: Python313 → 313). 폴더 이름에서 읽는다 */
+function folderVersion(name: string): number {
+    const m = /^Python(\d)(\d+)/i.exec(name);
+    return m ? Number(m[1]) * 100 + Number(m[2]) : 0;
+}
+
+/**
+ * PC 에 설치된 Python 3.11 이상(코드가 tomllib 을 쓴다)을 찾는다. 설치 프로그램이 방금 깔았으면 이 앱의 PATH 엔 아직 없어서
+ * 표준 설치 위치를 먼저 본다: %LOCALAPPDATA%\Programs\Python\Python3xx (사용자 설치·winget) → Program Files → C:\Python3xx.
+ * Windows 의 "앱 실행 별칭"(WindowsApps\python.exe, 누르면 Store 가 열리는 가짜)은 쓰지 않는다.
+ */
+export function findSystemPython(env: NodeJS.ProcessEnv = process.env): string | undefined {
+    if (process.platform !== 'win32') {
+        return 'python3';
+    }
+    const bases = [
+        env.LOCALAPPDATA && path.join(env.LOCALAPPDATA, 'Programs', 'Python'),
+        env.ProgramFiles, env['ProgramFiles(x86)'], 'C:\\',
+    ].filter((b): b is string => !!b);
+    const found: Array<{ v: number; exe: string }> = [];
+    for (const base of bases) {
+        let names: string[] = [];
+        try { names = fs.readdirSync(base); } catch { continue; }
+        for (const n of names) {
+            const v = folderVersion(n);
+            const exe = path.join(base, n, 'python.exe');
+            if (v >= 311 && fs.existsSync(exe)) {
+                found.push({ v, exe });
+            }
+        }
+    }
+    found.sort((a, b) => b.v - a.v);
+    if (found.length) {
+        return found[0].exe;
+    }
+    // PATH 의 python(가짜 별칭 제외) — 마지막 수단
+    for (const dir of (env.PATH ?? env.Path ?? '').split(path.delimiter)) {
+        const exe = path.join(dir, 'python.exe');
+        if (dir && !/WindowsApps/i.test(dir) && fs.existsSync(exe)) {
+            return exe;
+        }
+    }
+    return undefined;
+}
+
 function run(cmd: string, args: string[], cwd: string): Promise<void> {
     return new Promise((resolve, reject) => {
         execFile(cmd, args, { cwd, windowsHide: true, maxBuffer: 16 * 1024 * 1024 }, (err, _stdout, stderr) => {
@@ -145,9 +190,13 @@ export class SidecarProcess {
         notify('처음 실행 준비: Python 가상환경 만드는 중');
         try {
             if (!fs.existsSync(py)) {
-                const base = process.platform === 'win32' ? 'python' : 'python3';
+                const base = findSystemPython();
+                if (!base) {
+                    throw new Error('Python 3.11 이상을 찾지 못했습니다. 통합 작업실 설치 프로그램을 다시 실행해 [Python] 을 체크하거나, '
+                        + 'python.org 에서 Python 3 을 설치한 뒤 앱을 다시 켜 주세요.');
+                }
                 await run(base, ['-m', 'venv', dir], this.sidecarDir!).catch(e => {
-                    throw new Error(`Python 3이 필요합니다(설치 후 PATH에 추가). ${e.message}`);
+                    throw new Error(`Python 가상환경을 만들지 못했습니다(${base}). ${e.message}`);
                 });
             }
             notify('처음 실행 준비: 런처 라이브러리 설치 중(pip)');

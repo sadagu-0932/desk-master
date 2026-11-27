@@ -140,7 +140,7 @@ export class OpenServerDialog extends ReactDialog<CreateServerOptions> {
                     {LOADER_LABELS[inst.loader]} 서버로 엽니다{inst.loader === 'fabric' ? '(Fabric 서버 런처)' : '(공식 메이븐 설치기, 처음 한 번 몇 분)'}. 인스턴스 mods 중 서버에서도 도는 모드를 서버에 넣습니다.</div>}
                 <label className='sh-check'>
                     <input type='checkbox' checked={this.onlineMode} onChange={e => { this.onlineMode = e.target.checked; this.update(); }} />
-                    정품 계정만 접속(online-mode) — 공식 런처 계정이면 켜 두세요. 끄면 오프라인 시험용.
+                    정품 계정만 접속(online-mode) — Microsoft 계정으로 플레이하면 켜 두세요. 끄면 오프라인 시험용.
                 </label>
             </>}
             <div className='sh-muted'>비밀번호·화이트리스트는 없습니다. 주소를 아는 사람은 누구나 들어올 수 있으니 믿을 수 있는 사람에게만 보내세요.</div>

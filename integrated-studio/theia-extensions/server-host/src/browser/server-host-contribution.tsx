@@ -112,22 +112,14 @@ export class ServerHostContribution extends AbstractViewContribution<ServerHostW
         await this.start(created.id);
     }
 
-    /** 싱글 LAN: e4mc 준비(충돌 모드 선택, 바닐라는 호스트용 Fabric 프로필). 실패하면 UPnP 로 넘어간다고 안내. */
+    /** 싱글 LAN: e4mc 준비(충돌 모드 선택, 바닐라는 e4mc 없이). 실패하면 UPnP 로 넘어간다고 안내. */
     protected async prepareLan(id: string, instanceId: string): Promise<void> {
         const inst = this.instances.find(instanceId);
         if (inst?.loader === 'vanilla') {
-            const pick = await new ChoiceDialog('e4mc 로 열기(바닐라 인스턴스)',
-                <p>e4mc 는 Fabric 모드라서, 이 인스턴스는 그대로 두고 같은 버전 Fabric 으로 켜는 <b>"(호스트용)"</b> 항목을 공식 런처에 만듭니다.
-                    같은 게임 폴더·월드를 씁니다. 친구는 아무것도 설치하지 않아도 됩니다.</p>,
-                [{ id: 'ok', label: '호스트용으로 준비', description: 'Fabric·e4mc 설치(처음 한 번)', primary: true },
-                    { id: 'skip', label: 'e4mc 없이 열기', description: 'UPnP → playit 순서로' }]).open();
-            if (!pick) {
-                return;
-            }
-            if (pick === 'skip') {
-                await this.store.service.prepareE4mc(id, 'skip');
-                return;
-            }
+            // 실행이 Prism 이라(2026-11-27) 바닐라 인스턴스엔 e4mc(Fabric 모드)를 넣지 않는다 → UPnP·playit
+            this.messages.info('바닐라 인스턴스라 e4mc 없이 UPnP → playit 순서로 엽니다. e4mc 를 쓰려면 같은 버전의 Fabric 인스턴스로 여세요.');
+            await this.store.service.prepareE4mc(id, 'skip');
+            return;
         }
         let res: E4mcPrepare = await this.store.service.prepareE4mc(id, 'ask');
         if (res.needsChoice) {
@@ -155,9 +147,6 @@ export class ServerHostContribution extends AbstractViewContribution<ServerHostW
         }
         if (inst && this.instances.isRunning(inst.id)) {
             this.messages.warn('게임이 이미 켜져 있어 e4mc 는 다음 실행부터 적용됩니다. 이번에는 UPnP·playit 으로 엽니다(게임을 다시 켜면 e4mc).');
-        }
-        if (res.hostProfile?.ok) {
-            this.messages.info(`공식 런처에 '통합 작업실 · ${inst?.name} (호스트용)' 항목을 만들었습니다. 친구에게 열 때는 그 항목으로 실행하세요.`);
         }
     }
 

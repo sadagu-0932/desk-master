@@ -309,8 +309,16 @@ class Importers:
             _require_supported(info["loader"])
         if not info.get("version"):
             raise RpcError("게임 버전을 알 수 없습니다.")
+        link = info["kind"] == "prism" and mode == "link"
+        if link:
+            # 이미 연결된 Prism 인스턴스(자동 연동 등)면 그대로 돌려준다
+            have = self._local().linked_id(str(Path(path).resolve()))
+            if have:
+                return {"instance": self.store.get(have), "downloaded": 0, "failed": [], "manual": [], "extracted": 0,
+                        "linked": self.store.get(have)["path"]}
+        # 연결은 앱 쪽 정보만(prism=False), 그 밖(모드팩·압축·복사)은 새 Prism 인스턴스로
         inst = self.store.create(name or info["name"], info["version"], info["loader"], info.get("loaderVersion"),
-                                 group, icon, cc_enabled=False)
+                                 group, icon, cc_enabled=False, prism=not link)
         try:
             if info["kind"] == "mrpack":
                 report = self._install_mrpack(inst["id"], Path(path))
@@ -333,18 +341,13 @@ class Importers:
         """반쯤 만들어진 인스턴스를 목록에서 빼고 휴지통으로 보낸다.
         휴지통을 못 쓰는 환경(예: 휴지통이 없는 드라이브)에서도 목록에는 다시 나타나지 않게
         instance.json 이름부터 바꾼다. 영구 삭제는 하지 않는다."""
-        d = self.store.dir_of(inst_id)
         try:
-            (d / "instance.json").replace(d / "instance.import-failed.json")
-        except OSError:
-            pass
-        try:
-            self.store.delete(inst_id)
+            self.store.discard(inst_id)
         except Exception as e:  # noqa: BLE001
-            print(f"[import] 휴지통으로 보내지 못함, 폴더를 남겨 둠: {d} ({e})", file=sys.stderr)
+            print(f"[import] 휴지통으로 보내지 못함, 폴더를 남겨 둠: {inst_id} ({e})", file=sys.stderr)
 
     def _install_mrpack(self, inst_id: str, mrpack: Path) -> dict[str, Any]:
-        base = self.store.dir_of(inst_id)
+        base = self.store.game_dir(inst_id)
         with zipfile.ZipFile(mrpack) as zf:
             idx = json.loads(zf.read("modrinth.index.json"))
             jobs = []
@@ -365,7 +368,7 @@ class Importers:
         return {"downloaded": len(jobs) - len(failed), "failed": failed + skipped, "manual": [], "extracted": extracted}
 
     def _install_cf_zip(self, inst_id: str, zip_path: Path) -> dict[str, Any]:
-        base = self.store.dir_of(inst_id)
+        base = self.store.game_dir(inst_id)
         with zipfile.ZipFile(zip_path) as zf:
             man = json.loads(zf.read("manifest.json"))
             overrides = (man.get("overrides") or "overrides").strip("/") + "/"
@@ -436,7 +439,7 @@ class Importers:
 
 
     def _copy_prism(self, inst_id: str, folder: Path) -> dict[str, Any]:
-        base = self.store.dir_of(inst_id)
+        base = self.store.game_dir(inst_id)
         game = next((folder / d for d in (".minecraft", "minecraft") if (folder / d).is_dir()), None)
         if not game:
             raise RpcError("인스턴스 안에 .minecraft 폴더가 없습니다.")
@@ -599,7 +602,7 @@ class Importers:
 
     def cf_add_mod(self, id: str, mod_id: str, file_id: str | None = None) -> dict[str, Any]:
         meta = self.store.get(id)
-        base = self.store.dir_of(id)
+        base = self.store.game_dir(id)
         added: list[str] = []
         manual: list[str] = []
         seen: set[str] = set()

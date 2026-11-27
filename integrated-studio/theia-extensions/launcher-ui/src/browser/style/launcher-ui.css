@@ -168,3 +168,12 @@
 }
 .studio-workmode-chips button[aria-checked='true'] { background: #2c3a26; border-color: #6cc04a; color: #e8ede4; }
 .studio-path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Prism 이 없으면 런처 부분을 숨긴다(사용자 결정 2026-11-27). InstanceManager.refreshPrism 이 body 에 클래스를 붙인다 */
+body.studio-no-launcher .studio-home-columns,
+body.studio-no-launcher .studio-run-bar .studio-target,
+body.studio-no-launcher .studio-run-bar .studio-account,
+body.studio-no-launcher .studio-run-bar .studio-bar-btn:not(.studio-home-btn) { display: none !important; }
+.studio-home-noprism { margin: 16px 0; padding: 16px; border: 1px solid var(--theia-panel-border); border-radius: 6px; }
+.studio-home-noprism h2 { margin: 0 0 8px; font-size: 16px; }
+.studio-home-noprism-actions { display: flex; gap: 8px; margin-top: 12px; }

@@ -187,7 +187,7 @@ class Runner:
         return [e["filename"] for e in res.installed + res.kept]
 
     def _install_commandcrafter(self, inst_id: str, meta: dict[str, Any]) -> None:
-        d = self.store.dir_of(inst_id)
+        d = self.store.game_dir(inst_id)
         notify("progress", {"id": inst_id, "stage": "install", "text": "CommandCrafter 모드 받는 중(Modrinth)"})
         try:
             names = self._modrinth_install("commandcrafter", meta["version"], d / "mods", meta["loader"])
@@ -251,7 +251,7 @@ class Runner:
         if id in self.servers:
             raise RpcError("서버가 이미 실행 중입니다.")
         meta = self.store.get(id)
-        d = self.store.dir_of(id)
+        d = self.store.game_dir(id)   # 게임 폴더(Prism 인스턴스면 그 minecraft) 안의 server/ — level-name=../saves/<월드>
         sdir = safe_join(d, "server")
         sdir.mkdir(exist_ok=True)
         eula = sdir / "eula.txt"

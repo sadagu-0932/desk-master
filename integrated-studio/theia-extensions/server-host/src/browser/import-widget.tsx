@@ -44,7 +44,7 @@ export class ImportWidget extends ReactWidget {
     protected init(): void {
         this.id = ImportWidget.ID;
         this.title.label = ImportWidget.LABEL;
-        this.title.caption = '다른 런처(Prism·MultiMC·CurseForge·Modrinth App·공식 런처)의 인스턴스를 불러옵니다';
+        this.title.caption = '다른 런처의 인스턴스를 불러옵니다(Prism·MultiMC 는 연결, 그 밖은 새 Prism 인스턴스로 복사)';
         this.title.iconClass = codicon('cloud-download');
         this.title.closable = true;
         this.addClass('studio-import');
@@ -160,8 +160,8 @@ export class ImportWidget extends ReactWidget {
         const p = this.preview!;
         return <>
             <div className='sh-kinds' role='radiogroup' aria-label='불러오기 방식'>
-                {([['link', '연결(추천)', '인스턴스 폴더는 원래 자리에 그대로 두고, 여기서 실행·모드 추가·서버 열기를 합니다(용량 없음). 두 런처에서 동시에 켜면 안 됩니다 — 실행 전에 확인합니다. 목록에서 지워도 원래 폴더는 남습니다.'],
-                    ['copy', '복사', '통합 작업실 폴더로 mods·config·saves·resourcepacks·shaderpacks·options.txt·servers.dat 등을 복사합니다. 원본은 그대로.']] as const)
+                {([['link', '연결(추천)', 'Prism·MultiMC 인스턴스는 폴더를 그대로 두고 연결합니다(용량 없음, 실행은 그 런처). CurseForge·Modrinth App·공식 런처·폴더는 실행할 런처가 없어 새 Prism 인스턴스로 복사합니다(원본은 그대로).'],
+                    ['copy', '복사', '모두 새 Prism 인스턴스로 mods·config·saves·resourcepacks·shaderpacks·options.txt·servers.dat 등을 복사합니다. 원본은 그대로.']] as const)
                     .map(([m, t, d]) => <label key={m} className={'sh-kind' + (this.mode === m ? ' selected' : '')}>
                         <input type='radio' checked={this.mode === m} onChange={async () => { this.mode = m; await this.showPreview(); }} />
                         <span><b>{t}</b><span className='sh-muted'>{d}</span></span></label>)}
@@ -186,12 +186,11 @@ export class ImportWidget extends ReactWidget {
         const r = this.result!;
         return <>
             <div className='sh-note'>{r.imported.length}개를 불러왔습니다{r.failed.length ? `, ${r.failed.length}개 실패` : ''}. {this.mode === 'link'
-                ? '원래 폴더를 그대로 연결했고 이 앱에는 아무것도 설치하지 않았습니다. 각 인스턴스의 게임 폴더(.minecraft) 안에 실행 파일(통합 작업실 실행.cmd)을 만들었고, [실행]하면 그 파일이 원래 런처를 엽니다.'
-                : '버전·로더는 필요할 때만 설치했습니다.'}</div>
+                ? 'Prism·MultiMC 인스턴스는 원래 폴더 그대로 연결했고, 그 밖은 새 Prism 인스턴스로 복사했습니다. [실행]하면 Prism(또는 MultiMC)이 켜고, 게임 파일은 그때 받습니다.'
+                : '새 Prism 인스턴스로 복사했습니다. [실행]하면 Prism 이 게임 파일을 받고 켭니다.'}</div>
             {r.imported.map(i => <section key={i.id} className='sh-card'>
                 <div className='sh-card-head'><b className='sh-name'>{i.name}</b><span className='sh-muted'>{i.version} · {LOADER_LABELS[i.loader] ?? i.loader}</span></div>
                 {i.linkedDir && <div className='sh-small sh-muted'>연결: {i.linkedDir}</div>}
-                {i.launchFile && <div className='sh-small sh-muted'>실행 파일: {i.launchFile} — [실행]하면 이 파일이 원래 런처를 엽니다</div>}
                 {i.warning && <div className='sh-note warn'>{i.warning}</div>}
                 <div className='sh-card-actions'>
                     <button className='theia-button' onClick={() => this.commands.executeCommand(ServerHostCommands.HOST_INSTANCE.id, i.id)}>

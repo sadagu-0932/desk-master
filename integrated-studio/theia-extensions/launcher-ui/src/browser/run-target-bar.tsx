@@ -7,7 +7,7 @@ import { TaskCommandIds } from 'integrated-studio-launcher-core/lib/common';
 import { WorkspaceService } from '@theia/workspace/lib/browser/workspace-service';
 import { workFolderInUrl } from './studio-mode.js';
 
-/** 상단 막대: 홈, 작업실 열기/런처로, /reload, 실행 대상 선택기 + 실행(공식 런처), 안내 */
+/** 상단 막대: 홈, 작업실 열기/런처로, /reload, 실행 대상 선택기 + 실행(Prism), 안내 */
 @injectable()
 export class RunTargetBar extends ReactWidget {
     static readonly ID = 'studio-run-target-bar';
@@ -56,12 +56,12 @@ export class RunTargetBar extends ReactWidget {
                     {t ? `${t.name} · 게임` : '인스턴스 없음'}
                     <span className='codicon codicon-chevron-down' aria-hidden='true' />
                 </button>
-                <button className='studio-target-btn codicon codicon-play' aria-label='실행 (공식 런처)' disabled={!t || running}
-                    title={running ? '실행 중 — 게임 창을 닫으면 종료됩니다' : '실행 (F5) — 공식 런처로'}
+                <button className='studio-target-btn codicon codicon-play' aria-label='실행 (Prism)' disabled={!t || running}
+                    title={running ? '실행 중 — 게임 창을 닫으면 종료됩니다' : '실행 (F5) — Prism 으로'}
                     onClick={() => this.run(StudioCommands.LAUNCH.id, t?.id)} />
             </div>
-            <div className='studio-account' title='로그인은 공식 마인크래프트 런처에서 합니다. 이 앱은 계정 정보를 다루지 않습니다.'>
-                <span className='codicon codicon-globe' aria-hidden='true' />공식 런처로 실행
+            <div className='studio-account' title='로그인은 Prism Launcher 에서 합니다. 이 앱은 계정 정보를 다루지 않습니다.'>
+                <span className='codicon codicon-globe' aria-hidden='true' />Prism 으로 실행
             </div>
         </div>;
     }

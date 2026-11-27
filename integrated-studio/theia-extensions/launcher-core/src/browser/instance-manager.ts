@@ -69,6 +69,7 @@ export class InstanceManager {
 
     protected async load(): Promise<void> {
         this._targetId = await this.storage.getData<string>(TARGET_KEY);
+        await this.refreshPrism();
         await this.refresh();
         try {
             const running = await this.service.call<{ game: string[]; server: string[] }>('running');
@@ -84,6 +85,29 @@ export class InstanceManager {
     get instances(): readonly Instance[] { return this._instances; }
     get error(): string | undefined { return this._error; }
     get logs(): readonly LogEvent[] { return this._logs; }
+
+    protected _prism: { found: boolean; exe?: string | null; root?: string | null } | undefined;
+    /** Prism 상태(모르면 undefined) */
+    get prism(): { found: boolean; exe?: string | null; root?: string | null } | undefined { return this._prism; }
+    /**
+     * 런처 기능(홈 인스턴스·인스턴스 목록·실행·작업·서버)을 보여 줄지(사용자 결정 2026-11-27: Prism 이 없으면 런처 부분을 숨긴다).
+     * 사이드카가 아직 답하지 않았으면 보여 준다.
+     */
+    get launcherEnabled(): boolean { return this._prism?.found ?? true; }
+
+    /** Prism 이 설치돼 있는지 다시 확인(설치 뒤 등). 바뀌면 화면을 다시 그린다 */
+    async refreshPrism(): Promise<void> {
+        try {
+            const before = this._prism?.found;
+            this._prism = await this.service.call('prism_status');
+            if (before !== this._prism?.found) {
+                document.body.classList.toggle('studio-no-launcher', !this.launcherEnabled);
+                this.fire();
+            }
+        } catch {
+            // 사이드카 오류는 refresh 에서 표시
+        }
+    }
 
     /** 작업 공간으로 열려 있는 인스턴스 → 없으면 실행 대상 선택기의 값 → 없으면 첫 번째 */
     get current(): Instance | undefined {
@@ -297,16 +321,6 @@ export class InstanceManager {
         await this.refresh();
         await this.setTarget(inst.id);
         return inst;
-    }
-
-    async install(id: string): Promise<Instance> {
-        try {
-            const inst = await this.service.call<Instance>('install', { id });
-            await this.refresh();
-            return inst;
-        } finally {
-            this.closeProgress(id);
-        }
     }
 
     async rename(id: string, name: string): Promise<void> {

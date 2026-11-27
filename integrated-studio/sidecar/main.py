@@ -12,10 +12,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import memory  # noqa: E402
+from paths import trash  # noqa: E402
 from instances import InstanceStore  # noqa: E402
 from packs import Packs  # noqa: E402
 from importers import Importers  # noqa: E402
-from official_rpc import OfficialLauncherRpc  # noqa: E402
+import prism  # noqa: E402
+from game_log import Confirmer, GameLogs  # noqa: E402
+from prism_sync import PrismSync, migrate as prism_migrate, migrate_candidates  # noqa: E402
 from sync import SettingsSync  # noqa: E402
 from rpc import notify, serve  # noqa: E402
 from runner import Runner  # noqa: E402
@@ -48,32 +51,50 @@ def main() -> None:
     # M10 서버 열기 — 방식 A 전용 서버, e4mc(방식 B 를 인터넷 주소로), 다른 런처 인스턴스 불러오기
     servers = ServerRunner(data_dir, store, lambda version: [runner._runtime_java(version)])
     atexit.register(servers.shutdown)
-    official = OfficialLauncherRpc(store, runner.mc_dir)  # 공식 런처 연동(M8-1, Windows 전용)
-    e4mc = E4mcHost(store, install_fabric=runner.install_fabric_for, register_host=official.register_host_profile)
-    local_import = LocalImporter(store, install=runner.install)
+    # 런처 부분은 Prism(사용자 결정 2026-11-27): 새 인스턴스 = Prism 인스턴스, 실행 = prismlauncher --launch
+    def make_prism_instance(name: str, version: str, loader: str, loader_version: str | None) -> dict:
+        info = prism.require()
+        folder = prism.create_instance(Path(info["instanceDir"]), name, version, loader, loader_version)
+        return {"folder": str(folder), "root": info["root"]}
+
+    def remove_prism_instance(folder: Path) -> None:
+        if folder.is_dir() and (folder / "instance.cfg").is_file():
+            trash(folder, folder.parent)
+
+    store.make_prism_instance = make_prism_instance
+    store.remove_prism_instance = remove_prism_instance
+    confirmer = Confirmer()
+    games = GameLogs(store)               # Prism 으로 켠 게임의 로그·실행 상태
+    atexit.register(games.shutdown)
+    e4mc = E4mcHost(store)
+    local_import = LocalImporter(store)
     try:
         local_import.migrate_linked()
     except Exception as e:  # noqa: BLE001
         print(f"[import] 연결 인스턴스 정리 실패: {e}", file=sys.stderr)
-    atexit.register(official.shutdown)
-    # 설정 동기화(게임 설정·서버 목록·공식 런처 항목): 시작 때·30초마다·게임이 닫힌 뒤
-    settings_sync = SettingsSync(store, data_dir, official)
-    official.on_game_stopped = lambda _id: settings_sync.later()
+    prism_sync = PrismSync(store, local_import)
+    atexit.register(prism_sync.shutdown)
+    # 설정 동기화(게임 설정·서버 목록, 통합 작업실이 만든 인스턴스끼리): 시작 때·30초마다·게임이 닫힌 뒤
+    settings_sync = SettingsSync(store, data_dir, running=games.running_games)
+    games.on_game_stopped = lambda _id: settings_sync.later()
     atexit.register(settings_sync.shutdown)
 
     def rename_instance(id: str, name: str):
-        result = store.rename(id, name)
-        settings_sync.later(0.5)  # 공식 런처 항목 이름도 맞춘다
-        return result
+        return store.rename(id, name)
 
     def delete_instance(id: str):
-        local_import.remove_launch_file(id)   # 연결 인스턴스: 원래 폴더에 만든 실행 파일만 지움(원래 폴더는 그대로)
-        official.tail_stop(id)                # 로그 따라 읽기를 먼저 멈춘다(폴더를 잡고 있지 않게)
-        try:
-            official.forget(id)  # 공식 런처 항목도 지운다(우리 항목만)
-        except Exception as e:  # noqa: BLE001 - 항목 정리에 실패해도 삭제는 한다(다음 동기화 때 다시 정리)
-            print(f"[sync] 공식 런처 항목 정리 실패: {e}", file=sys.stderr)
-        return store.delete(id)
+        local_import.remove_launch_file(id)   # 원래 폴더에 만든 실행 파일
+        games.tail_stop(id)                   # 로그 따라 읽기를 먼저 멈춘다(폴더를 잡고 있지 않게)
+        return store.delete(id)               # Prism 인스턴스면 Prism 쪽 폴더도 휴지통으로
+
+    def prism_install(id: str = ""):
+        return prism.install(confirmer.callback(id), lambda line: notify(
+            "log", {"id": id, "line": line, "level": "info", "source": "studio"}))
+
+    def prism_open():
+        info = prism.require()
+        prism.open_prism(info["exe"], info["root"])
+        return {"ok": True}
 
     handlers = {
         "ping": lambda: {"version": VERSION, "data": str(data_dir)},
@@ -89,9 +110,19 @@ def main() -> None:
         "set_work_mode": lambda id, mode: store.set_work_mode(id, mode),
         "list_versions": runner.list_versions,
         "list_loader_versions": runner.list_loader_versions,
-        "install": runner.install,
-        # 게임 클라이언트 실행은 공식 런처로만 한다(사용자 결정 2026-11-22). 오프라인 실행(launch/stop)은 등록하지 않는다.
-        "running": lambda: {"game": official.running_games(), "server": runner.running()["server"]},
+        # 게임 실행은 Prism 으로(launch_linked). 앱에는 게임을 설치하지 않는다
+        "running": lambda: {"game": games.running_games(), "server": runner.running()["server"]},
+        "game_tail_log": lambda id, from_start=False: games.tail_log(id, from_start),
+        "game_tail_stop": lambda id: games.tail_stop(id),
+        "confirm_reply": lambda token, ok: confirmer.reply(token, ok),
+        "prism_status": prism.find,
+        "prism_install": prism_install,
+        "prism_open": prism_open,
+        "prism_sync": lambda: prism_sync.sync(force=True),
+        # 예전 인스턴스(앱 폴더·공식 런처·CurseForge 등) → Prism 인스턴스로 옮기기(프런트가 먼저 확인)
+        "prism_migrate_candidates": lambda: migrate_candidates(store),
+        "prism_migrate": lambda ids: (prism.require(), prism_migrate(store, local_import, ids, lambda i, t: notify(
+            "progress", {"id": i, "stage": "migrate", "text": t, "done": not t})))[1],
         "server_start": runner.server_start,
         "server_stop": runner.server_stop,
         "server_command": runner.server_command,
@@ -123,7 +154,6 @@ def main() -> None:
         "cf_files": imp.cf_files,
         "cf_install_modpack": imp.cf_install_modpack,
         "cf_add_mod": imp.cf_add_mod,
-        **official.handlers(),
         "ds_list": servers.list_all,
         "ds_create": servers.create,
         "ds_update": servers.update,
@@ -154,12 +184,13 @@ def main() -> None:
         "memory_usage": memory.usage,
         "sync_now": settings_sync.sync_now,
     }
-    background = {"install", "duplicate_instance", "list_versions", "list_loader_versions", "server_start", "server_stop", "generate_reports", "mod_new", "mod_build", "read_commands", "inspect_import", "import_file",
+    background = {"create_instance", "duplicate_instance", "list_versions", "list_loader_versions", "server_start", "server_stop", "generate_reports", "mod_new", "mod_build", "read_commands", "inspect_import", "import_file",
                   "modrinth_search", "modrinth_versions", "modrinth_install_modpack", "modrinth_add_mod",
-                  "cf_key_status", "cf_set_key", "cf_search", "cf_files", "cf_install_modpack", "cf_add_mod"} | official.BACKGROUND | {"ds_create", "ds_set_world", "ds_start", "ds_stop", "host_mods", "e4mc_install", "e4mc_check_crash",
+                  "cf_key_status", "cf_set_key", "cf_search", "cf_files", "cf_install_modpack", "cf_add_mod"} | {"prism_install", "prism_sync", "prism_migrate", "launch_linked"} | {"ds_create", "ds_set_world", "ds_start", "ds_stop", "host_mods", "e4mc_install", "e4mc_check_crash",
                      "import_detect", "import_inspect_folder", "import_preview", "import_run", "import_in_use"} | {"sync_now", "delete_instance", "memory_usage"}
     notify("ready", {"version": VERSION})
     settings_sync.start()
+    prism_sync.start()      # Prism 인스턴스 폴더를 몇 초마다 확인해 목록을 맞춘다
     serve(handlers, background)
 
 

@@ -8,7 +8,7 @@ from __future__ import annotations
 import re
 import time
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import modrinth
 from instances import InstanceStore
@@ -20,13 +20,11 @@ NET_ERROR_RE = re.compile(r"(Exception|Error|crash)", re.I)
 
 
 class E4mcHost:
-    """인스턴스 mods/ 의 e4mc 관리. install_fabric(version) → Fabric 버전 id (바닐라 인스턴스의 호스트용 프로필)."""
+    """인스턴스 mods/ 의 e4mc 관리. 바닐라 인스턴스는 e4mc(Fabric 모드)를 넣을 수 없어 UPnP·playit 으로 넘긴다
+    (실행이 Prism 이라 예전의 공식 런처 '호스트용 항목'은 없앰, 2026-11-27)."""
 
-    def __init__(self, store: InstanceStore, install_fabric: Callable[[str, str], str] | None = None,
-                 register_host: Callable[[str, str], dict] | None = None):
+    def __init__(self, store: InstanceStore):
         self.store = store
-        self.install_fabric = install_fabric
-        self.register_host = register_host
 
     def _mods(self, id: str) -> Path:
         return self.store.game_dir(id) / "mods"
@@ -60,11 +58,9 @@ class E4mcHost:
             "loader": loader, "version": meta["version"],
             "installed": bool(files), "enabled": bool(enabled),
             "files": [p.name for p in files],
-            "needsHostProfile": loader == "vanilla",
-            "hostProfile": meta.get("e4mcHostProfile"),
             "autoDisabled": meta.get("e4mcAutoDisabled"),
             "conflicts": self.conflicts(id),
-            "supportedLoader": loader in ("vanilla", "fabric", "quilt", "neoforge", "forge"),
+            "supportedLoader": loader in ("fabric", "quilt", "neoforge", "forge"),
         }
 
     def install(self, id: str, conflict_choice: str = "ask") -> dict[str, Any]:
@@ -77,7 +73,11 @@ class E4mcHost:
         if conflicts and conflict_choice == "ask":
             return {"ok": False, "needsChoice": True, "conflicts": conflicts}
         loader = meta.get("loader", "vanilla")
-        mod_loader = "fabric" if loader == "vanilla" else loader
+        if loader == "vanilla":
+            return {"ok": False, "fallback": True,
+                    "reason": "바닐라 인스턴스에는 e4mc(Fabric 모드)를 넣을 수 없어 UPnP·playit 으로 엽니다. "
+                              "e4mc 를 쓰려면 같은 버전의 Fabric 인스턴스로 여세요."}
+        mod_loader = loader
         mods = self._mods(id)
         try:
             res = modrinth.install(E4MC_PROJECT, meta["version"], mod_loader, mods)
@@ -111,21 +111,7 @@ class E4mcHost:
         out: dict[str, Any] = {"ok": True, "installed": [i["filename"] for i in res.installed],
                                "kept": [k["filename"] for k in res.kept], "optional": res.optional,
                                "disabledOnce": disabled_now}
-        if loader == "vanilla":
-            out["hostProfile"] = self._host_profile(id)
         return out
-
-    def _host_profile(self, id: str) -> dict[str, Any]:
-        """바닐라 인스턴스: 같은 버전 Fabric 으로 '호스트용' 공식 런처 항목을 만든다(원래 인스턴스는 그대로)."""
-        meta = self.store.get(id)
-        if not self.install_fabric:
-            return {"ok": False, "reason": "Fabric 설치기를 쓸 수 없습니다."}
-        version_id = self.install_fabric(id, meta["version"])
-        meta = self.store.get(id)
-        meta["e4mcHostProfile"] = version_id
-        self.store.save(meta)
-        reg = self.register_host(id, version_id) if self.register_host else {"ok": True}
-        return {"ok": bool(reg.get("ok", True)), "versionId": version_id, "message": reg.get("message")}
 
     def disable(self, id: str, reason: str | None = None) -> dict[str, Any]:
         """끄기: 다음 실행부터 .disabled (삭제 금지). '이번만 끈' 충돌 모드는 되살린다."""

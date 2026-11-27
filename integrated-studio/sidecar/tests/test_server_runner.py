@@ -255,8 +255,7 @@ def e4(tmp_path, monkeypatch):
         return r
 
     monkeypatch.setattr(modrinth, "install", fake_install)
-    host = e4mc_host.E4mcHost(store, install_fabric=lambda i, v: f"fabric-loader-0.20.1-{v}",
-                       register_host=lambda i, vid: {"ok": True, "message": "등록"})
+    host = e4mc_host.E4mcHost(store)
     return host, store, iid, calls
 
 
@@ -265,7 +264,7 @@ def test_e4mc_install_disable_keeps_file(e4):
     r = host.install(iid)
     assert r["ok"] and calls == [("e4mc", "26.3", "fabric")]
     st = host.status(iid)
-    assert st["enabled"] and not st["needsHostProfile"]
+    assert st["enabled"]
     host.disable(iid)
     mods = store.game_dir(iid) / "mods"
     assert (mods / "e4mc-fabric-6.2.3-modern.jar.disabled").is_file()  # 삭제가 아니라 이름 변경
@@ -295,15 +294,16 @@ def test_e4mc_conflicts_choice(e4):
     assert (mods / "viafabricplus.jar").is_file()
 
 
-def test_e4mc_vanilla_gets_host_profile(e4):
+def test_e4mc_vanilla_falls_back_without_touching_instance(e4):
+    """실행이 Prism 이라(2026-11-27) 바닐라 인스턴스엔 e4mc(Fabric 모드)를 넣지 않고 UPnP·playit 으로 넘긴다."""
     host, store, iid, calls = e4
     meta = store.get(iid)
     meta["loader"] = "vanilla"
     store.save(meta)
+    n = len(calls)
     r = host.install(iid)
-    assert calls[-1] == ("e4mc", "26.3", "fabric")                     # 바닐라는 같은 버전 Fabric 용
-    assert r["hostProfile"]["versionId"] == "fabric-loader-0.20.1-26.3"
-    assert store.get(iid)["loader"] == "vanilla"                        # 원래 인스턴스는 그대로
+    assert r["fallback"] and "바닐라" in r["reason"] and len(calls) == n   # 받지 않음
+    assert store.get(iid)["loader"] == "vanilla" and not host.status(iid)["installed"]
 
 
 def test_e4mc_crash_auto_disables(e4):

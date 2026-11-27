@@ -63,6 +63,10 @@ export class StudioUiContribution implements FrontendApplicationContribution, Co
                     const tasks = await this.widgets.getOrCreateWidget(TasksWidget.ID);
                     container.addWidget(instances, { order: 10, weight: 30, canHide: true });
                     container.addWidget(tasks, { order: 11, weight: 18, canHide: true });
+                    // Prism 이 없으면 런처 부분(인스턴스·작업)을 숨긴다(사용자 결정 2026-11-27)
+                    const apply = () => [instances, tasks].forEach(w => container.getPartFor(w)?.setHidden(!this.manager.launcherEnabled));
+                    apply();
+                    this.manager.onDidChange(apply);
                 })());
             }
         });
@@ -131,6 +135,10 @@ export class StudioUiContribution implements FrontendApplicationContribution, Co
     // ---------- 상태 표시줄 ----------
     protected updateStatusBar(): void {
         const cur = this.manager.current;
+        if (!this.manager.launcherEnabled) {
+            this.statusBar.removeElement('studio-instance');   // Prism 이 없으면 런처 부분을 숨긴다
+            return;
+        }
         if (cur) {
             const running = this.manager.isRunning(cur.id);
             this.statusBar.setElement('studio-instance', {

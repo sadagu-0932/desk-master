@@ -31,7 +31,8 @@ LAUNCHER_PROCS = {"prismlauncher.exe": "Prism Launcher", "multimc.exe": "MultiMC
 
 
 LAUNCH_GUARD_S = 30   # Prism 으로 켠 뒤 게임 로그가 시작 줄을 쓰기 전까지 다시 실행을 막는 시간
-NEED_ROOT_TAG = "[launcher-root]"   # 프런트가 이 글자를 보면 데이터 폴더 고르기 창을 띄운다
+NEED_ROOT_TAG = "[launcher-root]"
+NEEDS_PRISM_TAG = "[needs-prism]"   # Prism 으로 옮기지 않은 예전 인스턴스(앱 폴더·공식 런처·CurseForge 등) → 옮기기 권함   # 프런트가 이 글자를 보면 데이터 폴더 고르기 창을 띄운다
 
 
 def _norm_path(s: str) -> str:
@@ -73,10 +74,9 @@ def _copytree(src: Path, dst: Path, on_file: Callable[[int], None]) -> int:
 
 
 class LocalImporter:
-    def __init__(self, store: InstanceStore, install: Callable[[str], Any] | None = None,
+    def __init__(self, store: InstanceStore, install: Callable[[str], Any] | None = None,  # noqa: ARG002 - 예전 호출 호환(이제 Prism 이 받음)
                  roots: dict[str, list[Path]] | None = None):
         self.store = store
-        self.install = install
         self.roots = roots
         self._cache: dict[str, dict[str, Any]] = {}
         self._launched: dict[str, float] = {}   # 연결 인스턴스를 마지막으로 실행한 시각(겹쳐 켜기 방지)
@@ -138,73 +138,71 @@ class LocalImporter:
                 failed.append({"key": e["key"], "name": e["name"], "error": str(ex)})
         return {"imported": done, "failed": failed}
 
-    def _import_one(self, e: dict[str, Any], mode: str, name: str | None) -> dict[str, Any]:
+    def linked_id(self, source: str | None) -> str | None:
+        """이미 연결된 인스턴스(같은 원래 폴더)의 id."""
+        if not source:
+            return None
+        want = str(Path(source).resolve())
+        for m in self.store.list():
+            if m.get("sourceDir") == want:
+                return m["id"]
+        return None
+
+    def _import_one(self, e: dict[str, Any], mode: str, name: str | None, launch_file: bool = True) -> dict[str, Any]:
+        """Prism·MultiMC 인스턴스 = "연결"(폴더 그대로, 그 런처로 실행). 다른 런처(CurseForge·Modrinth·공식·폴더) =
+        새 Prism 인스턴스로 "복사"(사용자 결정 2026-11-27: 실행은 Prism). 게임·로더 파일은 Prism 이 실행할 때 받는다."""
         if not e.get("version"):
             raise RpcError(f"{e['name']}: 게임 버전을 알 수 없습니다. 버전을 골라 주세요.")
         game = Path(e["gameDir"]) if e.get("gameDir") else None
         if not game or not game.is_dir():
             raise RpcError(f"{e['name']}: 게임 폴더를 찾을 수 없습니다.")
-        inst = self.store.create(name or e["name"], e["version"], e["loader"], e.get("loaderVersion"), cc_enabled=False)
+        linkable = e["launcher"] in ("prism", "multimc") and bool(e.get("launcherInstanceId"))
+        if mode == "link" and linkable:
+            have = self.linked_id(e.get("source") or str(game))
+            if have:
+                return self.store.get(have)          # 이미 목록에 있음(Prism 자동 연동 등)
+            inst = self.store.create(name or e["name"], e["version"], e["loader"], e.get("loaderVersion"),
+                                     cc_enabled=False, prism=False)
+        else:
+            inst = self.store.create(name or e["name"], e["version"], e["loader"], e.get("loaderVersion"), cc_enabled=False)
         iid = inst["id"]
         try:
             meta = self.store.get(iid)
             meta["importedFrom"] = e["key"]
             meta["importedLauncher"] = e["launcher"]
             meta["jvmArgs"] = _jvm_args(e.get("memoryMb"), e.get("javaArgs"))
-            if e["launcher"] == "official" and e.get("versionId"):
-                meta["versionId"] = e["versionId"]      # 공식 .minecraft 에 이미 설치된 버전(로더 포함)
-                if e.get("officialInstalled"):
-                    meta["installed"] = True            # 공식 런처에 이미 있으니 여기서 받지 않는다
-            if mode == "link":
-                # 원래 폴더를 그대로 쓰고, 이 앱에는 아무것도 설치하지 않는다
+            if mode == "link" and linkable:
+                # 원래 폴더를 그대로 쓰고, 이 앱에는 아무것도 설치하지 않는다. 실행 = 그 런처의 [실행](--launch)
                 meta["linkedDir"] = str(game.resolve())
-                if not meta.get("installed"):
-                    have = official_version_id(e["version"], e["loader"], e.get("loaderVersion"), self.official_dirs())
-                    if have:
-                        meta["versionId"] = have
-                        meta["installed"] = True        # 공식 런처에 이미 있는 버전 → 실행할 때도 받지 않음
-                if e["launcher"] in ("prism", "multimc") and e.get("launcherInstanceId"):
-                    meta["launchVia"] = {"kind": e["launcher"], "root": e.get("launcherRoot"), "instance": e["launcherInstanceId"]}
-                # 원래 인스턴스 폴더 경로는 항상 저장하고, 그 안의 게임 폴더(.minecraft)에 실행 파일을 만든다.
-                # 실행 = 그 .minecraft 를 게임 폴더로 마인크래프트를 바로 켠다(공식 런처 계정·항목, 사용자 결정 2026-11-26).
                 meta["sourceDir"] = str(Path(e.get("source") or game).resolve())
-                if meta.get("launchVia"):
-                    # Prism·MultiMC: 앱이 그 런처의 [실행]을 누르는 것과 같게(--launch). 그 런처의 계정·자바·로더, 다운로드 없음
-                    meta["launchKind"] = meta["launchVia"]["kind"]
-                    meta["installed"] = True
-                else:
-                    meta["launchKind"] = "official"
-                    meta["launchKind_checked"] = True
+                meta["launchVia"] = {"kind": e["launcher"], "root": e.get("launcherRoot"), "instance": e["launcherInstanceId"]}
+                meta["launchKind"] = e["launcher"]
+                meta["installed"] = True
                 self.store.save(meta)
                 out = self.store.get(iid)
-                try:
-                    self.ensure_launch_file(iid)
-                    out = self.store.get(iid)
-                except OSError as ex:
-                    out["warning"] = f"원래 폴더에 실행 파일을 만들지 못했습니다({ex}). 실행할 때 다시 시도합니다."
+                if launch_file:
+                    try:
+                        self.ensure_launch_file(iid)
+                        out = self.store.get(iid)
+                    except OSError as ex:
+                        out["warning"] = f"원래 폴더에 실행 파일을 만들지 못했습니다({ex}). 실행할 때 다시 시도합니다."
                 notify("progress", {"id": iid, "stage": "import", "text": "연결 완료", "done": True})
                 return out
             self.store.save(meta)
             self._copy(iid, game, e)
-            warning = None
-            if self.install:
-                notify("progress", {"id": iid, "stage": "import", "text": "게임·로더 설치 중(없을 때만)"})
-                try:
-                    self.install(iid)
-                except Exception as ex:  # noqa: BLE001 - 받기 실패(네트워크 등)여도 불러온 파일은 남기고 실행할 때 다시 설치
-                    warning = f"버전·로더 설치는 실패해서 실행할 때 다시 시도합니다: {ex}"
+            if meta.get("jvmArgs"):
+                mx = re.search(r"-Xmx(\d+)M", meta["jvmArgs"])
+                extra = " ".join(a for a in meta["jvmArgs"].split() if not a.startswith("-Xm")) or None
+                self.store.set_memory(iid, int(mx.group(1)) if mx else None, extra or "")
             notify("progress", {"id": iid, "stage": "import", "text": "불러오기 완료", "done": True})
-            out = self.store.get(iid)
-            if warning:
-                out["warning"] = warning
-            return out
+            return self.store.get(iid)
         except Exception:
             notify("progress", {"id": iid, "stage": "import", "done": True})
             self._discard(iid)
             raise
 
     def _copy(self, iid: str, game: Path, e: dict[str, Any]) -> None:
-        base = self.store.dir_of(iid)
+        base = self.store.game_dir(iid)
         total = sum(launchers.entry_size(e, COPY_ITEMS).values()) or 1
         copied = 0
         last = 0.0
@@ -228,14 +226,8 @@ class LocalImporter:
                 tick(src.stat().st_size)
 
     def _discard(self, iid: str) -> None:
-        d = self.store.dir_of(iid)
         try:
-            (d / "instance.json").replace(d / "instance.import-failed.json")
-        except OSError:
-            pass
-        try:
-            from paths import trash
-            trash(d, self.store.root)
+            self.store.discard(iid)
         except Exception:  # noqa: BLE001
             pass
 
@@ -267,20 +259,10 @@ class LocalImporter:
                     meta["launchVia"] = {**via, "root": str(root)}
                     meta["launchFile"] = None    # 새 --dir 로 다시 만든다
                     changed = True
-            want_kind = (meta.get("launchVia") or {}).get("kind") or "official"
-            if meta.get("launchKind") != want_kind:
+            want_kind = (meta.get("launchVia") or {}).get("kind")
+            if want_kind and meta.get("launchKind") != want_kind:
                 meta["launchKind"] = want_kind
-                changed = True
-            if want_kind in ("prism", "multimc"):
-                if not meta.get("installed"):
-                    meta["installed"] = True
-                    changed = True
-            elif not meta.get("launchKind_checked"):
-                meta["launchKind_checked"] = True
-                # 예전엔 원래 런처가 켜서 '설치됨'으로 표시했다 → 공식 런처에 그 버전이 있을 때만 설치됨
-                have = official_version_id(meta["version"], meta["loader"], meta.get("loaderVersion"), self.official_dirs())
-                meta["installed"] = bool(have)
-                meta["versionId"] = have or None     # 없으면 실행할 때 한 번 설치(그때 정해짐)
+                meta["installed"] = True
                 changed = True
             old = meta.get("launchFile")
             want = Path(meta["linkedDir"]) / launchfile.file_name()
@@ -290,7 +272,8 @@ class LocalImporter:
                 changed = True
             if changed:
                 self.store.save(meta)
-            if not meta.get("launchFile") or not Path(meta["launchFile"]).is_file():
+            # 실행 파일은 실행할 때 만든다. 예전에 만든 게 없어졌으면 그때만 다시(자동 연동한 Prism 인스턴스마다 새로 쓰지 않음)
+            if meta.get("launchFile") and not Path(meta["launchFile"]).is_file():
                 try:
                     self.ensure_launch_file(m["id"])
                     changed = True
@@ -325,10 +308,6 @@ class LocalImporter:
             return False
         return launchfile.remove(Path(f)) if f else False
 
-    def official_dirs(self) -> list[Path]:
-        roots = self.roots or launchers.default_roots()
-        return [Path(p) for p in roots.get("official", [])]
-
     # ---------- 연결한 인스턴스: 원래 폴더의 실행 파일을 실행 ----------
     def launch_linked(self, iid: str) -> dict[str, Any]:
         meta = self.store.get(iid)
@@ -340,6 +319,8 @@ class LocalImporter:
             raise RpcError(f"원래 폴더에 실행 파일을 만들지 못했습니다: {e}") from e
         meta = self.store.get(iid)
         kind = meta.get("launchKind") or "official"
+        if kind not in ("prism", "multimc"):
+            raise RpcError(f"{NEEDS_PRISM_TAG} 이 인스턴스는 Prism 으로 옮겨야 실행할 수 있습니다(공식 런처 실행은 없앴습니다).")
         if kind in ("prism", "multimc"):
             via = meta.get("launchVia") or {}
             if not via.get("root"):
@@ -438,21 +419,6 @@ class LocalImporter:
         except OSError:
             pass
         return {"linked": True, "busy": bool(reasons), "reasons": reasons, "warnings": warnings, "dir": str(game)}
-
-
-def official_version_id(mc: str, loader: str, lver: str | None, mc_dirs: list[Path]) -> str | None:
-    """공식 런처 .minecraft/versions 에 이미 있는 실행 버전 id(없으면 None)."""
-    if not mc:
-        return None
-    ids = {"vanilla": [mc]}.get(loader, [])
-    if lver:
-        ids = {"fabric": [f"fabric-loader-{lver}-{mc}"], "quilt": [f"quilt-loader-{lver}-{mc}"],
-               "neoforge": [f"neoforge-{lver}"], "forge": [f"{mc}-forge-{lver}", f"{mc}-forge{mc}-{lver}"]}.get(loader, ids)
-    for d in mc_dirs:
-        for vid in ids:
-            if (d / "versions" / vid / f"{vid}.json").is_file():
-                return vid
-    return None
 
 
 def find_launcher_exe(kind: str, root: Path | None) -> Path | None:

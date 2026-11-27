@@ -58,8 +58,8 @@ export class InstancesWidget extends ReactWidget {
                         <span className='studio-row-name'>{i.name}</span>
                         <span className='studio-row-sub'>{sub}{server ? ' · 서버' : ''}{i.linkedDir ? ' · 연결됨' : ''}</span>
                     </span>
-                    <button className='studio-icon-btn codicon codicon-play' aria-label={`${i.name} 실행 (공식 런처)`} disabled={running}
-                        title={running ? '실행 중 — 게임 창을 닫으면 종료됩니다' : '실행 (F5) — 공식 런처로'}
+                    <button className='studio-icon-btn codicon codicon-play' aria-label={`${i.name} 실행 (Prism)`} disabled={running}
+                        title={running ? '실행 중 — 게임 창을 닫으면 종료됩니다' : '실행 (F5) — Prism 으로'}
                         onClick={e => { e.stopPropagation(); this.commands.executeCommand(StudioCommands.LAUNCH.id, i.id); }} />
                     <button className='studio-icon-btn codicon codicon-folder' aria-label={`${i.name} 폴더 열기`} title='폴더 열기 (파일 탐색기)'
                         onClick={e => { e.stopPropagation(); this.commands.executeCommand(StudioCommands.OPEN_FOLDER.id, i.id); }} />
