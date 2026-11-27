@@ -22,6 +22,7 @@ import { GameLogWidget } from './game-log-widget.js';
 import { CommandConsoleWidget } from './command-console-widget.js';
 import { RunTargetBar } from './run-target-bar.js';
 import { HomeWidget } from './home-widget.js';
+import { workFolderInUrl } from './studio-mode.js';
 
 const CATEGORY = '통합 작업실';
 const CC_ADDRESS_PREF = 'CommandCrafter.MinecraftAddress';
@@ -76,7 +77,10 @@ export class StudioUiContribution implements FrontendApplicationContribution, Co
         this.shell.topPanel.show();
         this.overrideDebugKeys();
         await this.manager.ready;
-        if (!this.manager.workspaceInstance) {
+        if (workFolderInUrl()) {
+            // 작업실 모드: 파일 트리를 바로 보여 준다(파일을 누르면 코드 편집기)
+            await this.shell.revealWidget('explorer-view-container');
+        } else if (!this.manager.workspaceInstance) {
             this.openHome();
         }
         this.syncCommandCrafterAddress();

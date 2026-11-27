@@ -203,6 +203,15 @@ Theia 확장은 TypeScript로 작성한다. Python 쪽은 `sidecar/` 아래에�
   스크립트는 `-EncodedCommand`(따옴표 안전), 이미 막을 이유가 있으면 조회 생략. Theia 기본 확장은 전부 plugin-ext(CommandCrafter) 의존이라 그대로.
   파일 나누기: `server_runner.py` → `server_mods.py`(모드 분석)·`e4mc_host.py`(e4mc). official_launcher·importers/__init__·host-manager.ts 는
   한 클래스·한 주제이고 시험이 모듈 함수를 바꿔 끼우는 곳이 많아 나누지 않음(나누면 시험이 엉뚱한 걸 검사하게 될 위험).
+- 램 줄이기 + 앱 두 개처럼(2026-11-27, 사용자 요청 "램 줄이기 다 해봐", "앱 2개 느낌으로, 작업실을 열면 코드 편집기가 나오게"):
+  **런처 모드 ↔ 작업실 모드**(`launcher-ui/studio-mode.ts`). 창 주소 #뒤에 폴더가 있으면 작업실, 없으면 런처. 앱을 새로 켜면 지난 작업실을 열지 않고 런처
+  (`StudioWorkspaceService.doGetDefaultWorkspaceUri`). VS Code 확장 실행기(CommandCrafter)는 작업실에서만 시작(`StudioHostedPluginSupport.onStart`,
+  런처에서는 시작 자체를 안 해 대기 훅도 없음 — CommandCrafter 명령은 원래 `getCommand` 로 있을 때만 부름). 상단 막대 [작업실 열기]/[런처로](작업 공간 닫기 = 주소 비우고 다시 불러오기).
+  e2e `scripts/e2e/t15-modes.js`(앱을 인자 없이 켠 뒤): 켤 때 확장 실행기 0개·시험 확장 미실행 → 작업실 1개·실행 → 런처로 0개, 작업실에서 앱을 꺼도 다시 켜면 런처.
+  그 밖: 켤 때 코드 편집기·Texel 탭은 되살리지 않음(`LightStartLayoutRestorer`), `files.watcherExclude`(saves·logs·crash-reports·서버 월드·빌드),
+  Texel 은 탭이 처음 보일 때 불러오기 + [메모리 비우기](자동으로 내리면 내보내지 않은 작업이 사라질 수 있어 수동), LAN 감시는 latest.log 를 1MB 조각으로(StringDecoder),
+  자동완성 자료는 지금 버전만, `sidecar/memory.py`(게임 메모리 추천: 모드 수·Forge 계열·PC 메모리 절반 이하 / 서버 메모리 설정, 기본 2GB·작은 PC 는 1/4 /
+  명령 "메모리 사용량 보기": 앱 프로세스 트리 + 게임을 종류별로 합산, Windows).
 ### M9. 패키징 (내 PC용)
 - electron-builder로 Windows 설치 파일 또는 압축 실행판을 만든다. **배포하지 않는다** — 개인 사용 전용.
 - 서명이 없어서 SmartScreen 경고가 뜨는 건 그대로 둔다.

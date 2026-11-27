@@ -18,6 +18,9 @@ import { StudioFilterContribution } from './studio-filter.js';
 import { FilterContribution } from '@theia/core/lib/common/contribution-filter';
 import { ShellLayoutRestorer } from '@theia/core/lib/browser/shell/shell-layout-restorer';
 import { LightStartLayoutRestorer } from './light-start-restorer.js';
+import { WorkspaceService } from '@theia/workspace/lib/browser/workspace-service';
+import { HostedPluginSupport } from '@theia/plugin-ext/lib/hosted/browser/hosted-plugin';
+import { StudioHostedPluginSupport, StudioWorkspaceService } from './studio-mode.js';
 
 /**
  * 위젯은 매번 새로 만든다(싱글톤 금지). WidgetManager 가 살아 있는 것을 캐시하고, 탭을 닫아 dispose 되면
@@ -32,6 +35,11 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
     // 켤 때 편집기·Texel 탭은 되살리지 않는다(메모리)
     bind(LightStartLayoutRestorer).toSelf().inSingletonScope();
     rebind(ShellLayoutRestorer).toService(LightStartLayoutRestorer);
+    // 런처 모드 ↔ 작업실 모드(앱을 켜면 런처, 확장 실행기는 작업실에서만)
+    bind(StudioWorkspaceService).toSelf().inSingletonScope();
+    rebind(WorkspaceService).toService(StudioWorkspaceService);
+    bind(StudioHostedPluginSupport).toSelf().inSingletonScope();
+    rebind(HostedPluginSupport).toService(StudioHostedPluginSupport);
 
     widget(bind, InstancesWidget.ID, InstancesWidget);
     widget(bind, TasksWidget.ID, TasksWidget);
