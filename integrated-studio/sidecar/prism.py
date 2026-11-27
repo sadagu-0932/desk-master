@@ -172,3 +172,46 @@ def open_prism(exe: str, root: str | None) -> None:
     args = [exe] + (["--dir", root] if root else [])
     subprocess.Popen(args, close_fds=True, stdin=subprocess.DEVNULL,
                      creationflags=getattr(subprocess, "DETACHED_PROCESS", 0) if sys.platform == "win32" else 0)
+
+
+# ---------------------------------------------------------------- 그룹(폴더) — Prism 의 instgroups.json 과 같게(사용자 요청 2026-11-27)
+# 형식: {"formatVersion": "1", "groups": {"<그룹>": {"hidden": <접힘>, "instances": ["<인스턴스 폴더 이름>", ...]}}}
+GROUPS_FILE = "instgroups.json"
+
+
+def read_groups(inst_dir: Path) -> dict[str, str]:
+    """{인스턴스 폴더 이름: 그룹 이름}. 파일이 없거나 깨졌으면 빈 것."""
+    try:
+        data = json.loads((inst_dir / GROUPS_FILE).read_text("utf-8"))
+    except (OSError, ValueError):
+        return {}
+    out: dict[str, str] = {}
+    for name, g in (data.get("groups") or {}).items():
+        for folder in (g or {}).get("instances") or []:
+            if isinstance(folder, str):
+                out[folder] = name
+    return out
+
+
+def set_group(inst_dir: Path, folder: str, group: str | None) -> None:
+    """이 인스턴스를 그룹에 넣는다(None 이면 그룹에서 뺌). 다른 그룹·접힘 상태는 그대로, 빈 그룹은 지운다."""
+    path = inst_dir / GROUPS_FILE
+    try:
+        data = json.loads(path.read_text("utf-8"))
+        if not isinstance(data, dict):
+            raise ValueError
+    except (OSError, ValueError):
+        data = {}
+    groups: dict[str, Any] = data.get("groups") if isinstance(data.get("groups"), dict) else {}
+    for name in list(groups):
+        members = [f for f in (groups[name] or {}).get("instances") or [] if f != folder]
+        if members:
+            groups[name] = {**(groups[name] or {}), "instances": members}
+        else:
+            groups.pop(name)
+    if group:
+        g = groups.setdefault(group, {"hidden": False, "instances": []})
+        g.setdefault("instances", []).append(folder)
+    tmp = path.with_name(GROUPS_FILE + ".tmp")
+    tmp.write_text(json.dumps({"formatVersion": "1", "groups": groups}, ensure_ascii=False, indent=4), "utf-8")
+    os.replace(tmp, path)

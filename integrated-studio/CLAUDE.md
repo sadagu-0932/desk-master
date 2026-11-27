@@ -243,6 +243,13 @@ Theia 확장은 TypeScript로 작성한다. Python 쪽은 `sidecar/` 아래에�
   - F9(작업 뷰 "Paper 플러그인 빌드 후 서버에 넣기") = `plugin_build`: `./gradlew build` → 그 인스턴스의 모든 Paper 서버 `plugins/` 에 넣고(같은 이름의 예전 버전은 휴지통),
     켜져 있던 서버는 다시 시작(Paper 는 /reload 를 권하지 않음). Paper 서버가 없으면 만들라고 안내. Claude 작업 종류 "Paper 플러그인"(`plugins-src/` 만, `./gradlew build` 만).
   - 시험: `tests/test_plugins.py`(템플릿·이름 검사·STABLE 고르기·해시·주소 검사·plugins/ 넣기·다시 시작·EULA 자동 동의 안 함).
+- **인스턴스 그룹(폴더)**(사용자 요청 2026-11-27 "인스턴스를 폴더 형식으로 묶어 정리"): Prism 그룹과 같게 — Prism 인스턴스 폴더의 `instgroups.json`
+  (`{"formatVersion":"1","groups":{"<그룹>":{"hidden":false,"instances":["<폴더>"]}}}`)에 쓰고(`prism.set_group`, 빈 그룹은 지움), Prism 에서 바꾼 그룹은
+  `PrismSync` 가 읽어 맞춘다(서명에 instgroups.json 수정 시각 포함). RPC `set_instance_group(id, group)`·`rename_group(old, new)`(new 없으면 풀기).
+  화면: 사이드바 인스턴스 목록·홈이 그룹별 접히는 폴더(가나다순, "그룹 없음" 맨 뒤, 그룹이 하나도 없으면 예전처럼 한 줄 목록), 머리에 개수·이름 바꾸기·풀기,
+  인스턴스(줄·카드)를 폴더 머리로 끌어다 놓으면 그 그룹으로, 관리 메뉴 "그룹(폴더) 지정"(있는 그룹/새 그룹/빼기). 접힘은 화면마다 localStorage.
+  시험 `tests/test_prism.py::test_groups_follow_prism_both_ways`. e2e 에서 Playwright 마우스 끌기는 이 Electron(CDP 연결)에서 HTML 끌기 이벤트를
+  만들지 않아, 끌기 이벤트를 직접 보내 확인함(놓으면 그룹·instgroups.json 바뀜).
 ### M9. 패키징 (내 PC용)
 - electron-builder로 Windows 설치 파일 또는 압축 실행판을 만든다. **배포하지 않는다** — 개인 사용 전용.
 - 서명이 없어서 SmartScreen 경고가 뜨는 건 그대로 둔다.

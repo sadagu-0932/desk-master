@@ -168,6 +168,9 @@ class InstanceStore:
                 "importedFrom": f"prism:{folder}", "importedLauncher": "prism",
             })
         (d / "instance.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2), "utf-8")
+        if prism_info and group:
+            import prism
+            prism.set_group(folder.parent, folder.name, group)
         write_cc_config(game, port)
         write_instance_claude_md(game, meta)
         write_work_mode(game, meta["workMode"])
@@ -187,6 +190,36 @@ class InstanceStore:
             import prism   # Prism 목록에서도 같은 이름으로
             prism.rename_instance(_prism_folder(meta), name)
         return self.get(inst_id)
+
+    # ---------- 그룹(폴더) ----------
+    @staticmethod
+    def clean_group(group: str | None) -> str | None:
+        group = (group or "").strip()
+        if any(c in group for c in "\r\n\t\x00"):
+            raise RpcError("그룹 이름에 줄바꿈·탭을 넣을 수 없습니다.")
+        return group[:40] or None
+
+    def set_group(self, inst_id: str, group: str | None) -> dict[str, Any]:
+        """인스턴스를 그룹(폴더)에 넣는다. None·빈 값이면 그룹에서 뺀다. Prism 인스턴스면 Prism 그룹(instgroups.json)도 같게."""
+        group = self.clean_group(group)
+        meta = self.get(inst_id)
+        meta["group"] = group
+        self.save(meta)
+        folder = _prism_folder(meta)
+        if folder:
+            import prism
+            prism.set_group(folder.parent, folder.name, group)
+        return self.get(inst_id)
+
+    def rename_group(self, old: str, new: str | None) -> int:
+        """그룹 이름 바꾸기(new 가 비면 그룹 풀기 — 인스턴스는 그대로). 바뀐 인스턴스 수."""
+        new = self.clean_group(new)
+        n = 0
+        for m in self.list():
+            if m.get("group") == old:
+                self.set_group(m["id"], new)
+                n += 1
+        return n
 
     def delete(self, inst_id: str) -> None:
         """인스턴스를 휴지통으로. Prism 인스턴스면 Prism 쪽 폴더도 휴지통으로(앱 목록은 Prism 과 자동 연동이라

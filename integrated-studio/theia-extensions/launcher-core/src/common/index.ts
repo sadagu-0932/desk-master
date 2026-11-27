@@ -125,3 +125,18 @@ export interface LauncherService {
 }
 
 export * from './command-ids.js';
+
+/** 인스턴스를 그룹(폴더)별로 묶는다: 그룹은 가나다순, 그룹 없는 것은 맨 뒤(group = undefined) */
+export function groupInstances<T extends { group?: string | null }>(list: T[]): Array<{ group: string | undefined; items: T[] }> {
+    const by = new Map<string | undefined, T[]>();
+    for (const i of list) {
+        const g = i.group || undefined;
+        by.set(g, [...(by.get(g) ?? []), i]);
+    }
+    const named = [...by.keys()].filter((g): g is string => !!g).sort((a, b) => a.localeCompare(b, 'ko'));
+    const out = named.map(g => ({ group: g as string | undefined, items: by.get(g)! }));
+    if (by.has(undefined)) {
+        out.push({ group: undefined, items: by.get(undefined)! });
+    }
+    return out;
+}

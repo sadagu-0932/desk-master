@@ -158,3 +158,32 @@ def test_migrate_old_instances_into_prism(tmp_path, monkeypatch):
     assert not (ng / "instance.json").exists() and (ng / ".git").is_dir()
     assert "MaxMemAlloc=4096" in (Path(new["sourceDir"]) / "instance.cfg").read_text("utf-8")
     assert old["id"] in moved and prism_sync.migrate_candidates(s2) == []                  # 예전 것은 휴지통으로
+
+
+def test_groups_follow_prism_both_ways(tmp_path, monkeypatch):
+    """그룹(폴더): 앱에서 바꾸면 Prism instgroups.json 에, Prism 에서 바꾸면 앱에(자동 연동)."""
+    root = tmp_path / "PrismLauncher"
+    store = _store(tmp_path, root)
+    local = LocalImporter(store, roots={"prism": [root]})
+    find = lambda: {"found": True, "exe": "x", "root": str(root), "instanceDir": str(root / "instances")}  # noqa: E731
+    ps = prism_sync.PrismSync(store, local, find=find)
+    a = store.create("가", "26.3", "fabric", "0.20.1", group="생존")
+    b = store.create("나", "26.3", "vanilla")
+    groups_file = root / "instances" / "instgroups.json"
+    assert json.loads(groups_file.read_text("utf-8"))["groups"]["생존"]["instances"] == ["가"]
+    store.set_group(b["id"], "생존")
+    store.set_group(a["id"], "건축")
+    g = json.loads(groups_file.read_text("utf-8"))["groups"]
+    assert g["생존"]["instances"] == ["나"] and g["건축"]["instances"] == ["가"]
+    # Prism 에서 그룹을 바꾸면(파일을 직접) 앱에도
+    ps.sync(force=True)
+    prism.set_group(root / "instances", "나", "미니게임")
+    assert ps.sync()["updated"] == 1 and store.get(b["id"])["group"] == "미니게임"
+    # 그룹 이름 바꾸기·풀기
+    assert store.rename_group("미니게임", "놀이") == 1 and store.get(b["id"])["group"] == "놀이"
+    assert store.rename_group("놀이", None) == 1 and store.get(b["id"])["group"] is None
+    g = json.loads(groups_file.read_text("utf-8"))["groups"]
+    assert "놀이" not in g and "미니게임" not in g and g["건축"]["instances"] == ["가"]   # 빈 그룹은 지움
+    with pytest.raises(RpcError):
+        store.set_group(a["id"], "줄\n바꿈")
+    assert prism.read_groups(tmp_path / "없음") == {}

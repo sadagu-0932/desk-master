@@ -6,7 +6,7 @@ import { CommandService } from '@theia/core/lib/common/command';
 import { QuickInputService } from '@theia/core/lib/browser/quick-input';
 import { ApplicationServer } from '@theia/core/lib/common/application-protocol';
 import { InstanceManager, StudioCommands } from 'integrated-studio-launcher-core/lib/browser';
-import { Instance } from 'integrated-studio-launcher-core/lib/common';
+import { groupInstances, Instance } from 'integrated-studio-launcher-core/lib/common';
 import { loaderLabel } from './instances-widget.js';
 
 const BANNERS = ['#c95a1c', '#4f7a2a', '#3a6a8a', '#6a5a8a', '#8a6a2a', '#2a7a6a'];
@@ -41,8 +41,80 @@ export class HomeWidget extends ReactWidget {
         this.update();
     }
 
-    protected run(id: string, arg?: unknown): void {
-        this.commands.executeCommand(id, arg);
+    protected run(id: string, ...args: unknown[]): void {
+        this.commands.executeCommand(id, ...args);
+    }
+
+    static readonly DRAG_TYPE = 'application/x-studio-instance';
+    protected dropTarget: string | null = null;
+
+    /** 그룹(폴더) 한 칸: 머리(접기·이름·개수·이름 바꾸기·풀기) + 카드. 카드를 끌어다 놓으면 이 그룹으로 */
+    protected renderSection(group: string | undefined, items: Instance[]): React.ReactNode {
+        const name = group ?? '그룹 없음';
+        const collapsed = this.manager.isGroupCollapsed('home', name);
+        const key = group ?? '';
+        return <section key={name} aria-label={name} className={'studio-home-group' + (this.dropTarget === key ? ' drop' : '')}
+            onDragOver={e => {
+                if (e.dataTransfer.types.includes(HomeWidget.DRAG_TYPE)) {
+                    e.preventDefault();
+                    if (this.dropTarget !== key) { this.dropTarget = key; this.update(); }
+                }
+            }}
+            onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node) && this.dropTarget === key) { this.dropTarget = null; this.update(); } }}
+            onDrop={e => {
+                const id = e.dataTransfer.getData(HomeWidget.DRAG_TYPE);
+                this.dropTarget = null;
+                this.update();
+                if (id) { e.preventDefault(); this.run(StudioCommands.SET_GROUP.id, id, group ?? null); }
+            }}>
+            <div className='studio-group-head' role='button' tabIndex={0} aria-expanded={!collapsed}
+                onClick={() => this.manager.toggleGroup('home', name)}
+                onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); this.manager.toggleGroup('home', name); } }}>
+                <span className={'codicon ' + (collapsed ? 'codicon-chevron-right' : 'codicon-chevron-down')} aria-hidden='true' />
+                <span className={'codicon ' + (group ? (collapsed ? 'codicon-folder' : 'codicon-folder-opened') : 'codicon-inbox')} aria-hidden='true' />
+                <span className='studio-group-name'>{name}</span>
+                <span className='studio-group-count'>{items.length}</span>
+                {group && <>
+                    <button className='studio-icon-btn codicon codicon-edit' aria-label={`${group} 이름 바꾸기`} title='그룹 이름 바꾸기'
+                        onClick={e => { e.stopPropagation(); this.run(StudioCommands.RENAME_GROUP.id, group); }} />
+                    <button className='studio-icon-btn codicon codicon-close' aria-label={`${group} 그룹 풀기`} title='그룹 풀기(인스턴스는 그대로)'
+                        onClick={e => { e.stopPropagation(); this.run(StudioCommands.UNGROUP.id, group); }} />
+                </>}
+            </div>
+            {!collapsed && <div className='studio-cards'>{items.map(i => this.renderCard(i))}</div>}
+        </section>;
+    }
+
+    protected renderCard(i: Instance): React.ReactNode {
+        const running = this.manager.isRunning(i.id);
+        return <article key={i.id} className='studio-card studio-inst-card' draggable
+            onDragStart={e => { e.dataTransfer.setData(HomeWidget.DRAG_TYPE, i.id); e.dataTransfer.effectAllowed = 'move'; }}
+            onContextMenu={e => { e.preventDefault(); this.run(StudioCommands.MANAGE.id, i.id); }}>
+            <div className='studio-card-banner' style={{ background: banner(i) }} aria-hidden='true' />
+            <div className='studio-card-body'>
+                <h3>{i.name}{running && <span className='studio-chip on'>실행 중</span>}</h3>
+                <div className='studio-tags'>
+                    {i.group && <span className='studio-chip'>{i.group}</span>}
+                    <span className='studio-chip'>Java {i.version}</span>
+                    <span className='studio-chip'>{loaderLabel(i)}{i.loaderVersion ? ` ${i.loaderVersion}` : ''}</span>
+                    {!i.installed && <span className='studio-chip warn'>설치 전</span>}
+                    {i.linkedDir && <span className='studio-chip' title={`원래 폴더를 그대로 씀: ${i.linkedDir}`}>연결됨</span>}
+                    {i.loader === 'fabric' && <span className='studio-chip'>CommandCrafter {i.ccEnabled ? '켬' : '끔'}</span>}
+                </div>
+                <div className='studio-mono studio-muted studio-path' title={i.path}>{i.linkedDir ?? i.id}</div>
+                <div className='studio-card-actions'>
+                    <button className='theia-button' disabled={running} aria-label={`${i.name} 실행 (Prism)`}
+                        title={running ? '실행 중 — 게임 창을 닫으면 종료됩니다' : 'Prism 으로 실행 — Prism 에 로그인한 Microsoft 계정으로 플레이'}
+                        onClick={() => this.run(StudioCommands.LAUNCH.id, i.id)}>
+                        <span className='codicon codicon-play' aria-hidden='true' /> {running ? '실행 중' : '실행'}</button>
+                    <button className='theia-button secondary' title='작업실에서 열기' onClick={() => this.run(StudioCommands.OPEN_WORKSPACE.id, i.id)}>작업실</button>
+                    <button className='theia-button secondary codicon codicon-folder' aria-label={`${i.name} 폴더 열기`} title='폴더 열기 (파일 탐색기)'
+                        onClick={() => this.run(StudioCommands.OPEN_FOLDER.id, i.id)} />
+                    <button className='theia-button secondary studio-more codicon codicon-ellipsis' aria-label={`${i.name} 관리`} title='관리 — 이름 바꾸기·복제·메모리·삭제 등'
+                        onClick={() => this.more(i)} />
+                </div>
+            </div>
+        </article>;
     }
 
     protected render(): React.ReactNode {
@@ -80,41 +152,16 @@ export class HomeWidget extends ReactWidget {
                         <button className='theia-button' onClick={() => this.run(StudioCommands.CREATE.id)}>+ 새 인스턴스</button>
                     </div>
                     {this.manager.error && <div className='studio-card studio-error'>사이드카 오류: {this.manager.error}</div>}
-                    <div className='studio-cards'>
-                        {list.map(i => {
-                            const running = this.manager.isRunning(i.id);
-                            return <article key={i.id} className='studio-card studio-inst-card'
-                                onContextMenu={e => { e.preventDefault(); this.run(StudioCommands.MANAGE.id, i.id); }}>
-                                <div className='studio-card-banner' style={{ background: banner(i) }} aria-hidden='true' />
-                                <div className='studio-card-body'>
-                                    <h3>{i.name}{running && <span className='studio-chip on'>실행 중</span>}</h3>
-                                    <div className='studio-tags'>
-                                        {i.group && <span className='studio-chip'>{i.group}</span>}
-                                        <span className='studio-chip'>Java {i.version}</span>
-                                        <span className='studio-chip'>{loaderLabel(i)}{i.loaderVersion ? ` ${i.loaderVersion}` : ''}</span>
-                                        {!i.installed && <span className='studio-chip warn'>설치 전</span>}
-                                        {i.linkedDir && <span className='studio-chip' title={`원래 폴더를 그대로 씀: ${i.linkedDir}`}>연결됨</span>}
-                                        {i.loader === 'fabric' && <span className='studio-chip'>CommandCrafter {i.ccEnabled ? '켬' : '끔'}</span>}
-                                    </div>
-                                    <div className='studio-mono studio-muted studio-path' title={i.path}>{i.linkedDir ?? i.id}</div>
-                                    <div className='studio-card-actions'>
-                                        <button className='theia-button' disabled={running} aria-label={`${i.name} 실행 (Prism)`}
-                                            title={running ? '실행 중 — 게임 창을 닫으면 종료됩니다' : 'Prism 으로 실행 — Prism 에 로그인한 Microsoft 계정으로 플레이'}
-                                            onClick={() => this.run(StudioCommands.LAUNCH.id, i.id)}>
-                                            <span className='codicon codicon-play' aria-hidden='true' /> {running ? '실행 중' : '실행'}</button>
-                                        <button className='theia-button secondary' title='작업실에서 열기' onClick={() => this.run(StudioCommands.OPEN_WORKSPACE.id, i.id)}>작업실</button>
-                                        <button className='theia-button secondary codicon codicon-folder' aria-label={`${i.name} 폴더 열기`} title='폴더 열기 (파일 탐색기)'
-                                            onClick={() => this.run(StudioCommands.OPEN_FOLDER.id, i.id)} />
-                                        <button className='theia-button secondary studio-more codicon codicon-ellipsis' aria-label={`${i.name} 관리`} title='관리 — 이름 바꾸기·복제·메모리·삭제 등'
-                                            onClick={() => this.more(i)} />
-                                    </div>
-                                </div>
-                            </article>;
-                        })}
-                        {list.length === 0 && !this.manager.error && <div className='studio-muted'>
-                            {all.length ? '검색 결과가 없습니다.' : '아직 인스턴스가 없습니다. “+ 새 인스턴스”로 시작하세요.'}
-                        </div>}
-                    </div>
+                    {(() => {
+                        const sections = groupInstances([...list]);
+                        const flat = sections.length === 1 && !sections[0].group;
+                        return flat
+                            ? <div className='studio-cards'>{sections[0].items.map(i => this.renderCard(i))}</div>
+                            : sections.map(s => this.renderSection(s.group, s.items));
+                    })()}
+                    {list.length === 0 && !this.manager.error && <div className='studio-muted'>
+                        {all.length ? '검색 결과가 없습니다.' : '아직 인스턴스가 없습니다. “+ 새 인스턴스”로 시작하세요.'}
+                    </div>}
                 </main>
                 <aside className='studio-home-side'>
                     <section className='studio-card'>

@@ -178,3 +178,24 @@ body.studio-no-launcher #shell-tab-studio-server-host { display: none !important
 .studio-home-noprism { margin: 16px 0; padding: 16px; border: 1px solid var(--theia-panel-border); border-radius: 6px; }
 .studio-home-noprism h2 { margin: 0 0 8px; font-size: 16px; }
 .studio-home-noprism-actions { display: flex; gap: 8px; margin-top: 12px; }
+
+/* 그룹(폴더) — 사이드바 인스턴스 목록·홈 공통 */
+.studio-group-head {
+    display: flex; align-items: center; gap: 4px; padding: 3px 6px; cursor: pointer; user-select: none;
+    font-weight: 600; color: var(--theia-sideBarSectionHeader-foreground, #d6dbd2);
+}
+.studio-group-head:hover { background: var(--theia-list-hoverBackground); }
+.studio-group-head:focus-visible { outline: 1px solid var(--theia-focusBorder); outline-offset: -1px; }
+.studio-group-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.studio-group-count {
+    font-weight: 400; font-size: 11px; padding: 0 6px; border-radius: 8px;
+    background: var(--theia-badge-background, #2c3a26); color: var(--theia-badge-foreground, #d6dbd2);
+}
+.studio-group-head .studio-icon-btn { visibility: hidden; }
+.studio-group-head:hover .studio-icon-btn, .studio-group-head:focus-within .studio-icon-btn { visibility: visible; }
+.studio-group > .studio-row { padding-left: 22px; }
+.studio-group.drop, .studio-home-group.drop { outline: 1px dashed #6cc04a; outline-offset: -1px; background: rgba(108, 192, 74, 0.08); }
+.studio-row[draggable='true'], .studio-inst-card[draggable='true'] { cursor: grab; }
+.studio-home-group { margin-bottom: 14px; border-radius: 6px; }
+.studio-home-group > .studio-group-head { font-size: 14px; padding: 6px 8px; }
+.studio-home-group > .studio-cards { margin-top: 6px; }

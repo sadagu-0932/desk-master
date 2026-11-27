@@ -38,6 +38,10 @@ class PrismSync:
             names = sorted(os.listdir(inst_dir))
         except OSError:
             return ()
+        try:
+            out.append(("groups", (inst_dir / prism.GROUPS_FILE).stat().st_mtime_ns))   # Prism 에서 그룹을 바꾸면
+        except OSError:
+            out.append(("groups", None))
         for n in names:
             row: list[Any] = [n]
             for f in ("instance.cfg", "mmc-pack.json"):
@@ -88,13 +92,17 @@ class PrismSync:
                         removed += 1
                     except Exception:  # noqa: BLE001
                         pass
-            # Prism 에서 바꾼 이름·버전·로더 맞추기
+            # Prism 에서 바꾼 이름·버전·로더·그룹 맞추기(새로 연결한 것 포함)
+            groups = prism.read_groups(inst_dir)
+            mine = {m.get("sourceDir"): m for m in self.store.list() if m.get("launchKind") == "prism"}
             for src, m in mine.items():
                 e = by_source.get(src)
                 if not e:
                     continue
                 want = {"name": e["name"], "version": e.get("version") or m["version"], "loader": e["loader"],
                         "loaderVersion": e.get("loaderVersion")}
+                if Path(src).parent == inst_dir.resolve() or Path(src).parent == inst_dir:
+                    want["group"] = groups.get(Path(src).name)
                 if any(m.get(k) != v for k, v in want.items()):
                     meta = self.store.get(m["id"])
                     meta.update(want)

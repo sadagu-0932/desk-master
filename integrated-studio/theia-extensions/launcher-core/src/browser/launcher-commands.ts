@@ -41,6 +41,9 @@ export namespace StudioCommands {
     export const DUPLICATE: Command = { id: 'studio.instance.duplicate', category: CATEGORY, label: '인스턴스 복제' };
     export const MEMORY: Command = { id: 'studio.instance.memory', category: CATEGORY, label: '인스턴스 메모리·자바 인자 설정' };
     export const MEMORY_USAGE: Command = { id: 'studio.memoryUsage', category: CATEGORY, label: '메모리 사용량 보기' };
+    export const SET_GROUP: Command = { id: 'studio.instance.setGroup', category: CATEGORY, label: '인스턴스 그룹(폴더) 지정' };
+    export const RENAME_GROUP: Command = { id: 'studio.group.rename', category: CATEGORY, label: '그룹(폴더) 이름 바꾸기' };
+    export const UNGROUP: Command = { id: 'studio.group.ungroup', category: CATEGORY, label: '그룹(폴더) 풀기' };
     export const MANAGE: Command = { id: 'studio.instance.manage', category: CATEGORY, label: '인스턴스 관리…' };
     export const TOGGLE_CC: Command = { id: 'studio.instance.toggleCommandCrafter', category: CATEGORY, label: 'CommandCrafter 모드 켜기/끄기' };
     export const REFRESH: Command = { id: 'studio.instance.refresh', category: CATEGORY, label: '인스턴스 목록 새로고침' };
@@ -160,6 +163,18 @@ export class LauncherCommandContribution implements CommandContribution {
             }),
         });
         registry.registerCommand(StudioCommands.MEMORY_USAGE, { execute: () => this.guard(() => this.showMemoryUsage()) });
+        // 그룹(폴더): 인스턴스 지정은 id(+ 바로 넣을 그룹), 그룹 명령은 그룹 이름을 받는다
+        registry.registerCommand(StudioCommands.SET_GROUP, {
+            execute: (id: IdArg, group?: string | null) => this.withInstance(id, async i => {
+                if (group !== undefined) {
+                    await this.manager.setGroup(i.id, group ?? undefined);   // 끌어다 놓기
+                    return;
+                }
+                await this.pickGroup(i);
+            }),
+        });
+        registry.registerCommand(StudioCommands.RENAME_GROUP, { execute: (name?: string) => this.guard(() => this.renameGroup(name)) });
+        registry.registerCommand(StudioCommands.UNGROUP, { execute: (name?: string) => this.guard(() => this.ungroup(name)) });
         registry.registerCommand({ id: 'studio.instance.openSourceFolder' }, {
             execute: (id: IdArg) => this.withInstance(id, i => this.manager.call('open_instance_folder', { id: i.id, which: 'source' })),
         });
@@ -352,6 +367,68 @@ export class LauncherCommandContribution implements CommandContribution {
         this.messages.info(`${r.launcher}(으)로 '${inst.name}'을(를) 켭니다. 처음이면 Prism 에서 Microsoft 계정 로그인과 게임 파일 받기가 먼저 진행됩니다.`);
     }
 
+    /** 그룹(폴더) 고르기: 있는 그룹 / 새 그룹 / 그룹에서 빼기. Prism 그룹에도 같이 반영된다 */
+    protected async pickGroup(i: Instance): Promise<void> {
+        const NEW = '\u0000new';
+        const NONE = '\u0000none';
+        const items = [
+            ...this.manager.groups.map(g => ({ label: `$(folder) ${g}`, description: g === i.group ? '지금 그룹' : undefined, value: g })),
+            { label: '$(new-folder) 새 그룹 만들기…', value: NEW },
+            ...(i.group ? [{ label: '$(close) 그룹에서 빼기', value: NONE }] : []),
+        ];
+        const pick = await this.quickInput.showQuickPick(items, { placeholder: `'${i.name}'을(를) 넣을 그룹(폴더)` });
+        if (!pick) {
+            return;
+        }
+        let group: string | undefined = pick.value;
+        if (pick.value === NEW) {
+            group = (await this.quickInput.input({ prompt: '새 그룹(폴더) 이름', placeHolder: '예: 생존, 모드팩, 시험용',
+                validateInput: async v => v.trim().length > 40 ? '40자 이하' : undefined }))?.trim();
+            if (!group) {
+                return;
+            }
+        } else if (pick.value === NONE) {
+            group = undefined;
+        }
+        await this.manager.setGroup(i.id, group);
+    }
+
+    protected async askGroupName(name?: string): Promise<string | undefined> {
+        if (name) {
+            return name;
+        }
+        const groups = this.manager.groups;
+        if (!groups.length) {
+            this.messages.info('아직 그룹이 없습니다. 인스턴스 … → 그룹 지정으로 만드세요.');
+            return undefined;
+        }
+        return (await this.quickInput.showQuickPick(groups.map(g => ({ label: g })), { placeholder: '그룹(폴더)' }))?.label;
+    }
+
+    protected async renameGroup(name?: string): Promise<void> {
+        const old = await this.askGroupName(name);
+        if (!old) {
+            return;
+        }
+        const next = (await this.quickInput.input({ prompt: `'${old}' 그룹의 새 이름`, value: old,
+            validateInput: async v => !v.trim() ? '이름을 넣으세요' : v.trim().length > 40 ? '40자 이하' : undefined }))?.trim();
+        if (next && next !== old) {
+            await this.manager.renameGroup(old, next);
+        }
+    }
+
+    protected async ungroup(name?: string): Promise<void> {
+        const old = await this.askGroupName(name);
+        if (!old) {
+            return;
+        }
+        const ok = await new ConfirmDialog({ title: '그룹(폴더) 풀기', msg: `'${old}' 그룹을 풉니다. 안의 인스턴스는 지우지 않고 '그룹 없음'으로 옮깁니다.`,
+            ok: '풀기', cancel: '취소' }).open();
+        if (ok) {
+            await this.manager.renameGroup(old, undefined);
+        }
+    }
+
     /** 통합 작업실(화면·확장 실행기·Claude·사이드카·서버)과 게임이 지금 쓰는 메모리 */
     protected async showMemoryUsage(): Promise<void> {
         const r = await this.manager.call<{ supported: boolean; message?: string; items?: Array<{ label: string; mb: number; count: number }>;
@@ -375,6 +452,7 @@ export class LauncherCommandContribution implements CommandContribution {
             ...(i.sourceDir ? [{ label: '$(file-symlink-file) 원래 인스턴스 폴더 열기', description: `실행 파일이 있는 곳: ${i.sourceDir}`, cmd: 'studio.instance.openSourceFolder' }] : []),
             { label: '$(window) 작업실에서 열기', cmd: StudioCommands.OPEN_WORKSPACE.id },
             { label: '$(edit) 이름 바꾸기', cmd: StudioCommands.RENAME.id },
+            { label: '$(folder) 그룹(폴더) 지정', description: i.group ? `지금: ${i.group}` : '그룹 없음', cmd: StudioCommands.SET_GROUP.id },
             { label: '$(copy) 복제', description: '모드·설정·월드를 복사한 새 인스턴스', cmd: StudioCommands.DUPLICATE.id },
             { label: '$(dashboard) 메모리 설정', description: i.jvmArgs ?? 'Prism 기본값', cmd: StudioCommands.MEMORY.id },
             { label: '$(extensions) 모드 추가', cmd: StudioCommands.ADD_MODS.id },

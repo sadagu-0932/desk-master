@@ -326,6 +326,37 @@ export class InstanceManager {
         return inst;
     }
 
+    // ---------- 그룹(폴더) — Prism 그룹과 같게 ----------
+    /** 지금 있는 그룹 이름들(가나다순) */
+    get groups(): string[] {
+        return [...new Set(this._instances.map(i => i.group).filter((g): g is string => !!g))].sort((a, b) => a.localeCompare(b, 'ko'));
+    }
+
+    async setGroup(id: string, group: string | undefined): Promise<void> {
+        await this.service.call('set_instance_group', { id, group: group ?? null });
+        await this.refresh();
+    }
+
+    async renameGroup(oldName: string, newName: string | undefined): Promise<void> {
+        await this.service.call('rename_group', { old: oldName, new: newName ?? null });
+        await this.refresh();
+    }
+
+    /** 접은 그룹(화면마다 따로, 이 PC 에만 기억) */
+    isGroupCollapsed(view: string, group: string): boolean {
+        try { return (JSON.parse(window.localStorage.getItem(`studio.groups.${view}`) ?? '[]') as string[]).includes(group); } catch { return false; }
+    }
+
+    toggleGroup(view: string, group: string): void {
+        try {
+            const key = `studio.groups.${view}`;
+            const now = new Set(JSON.parse(window.localStorage.getItem(key) ?? '[]') as string[]);
+            if (now.has(group)) { now.delete(group); } else { now.add(group); }
+            window.localStorage.setItem(key, JSON.stringify([...now]));
+        } catch { /* 저장소를 못 쓰면 접힘을 기억하지 않는다 */ }
+        this.fire();
+    }
+
     async rename(id: string, name: string): Promise<void> {
         await this.service.call('rename_instance', { id, name });
         await this.refresh();

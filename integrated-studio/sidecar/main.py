@@ -106,6 +106,9 @@ def main() -> None:
         "set_cc_enabled": lambda id, enabled: store.set_cc_enabled(id, enabled),
         "duplicate_instance": lambda id, name=None: store.duplicate(id, name),
         "set_instance_memory": lambda id, memory_mb=None, java_args=None: store.set_memory(id, memory_mb, java_args),
+        # 그룹(폴더): Prism 그룹(instgroups.json)과 같게
+        "set_instance_group": lambda id, group=None: store.set_group(id, group),
+        "rename_group": lambda old, new=None: store.rename_group(old, new),
         "open_instance_folder": lambda id, which=None: store.open_folder(id, which),
         "set_work_mode": lambda id, mode: store.set_work_mode(id, mode),
         "list_versions": runner.list_versions,
