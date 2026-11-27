@@ -6,7 +6,7 @@ import { FrontendApplicationContribution } from '@theia/core/lib/browser/fronten
 import { QuickInputService } from '@theia/core/lib/browser/quick-input';
 import { OpenerService, open } from '@theia/core/lib/browser/opener-service';
 import { FileUri } from '@theia/core/lib/common/file-uri';
-import { InstanceManager } from 'integrated-studio-launcher-core/lib/browser';
+import { InstanceManager, reportErrors } from 'integrated-studio-launcher-core/lib/browser';
 import { Instance, TaskCommandIds } from 'integrated-studio-launcher-core/lib/common';
 import { CommandsData, MCFUNCTION_ID, createFallbackCompletion, registerMcfunctionLanguage } from './mcfunction-language.js';
 
@@ -67,12 +67,8 @@ class DatapackTools implements CommandContribution, FrontendApplicationContribut
         registry.registerCommand(DatapackCommands.PREPARE_COMPLETION, { execute: () => this.guard(() => this.prepare()) });
     }
 
-    protected async guard(fn: () => Promise<unknown>): Promise<void> {
-        try {
-            await fn();
-        } catch (e) {
-            this.messages.error(e instanceof Error ? e.message : String(e));
-        }
+    protected guard(fn: () => Promise<unknown>): Promise<void> {
+        return reportErrors(this.messages, fn);
     }
 
     protected async instance(): Promise<Instance | undefined> {

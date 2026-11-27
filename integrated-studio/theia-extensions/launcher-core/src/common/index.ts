@@ -124,5 +124,4 @@ export interface LauncherService {
     setClient(client: LauncherClient | undefined): void;
 }
 
-export const DEFAULT_USERNAME = 'Dev';
 export * from './command-ids.js';

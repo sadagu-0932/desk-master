@@ -221,7 +221,7 @@ class DatapackValidator:
         # 파일 내용
         function_tags = self._pack_tags.get("function", set())
         refs: list[tuple[Path, int, str, str]] = []
-        for f, ns, kind, rest in files:
+        for f, _ns, kind, _rest in files:
             if kind not in known:
                 continue
             if f.suffix == ".json":

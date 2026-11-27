@@ -1,11 +1,10 @@
 import { inject, injectable } from '@theia/core/shared/inversify';
-import { Command, CommandContribution, CommandRegistry } from '@theia/core/lib/common/command';
+import { Command, CommandContribution, CommandRegistry, CommandService } from '@theia/core/lib/common/command';
 import { MessageService } from '@theia/core/lib/common/message-service';
 import { QuickInputService } from '@theia/core/lib/browser/quick-input';
 import { OpenerService, open } from '@theia/core/lib/browser/opener-service';
 import { FileUri } from '@theia/core/lib/common/file-uri';
-import { InstanceManager, StudioCommands } from 'integrated-studio-launcher-core/lib/browser';
-import { CommandService } from '@theia/core/lib/common/command';
+import { InstanceManager, reportErrors, StudioCommands } from 'integrated-studio-launcher-core/lib/browser';
 import { Instance, TaskCommandIds } from 'integrated-studio-launcher-core/lib/common';
 
 const CATEGORY = '통합 작업실';
@@ -32,12 +31,8 @@ export class ModTools implements CommandContribution {
         registry.registerCommand(ModCommands.OPEN_EXTERNAL, { execute: () => this.guard(() => this.openExternal()) });
     }
 
-    protected async guard(fn: () => Promise<unknown>): Promise<void> {
-        try {
-            await fn();
-        } catch (e) {
-            this.messages.error(e instanceof Error ? e.message : String(e));
-        }
+    protected guard(fn: () => Promise<unknown>): Promise<void> {
+        return reportErrors(this.messages, fn);
     }
 
     protected fabricInstance(): Instance | undefined {

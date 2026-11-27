@@ -214,7 +214,7 @@ def test_copy_import_many_keeps_source_untouched(world):
 
 
 def test_link_import_uses_source_as_game_dir(world):
-    imp, store = world["imp"], world["store"]
+    imp = world["imp"]
     e = by_name(imp.detect(), "내 패브릭")
     res = imp.import_many([{"key": e["key"]}], "link")
     inst = res["imported"][0]

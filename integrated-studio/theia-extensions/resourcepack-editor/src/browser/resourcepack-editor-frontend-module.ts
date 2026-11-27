@@ -10,7 +10,7 @@ import { ApplicationShell } from '@theia/core/lib/browser/shell/application-shel
 import { QuickInputService } from '@theia/core/lib/browser/quick-input';
 import { FileDialogService } from '@theia/filesystem/lib/browser/file-dialog/file-dialog-service';
 import { FileUri } from '@theia/core/lib/common/file-uri';
-import { InstanceManager } from 'integrated-studio-launcher-core/lib/browser';
+import { InstanceManager, reportErrors } from 'integrated-studio-launcher-core/lib/browser';
 import { TaskCommandIds } from 'integrated-studio-launcher-core/lib/common';
 
 const CATEGORY = '통합 작업실';
@@ -83,12 +83,8 @@ class ResourcepackTools implements CommandContribution {
         registry.registerCommand(ResourcepackCommands.APPLY, { execute: () => this.guard(() => this.apply()) });
     }
 
-    protected async guard(fn: () => Promise<unknown>): Promise<void> {
-        try {
-            await fn();
-        } catch (e) {
-            this.messages.error(e instanceof Error ? e.message : String(e));
-        }
+    protected guard(fn: () => Promise<unknown>): Promise<void> {
+        return reportErrors(this.messages, fn);
     }
 
     protected async openEditor(): Promise<void> {

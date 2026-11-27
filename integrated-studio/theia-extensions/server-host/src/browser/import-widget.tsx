@@ -186,7 +186,7 @@ export class ImportWidget extends ReactWidget {
         const r = this.result!;
         return <>
             <div className='sh-note'>{r.imported.length}개를 불러왔습니다{r.failed.length ? `, ${r.failed.length}개 실패` : ''}. {this.mode === 'link'
-                ? '원래 폴더를 그대로 연결했고 이 앱에는 아무것도 설치하지 않았습니다. 각 원래 폴더 안에 실행 파일(통합 작업실 실행.cmd)을 만들었고, [실행]하면 그 파일이 원래 런처를 엽니다.'
+                ? '원래 폴더를 그대로 연결했고 이 앱에는 아무것도 설치하지 않았습니다. 각 인스턴스의 게임 폴더(.minecraft) 안에 실행 파일(통합 작업실 실행.cmd)을 만들었고, [실행]하면 그 파일이 원래 런처를 엽니다.'
                 : '버전·로더는 필요할 때만 설치했습니다.'}</div>
             {r.imported.map(i => <section key={i.id} className='sh-card'>
                 <div className='sh-card-head'><b className='sh-name'>{i.name}</b><span className='sh-muted'>{i.version} · {LOADER_LABELS[i.loader] ?? i.loader}</span></div>

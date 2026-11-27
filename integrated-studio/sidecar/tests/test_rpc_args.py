@@ -32,7 +32,6 @@ def _frontend_calls() -> dict[str, set[str]]:
 
 def _handlers(tmp_path) -> dict:
     import main
-    import rpc
     captured: dict = {}
     orig = main.serve
     main.serve = lambda h, b: captured.update(h)

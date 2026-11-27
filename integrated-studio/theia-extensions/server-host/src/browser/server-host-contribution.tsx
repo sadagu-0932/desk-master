@@ -1,4 +1,3 @@
-import * as React from '@theia/core/shared/react';
 import { inject, injectable } from '@theia/core/shared/inversify';
 import { AbstractViewContribution } from '@theia/core/lib/browser/shell/view-contribution';
 import { FrontendApplicationContribution } from '@theia/core/lib/browser/frontend-application-contribution';
@@ -7,7 +6,7 @@ import { WidgetManager } from '@theia/core/lib/browser/widget-manager';
 import { CommandRegistry, CommandService } from '@theia/core/lib/common/command';
 import { MessageService } from '@theia/core/lib/common/message-service';
 import { WindowService } from '@theia/core/lib/browser/window/window-service';
-import { InstanceManager, StudioCommands } from 'integrated-studio-launcher-core/lib/browser';
+import { InstanceManager, reportErrors, StudioCommands } from 'integrated-studio-launcher-core/lib/browser';
 import { CreateServerOptions, E4mcPrepare, ServerKind } from '../common/index.js';
 import { ServerHostStore } from './server-host-store.js';
 import { ServerHostWidget } from './server-host-widget.js';
@@ -53,12 +52,8 @@ export class ServerHostContribution extends AbstractViewContribution<ServerHostW
         registry.registerCommand(ServerHostCommands.DDNS, { execute: () => this.guard(() => this.ddns()) });
     }
 
-    protected async guard(fn: () => Promise<unknown>): Promise<void> {
-        try {
-            await fn();
-        } catch (e) {
-            this.messages.error(e instanceof Error ? e.message : String(e));
-        }
+    protected guard(fn: () => Promise<unknown>): Promise<void> {
+        return reportErrors(this.messages, fn);
     }
 
     protected async openImport(): Promise<void> {

@@ -11,6 +11,7 @@ import {
     ConfirmEvent, CreateInstanceOptions, GameVersion, LoaderVersions, Instance, LauncherClient, LauncherService, Loader, LogEvent, ProgressEvent,
     ServerStartResult, StateEvent, WorkMode
 } from '../common/index.js';
+import { errorMessage } from './report-errors.js';
 
 export interface RunState {
     game: boolean;
@@ -149,7 +150,7 @@ export class InstanceManager {
             this._instances = await this.service.call<Instance[]>('list_instances');
             this._error = undefined;
         } catch (e) {
-            this._error = e instanceof Error ? e.message : String(e);
+            this._error = errorMessage(e);
         }
         this.updateWorkspaceInstance();
         this.fire();

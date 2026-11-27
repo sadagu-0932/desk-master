@@ -13,8 +13,6 @@ API 형식은 Prism Launcher 소스(modplatform/flame, modplatform/modrinth)와 
 """
 from __future__ import annotations
 
-import configparser
-import hashlib
 import json
 import sys
 import os
@@ -30,19 +28,17 @@ from pathlib import Path
 from typing import Any
 
 import modrinth
+import net
 from instances import LOADERS as ALL_LOADERS, InstanceStore
 from paths import safe_join
 from rpc import RpcError, notify
 
 from .launchers import _cfg, is_account_file
 
-USER_AGENT = "integrated-studio/0.1 (personal launcher)"
-MODRINTH_API = os.environ.get("INTEGRATED_STUDIO_MODRINTH_API", "https://api.modrinth.com/v2")
 CURSEFORGE_API = os.environ.get("INTEGRATED_STUDIO_CURSEFORGE_API", "https://api.curseforge.com/v1")
 CF_GAME_ID = 432
 CF_CLASS = {"modpack": 4471, "mod": 6}
 CF_LOADER = {"forge": 1, "fabric": 4, "quilt": 5, "neoforge": 6}
-CF_LOADER_NAME = {v: k for k, v in CF_LOADER.items()}
 # .mrpack 안 파일은 이 호스트에서만 받는다(Modrinth 규격)
 MRPACK_HOSTS = modrinth.DOWNLOAD_HOSTS
 KEYRING_SERVICE = "integrated-studio"
@@ -51,15 +47,6 @@ SUPPORTED_LOADERS = ("vanilla", "fabric", "quilt", "neoforge", "forge")  # 실�
 
 
 # ---------------------------------------------------------------- HTTP
-
-def _request(url: str, *, headers: dict[str, str] | None = None, data: bytes | None = None, timeout: int = 60):
-    h = {"User-Agent": USER_AGENT, "Accept": "application/json"}
-    if headers:
-        h.update(headers)
-    if data is not None:
-        h["Content-Type"] = "application/json"
-    return urllib.request.urlopen(urllib.request.Request(url, data=data, headers=h), timeout=timeout)
-
 
 _INVISIBLE = re.compile(r"[\s\u200b-\u200f\u2028-\u202f\u2060\ufeff\u00a0]")
 
@@ -99,7 +86,7 @@ def _cf_http_error(e: urllib.error.HTTPError, key: str) -> RpcError:
 
 def _json(url: str, **kw: Any) -> Any:
     try:
-        with _request(url, **kw) as r:
+        with net.open_url(url, **kw) as r:
             return json.load(r)
     except urllib.error.HTTPError as e:
         key = (kw.get("headers") or {}).get("x-api-key")
@@ -112,28 +99,12 @@ def _json(url: str, **kw: Any) -> Any:
 
 def _download(url: str, dest: Path, hashes: dict[str, str] | None = None) -> None:
     """받아서 해시를 확인한 뒤 제자리에 둔다. 이미 같은 파일이 있으면 건너뛴다."""
-    hashes = {k: v.lower() for k, v in (hashes or {}).items() if v}
-    if dest.is_file() and hashes and _matches(dest, hashes):
+    if dest.is_file() and any(hashes.values() if hashes else ()) and net.hashes_match(dest, hashes):
         return
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    tmp = dest.with_name(dest.name + ".part")
-    with _request(url, timeout=180) as r, open(tmp, "wb") as f:
-        shutil.copyfileobj(r, f, 1 << 16)
-    if hashes and not _matches(tmp, hashes):
-        tmp.unlink(missing_ok=True)
-        raise RpcError(f"받은 파일의 해시가 맞지 않습니다: {dest.name}")
-    tmp.replace(dest)
-
-
-def _matches(path: Path, hashes: dict[str, str]) -> bool:
-    for algo in ("sha512", "sha1", "md5"):
-        if algo in hashes:
-            h = hashlib.new(algo)
-            with open(path, "rb") as f:
-                for chunk in iter(lambda: f.read(1 << 16), b""):
-                    h.update(chunk)
-            return h.hexdigest() == hashes[algo]
-    return True
+    try:
+        net.download(url, dest, hashes=hashes)
+    except net.HashMismatch as e:
+        raise RpcError(f"받은 파일의 해시가 맞지 않습니다: {dest.name}") from e
 
 
 def _safe_rel(rel: str) -> str:

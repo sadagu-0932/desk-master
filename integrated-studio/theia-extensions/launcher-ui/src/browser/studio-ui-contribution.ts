@@ -14,7 +14,7 @@ import { WindowService } from '@theia/core/lib/browser/window/window-service';
 import { FileUri } from '@theia/core/lib/common/file-uri';
 import { Widget } from '@theia/core/lib/browser/widgets';
 import { EXPLORER_VIEW_CONTAINER_ID } from '@theia/navigator/lib/browser/navigator-widget-factory';
-import { InstanceManager, StudioCommands } from 'integrated-studio-launcher-core/lib/browser';
+import { errorMessage, InstanceManager, StudioCommands } from 'integrated-studio-launcher-core/lib/browser';
 import { Instance, TaskCommandIds } from 'integrated-studio-launcher-core/lib/common';
 import { InstancesWidget, loaderLabel } from './instances-widget.js';
 import { TasksWidget } from './tasks-widget.js';
@@ -248,7 +248,7 @@ export class StudioUiContribution implements FrontendApplicationContribution, Co
             this.openGameLog(true);
             this.messages.info(`로컬 서버 시작${world ? ` (월드: ${world})` : ''} — 접속 주소 localhost`);
         } catch (e) {
-            this.messages.error(e instanceof Error ? e.message : String(e));
+            this.messages.error(errorMessage(e));
         }
     }
 

@@ -206,7 +206,6 @@ def main() -> None:
     import importers
     from instances import InstanceStore
     from rpc import RpcError
-    importers.MODRINTH_API = os.environ.get("INTEGRATED_STUDIO_MODRINTH_API", importers.MODRINTH_API)
     importers.CURSEFORGE_API = os.environ.get("INTEGRATED_STUDIO_CURSEFORGE_API", importers.CURSEFORGE_API)
 
     data = Path(tempfile.mkdtemp())

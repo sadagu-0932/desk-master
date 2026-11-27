@@ -459,10 +459,3 @@ class CommandChecker:
             raise ParseError(f"아이템 ID 뒤에 올 수 없는 글자입니다: '{rest}'", pos)
         return end
 
-
-def make_checker(tree, id_lookup=None, blocks=None, tag_lookup=None) -> CommandChecker:
-    return CommandChecker(tree, id_lookup, blocks, tag_lookup)
-
-
-def check_line(checker: CommandChecker, line: str) -> Result:
-    return checker.check(line)

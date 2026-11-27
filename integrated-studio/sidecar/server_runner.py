@@ -24,13 +24,13 @@ import subprocess
 import threading
 import time
 import tomllib
-import urllib.request
 import uuid
 import zipfile
 from pathlib import Path
 from typing import Any, Callable
 
 import modrinth
+import net
 from instances import InstanceStore
 from paths import safe_join
 from rpc import RpcError, notify
@@ -41,7 +41,6 @@ JOIN_RE = re.compile(r"\]: (\S+) joined the game")
 LEFT_RE = re.compile(r"\]: (\S+) left the game")
 SID_RE = re.compile(r"srv_[0-9a-f]{8}")
 FABRIC_META = "https://meta.fabricmc.net/v2"
-UA = {"User-Agent": "integrated-studio/0.1 (personal launcher)"}
 MODS_CONFIG = Path(__file__).resolve().parent / "server_host_mods.json"
 DEDICATED_LOADERS = ("vanilla", "fabric", "neoforge", "forge")
 NEOFORGE_MAVEN = "https://maven.neoforged.net/releases/net/neoforged/neoforge"
@@ -74,20 +73,14 @@ def port_free(port: int) -> bool:
     return True
 
 
-def _http_json(url: str) -> Any:
-    with urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=30) as r:
-        return json.load(r)
+_http_json = net.get_json   # 시험이 이 이름을 바꿔 끼운다
 
 
 def _download(url: str, dest: Path, sha1: str | None = None) -> None:
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    tmp = dest.with_suffix(dest.suffix + ".part")
-    with urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=120) as r, tmp.open("wb") as f:
-        shutil.copyfileobj(r, f)
-    if sha1 and modrinth.file_hashes(tmp, ("sha1",))["sha1"] != sha1.lower():
-        tmp.unlink(missing_ok=True)
-        raise RpcError(f"받은 서버 jar 의 해시가 맞지 않아 버렸습니다: {dest.name}")
-    tmp.replace(dest)
+    try:
+        net.download(url, dest, hashes={"sha1": sha1} if sha1 else None)
+    except net.HashMismatch as e:
+        raise RpcError(f"받은 서버 jar 의 해시가 맞지 않아 버렸습니다: {dest.name}") from e
 
 
 def neoforge_prefix(mc: str) -> str:
@@ -108,8 +101,7 @@ def _vkey(v: str) -> list[int]:
 
 def neoforge_versions(mc: str) -> list[dict[str, Any]]:
     """그 게임 버전용 NeoForge 버전들(새 것부터) [{version, stable}]."""
-    with urllib.request.urlopen(urllib.request.Request(f"{NEOFORGE_MAVEN}/maven-metadata.xml", headers=UA), timeout=30) as r:
-        xml = r.read().decode("utf-8", "replace")
+    xml = net.get_bytes(f"{NEOFORGE_MAVEN}/maven-metadata.xml").decode("utf-8", "replace")
     prefix = neoforge_prefix(mc)
     vs = sorted((v for v in re.findall(r"<version>([^<]+)</version>", xml) if v.startswith(prefix)), key=_vkey, reverse=True)
     return [{"version": v, "stable": "beta" not in v and "alpha" not in v} for v in vs]
@@ -424,22 +416,16 @@ class ServerRunner:
         name = f"{'neoforge' if loader == 'neoforge' else 'forge'}-{full}-installer.jar"
         dest = self.jars_dir / loader / name
         url = f"{base}/{full}/{name}"
-        with urllib.request.urlopen(urllib.request.Request(url + ".sha256", headers=UA), timeout=30) as r:
-            sha256 = r.read().decode("ascii", "replace").strip().split()[0].lower()
+        sha256 = (net.get_bytes(url + ".sha256").decode("ascii", "replace").strip().split() or [""])[0].lower()
         if not re.fullmatch(r"[0-9a-f]{64}", sha256):
             raise RpcError("설치기 검증값(sha256)을 받지 못했습니다.")
-        if dest.is_file() and modrinth.file_hashes(dest, ("sha256",))["sha256"] == sha256:
+        if dest.is_file() and net.hashes_match(dest, {"sha256": sha256}):
             return dest
         self.emit("ds_log", {"id": self._current, "line": f"[통합 작업실] {LOADER_NAMES[loader]} {full} 서버 설치기 받는 중"})
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        tmp = dest.with_suffix(".part")
-        with urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=180) as r, tmp.open("wb") as f:
-            shutil.copyfileobj(r, f)
-        if modrinth.file_hashes(tmp, ("sha256",))["sha256"] != sha256:
-            tmp.unlink(missing_ok=True)
-            raise RpcError(f"받은 {LOADER_NAMES[loader]} 설치기의 해시가 맞지 않아 버렸습니다.")
-        tmp.replace(dest)
-        return dest
+        try:
+            return net.download(url, dest, hashes={"sha256": sha256})
+        except net.HashMismatch as e:
+            raise RpcError(f"받은 {LOADER_NAMES[loader]} 설치기의 해시가 맞지 않아 버렸습니다.") from e
 
     @staticmethod
     def forge_args_file(d: Path, loader: str, full: str) -> str:
@@ -481,11 +467,6 @@ class ServerRunner:
             if not t.is_file() or t.stat().st_size != p.stat().st_size:
                 shutil.copy2(p, t)
         return sorted(wanted)
-
-    def prepare_jar(self, id: str, sid: str) -> str:
-        """실행할 jar(바닐라·Fabric). Forge 계열은 prepare_launch 를 쓴다."""
-        args = self.prepare_launch(id, sid)
-        return args[args.index("-jar") + 1] if "-jar" in args else args[-2]
 
     def prepare_launch(self, id: str, sid: str) -> list[str]:
         """java 뒤에 붙일 인자(메모리 제외). 바닐라·Fabric = -jar <jar> nogui, Forge 계열 = @인자파일 nogui."""
@@ -594,7 +575,7 @@ class ServerRunner:
         return [sid for sid, p in self.procs.items() if p.poll() is None]
 
     def shutdown(self) -> None:
-        for sid, p in list(self.procs.items()):
+        for p in list(self.procs.values()):
             try:
                 if p.stdin:
                     p.stdin.write("stop\n")

@@ -22,7 +22,7 @@ def test_post_ok_and_error(env, monkeypatch, capsys):
                                 tool_input={"file_path": str(good / "data/campfire/function/tick.mcfunction")}),
                     monkeypatch, capsys)
     assert code == 0 and err == ""
-    bad = env.copy_pack("bad_pack")
+    env.copy_pack("bad_pack")
     code, err = run("post", base(env, tool_name="Edit", tool_input={"file_path": "datapacks/bad_pack/data/bad/function/main.mcfunction"}),
                     monkeypatch, capsys)
     assert code == 2 and "giv" in err and "main.mcfunction:2" in err

@@ -4,6 +4,7 @@ import { DialogError } from '@theia/core/lib/browser/dialogs';
 import { CreateInstanceOptions, GameVersion, Loader, LOADER_LABELS, LoaderVersions } from '../common/index.js';
 import { InstanceManager } from './instance-manager.js';
 import { CurseForgeKeyForm, Platform, ProjectBrowser, ProjectHit, ProjectVersion, VersionList } from './project-browser.js';
+import { errorMessage } from './report-errors.js';
 
 /** 공통: 위쪽에서 고른 이름·그룹·아이콘 */
 export interface InstanceLook {
@@ -213,7 +214,7 @@ export class CreateInstanceDialog extends ReactDialog<CreateInstanceResult | und
             this.versions = await this.manager.listVersions(true);
             if (!this.selected) { this.select(this.versions.find(v => v.type === 'release')?.id); }
         } catch (e) {
-            this.versionsError = e instanceof Error ? e.message : String(e);
+            this.versionsError = errorMessage(e);
         } finally {
             this.versionsLoading = false;
             this.refresh();
@@ -271,7 +272,7 @@ export class CreateInstanceDialog extends ReactDialog<CreateInstanceResult | und
             this.importInfo = await this.manager.call<ImportInfo>('inspect_import', { path: p });
             this.autoName();
         } catch (e) {
-            this.importError = e instanceof Error ? e.message : String(e);
+            this.importError = errorMessage(e);
             this.importPath = undefined;
         } finally {
             this.importBusy = false;

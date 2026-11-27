@@ -63,10 +63,50 @@ npm run package:with-python   # Python 포함 설치 파일 (Windows에서만)
 | 리소스팩 적용 | F8 |
 | 설정 동기화 | 자동(시작·30초마다·실행 직전·게임 종료 뒤). 게임 설정(options.txt, 리소스팩 목록 제외)과 서버 목록이 모든 인스턴스·공식 런처에서 같게 유지된다. 공식 런처 파일은 덮기 전에 `~/.integrated-studio/data/sync-backups/`에 백업. 수동: 명령 팔레트 `설정 지금 동기화` |
 | 서버 열기(친구와 같이) | 왼쪽 막대 “서버” → [서버 열기]: 싱글 LAN 공개 / 전용 서버(바닐라·Fabric·NeoForge·Forge) / 외부 서버(다른 런처로 연 월드). 주소는 자동으로 e4mc → UPnP → playit 순서로 열고 [복사]. 친구는 멀티플레이 → 서버 추가에 주소만 넣으면 됨(프로그램 불필요, 콘텐츠 모드가 있으면 같은 모드만) |
-| 인스턴스 불러오기 | “서버” 패널 [인스턴스 불러오기] 또는 명령 팔레트 → Prism·MultiMC·CurseForge·Modrinth App·공식 런처를 자동으로 찾음(폴더 직접 선택도). 복사(기본) 또는 연결. 계정 파일은 건드리지 않음. 끝나면 [서버로 열기] |
+| 인스턴스 불러오기 | “서버” 패널 [인스턴스 불러오기] 또는 명령 팔레트 → Prism·MultiMC·CurseForge·Modrinth App·공식 런처를 자동으로 찾음(폴더 직접 선택도). 연결(기본: 원래 폴더 그대로, [실행]하면 원래 런처로 켬) 또는 복사. 계정 파일은 건드리지 않음. 끝나면 [서버로 열기] |
 | /reload | 상단 `/reload` 버튼 — `datapacks/`를 최근 월드로 동기화한 뒤 CommandCrafter(또는 로컬 서버)로 보낸다 |
 | 게임 꺼져 있을 때 자동완성 | 명령 팔레트 `게임 없이 쓸 자동완성 준비(데이터 생성기)` |
 | Claude 작업 종류 | Claude 패널 위 “작업 종류” 또는 상태 표시줄 — 데이터팩 / Fabric 모드 / 리소스팩 |
+
+## 코드 구조 (처음 보는 사람용)
+
+화면(Theia, TypeScript)은 버튼만 받고, 실제 일은 **파이썬 사이드카**가 한다. 둘은 표준 입출력으로 JSON-RPC 를 주고받는다.
+
+```
+버튼 클릭 → launcher-core InstanceManager.call('이름', {인자})
+         → node/sidecar-process.ts (사이드카 프로세스에 한 줄 JSON)
+         → sidecar/main.py handlers['이름'](인자) → 각 모듈 → 결과 / 알림(progress·log·instances_changed)
+```
+
+| 위치 | 하는 일 |
+|---|---|
+| `sidecar/main.py` | 요청 이름 → 함수 표(`handlers`). 새 기능은 여기에 이름을 등록한다 |
+| `sidecar/rpc.py` | JSON-RPC 통로(자식 프로세스가 통로를 물려받지 않게 떼어 둠), 오류 기록 `data/logs/sidecar-errors.log` |
+| `sidecar/net.py` | 인터넷 요청·다운로드(`.part` → 해시 확인 → 제자리) 공통. 다른 모듈은 직접 urllib 을 쓰지 않는다 |
+| `sidecar/paths.py` | 경로 안전 검사·휴지통. 파일을 다루는 코드는 모두 여기를 거친다 |
+| `sidecar/instances.py` | 인스턴스 저장(`instance.json`)·복제·삭제. 바뀌면 `instances_changed` 알림 |
+| `sidecar/runner.py` | 게임·로더 설치, 로컬 서버, 데이터 생성기 |
+| `sidecar/official_launcher.py`, `official_rpc.py` | 공식 런처 감지·설치·항목 등록·로그 따라 읽기 |
+| `sidecar/sync.py` | 설정(options.txt·servers.dat) 동기화 |
+| `sidecar/modrinth.py` | Modrinth 에서 받는 건 전부 여기(정확한 버전·해시 검증) |
+| `sidecar/server_runner.py` | 전용 서버(바닐라·Fabric·NeoForge·Forge), e4mc |
+| `sidecar/importers/` | 모드팩 가져오기(`__init__`), 다른 런처 감지(`launchers`), 복사·연결·사용 중 확인(`local`), 연결 인스턴스 실행 파일(`launchfile`) |
+| `sidecar/mc_tools/` | 데이터팩·모드 검사 도구(Claude 후크용) |
+| `theia-extensions/launcher-core` | 인스턴스 모델·사이드카 연결(`InstanceManager`)·명령(`launcher-commands.ts`)·새 인스턴스 창 |
+| `theia-extensions/launcher-ui` | 홈·인스턴스 목록·게임 로그·작업·상단 실행 막대 |
+| `theia-extensions/server-host` | 서버 열기 패널·불러오기 화면(browser), 주소 열기 e4mc/UPnP/playit(node) |
+| `theia-extensions/datapack-tools`, `resourcepack-editor`, `theme` | 데이터팩 도구, 리소스팩 편집기, 색 테마 |
+
+공통 규칙
+- 명령의 오류는 `guard(...)`(= launcher-core `reportErrors`)로 감싸 알림으로 보여 준다.
+- 사용자에게 보이는 문구는 한국어. 결정 사항과 이유는 `CLAUDE.md` 에 날짜와 함께 남긴다.
+
+시험
+```
+cd sidecar && python -m pytest -q tests mc_tools/tests && python tests/test_official_rpc.py
+npm test -w integrated-studio-server-host
+```
+`tests/test_windows_smoke.py` 는 Windows 에서만(GitHub Actions) 돈다.
 
 ## 보안 메모
 

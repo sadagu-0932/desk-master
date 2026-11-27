@@ -11,6 +11,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import net  # noqa: E402
 import server_runner as sr  # noqa: E402
 from instances import InstanceStore  # noqa: E402
 from rpc import RpcError  # noqa: E402
@@ -146,7 +147,8 @@ def test_fabric_uses_server_launcher(env, monkeypatch):
     meta.update(loader="fabric", loaderVersion="0.20.1")
     store.save(meta)
     s = runner.create(iid, "패브릭")
-    jar = runner.prepare_jar(iid, s["id"])
+    args = runner.prepare_launch(iid, s["id"])
+    jar = args[args.index("-jar") + 1]
     d = store.dir_of(iid) / "servers" / s["id"]
     assert jar == "fabric-server-launch.jar"
     assert (d / "server.jar").read_bytes() == b"vanilla-jar"
@@ -224,11 +226,11 @@ def test_fabric_server_gets_server_side_mods(env):
     make_jar(mods / "sodium.jar", "fabric", "sodium", "client")
     make_jar(mods / "e4mc.jar", "fabric", "e4mc")
     s = runner.create(iid, "패브릭")
-    runner.prepare_jar(iid, s["id"])
+    runner.prepare_launch(iid, s["id"])
     sm = store.dir_of(iid) / "servers" / s["id"] / "mods"
     assert sorted(p.name for p in sm.iterdir()) == ["create.jar"]
     (mods / "create.jar").unlink()
-    runner.prepare_jar(iid, s["id"])
+    runner.prepare_launch(iid, s["id"])
     assert list(sm.iterdir()) == []                                     # 빠진 모드는 서버에서도 뺌(휴지통)
     assert runner.mods(iid)["clientRequired"] == []
 
@@ -338,7 +340,7 @@ def test_neoforge_prefix_and_version_pick(env, monkeypatch):
         def read(self): return self.b
         def __enter__(self): return self
         def __exit__(self, *a): return False
-    monkeypatch.setattr(sr.urllib.request, "urlopen", lambda req, timeout=0: R(xml.encode()))
+    monkeypatch.setattr(net.urllib.request, "urlopen", lambda req, timeout=0: R(xml.encode()))
     assert runner._forge_version("neoforge", "26.3", None) == "26.3.0.115"     # 정확히 26.3 용, 베타 제외
     with pytest.raises(RpcError):
         runner._forge_version("neoforge", "26.3", "26.1.2.129")                 # 다른 버전용은 거부
@@ -366,7 +368,7 @@ def test_forge_installer_sha256_checked(env, monkeypatch, tmp_path):
             return out
         def __enter__(self): return self
         def __exit__(self, *a): return False
-    monkeypatch.setattr(sr.urllib.request, "urlopen", lambda req, timeout=0: R(answers[req.full_url]))
+    monkeypatch.setattr(net.urllib.request, "urlopen", lambda req, timeout=0: R(answers[req.full_url]))
     url = f"{sr.NEOFORGE_MAVEN}/26.3.0.115/neoforge-26.3.0.115-installer.jar"
     answers[url] = good
     answers[url + ".sha256"] = (hashlib.sha256(good).hexdigest() + "\n").encode()

@@ -13,7 +13,6 @@
 """
 from __future__ import annotations
 
-import os
 import subprocess
 import sys
 from pathlib import Path
@@ -29,10 +28,6 @@ STORE_APP = r"shell:AppsFolder\Microsoft.4297127D64EC6_8wekyb3d8bbwe!Minecraft"
 
 def file_name() -> str:
     return BASENAME + (".cmd" if sys.platform == "win32" else ".sh")
-
-
-def kind_for(launcher: str | None) -> str:
-    return launcher if launcher in KINDS else "official"
 
 
 def _bat(s: str) -> str:
@@ -161,7 +156,3 @@ def remove(path: Path) -> bool:
         except OSError:
             return False
     return False
-
-
-def env_expand(path: str) -> str:
-    return os.path.expandvars(path)

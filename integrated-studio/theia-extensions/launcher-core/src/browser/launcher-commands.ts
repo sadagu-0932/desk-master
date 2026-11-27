@@ -12,6 +12,7 @@ import { FileUri } from '@theia/core/lib/common/file-uri';
 import { isWindows } from '@theia/core/lib/common/os';
 import { InstanceManager } from './instance-manager.js';
 import { TaskCommandIds } from '../common/command-ids.js';
+import { errorMessage, reportErrors } from './report-errors.js';
 
 /** 사이드카 local.py NEED_ROOT_TAG 와 같아야 한다 */
 const NEED_ROOT_TAG = '[launcher-root]';
@@ -283,7 +284,7 @@ export class LauncherCommandContribution implements CommandContribution {
         // 연결한 인스턴스는 그 .minecraft 안의 실행 파일로 공식 런처를 연다
         const open = inst.linkedDir
             ? await this.manager.call<{ ok: boolean }>('launch_linked', { id: inst.id }).then(() => ({ ok: true, message: '' }) as OfficialResult)
-                .catch(e => ({ ok: false, message: e instanceof Error ? e.message : String(e) }) as OfficialResult)
+                .catch(e => ({ ok: false, message: errorMessage(e) }) as OfficialResult)
             : await this.manager.call<OfficialResult>('official_open_launcher');
         if (open.ok) {
             this.messages.info(inst.linkedDir
@@ -376,12 +377,8 @@ export class LauncherCommandContribution implements CommandContribution {
         await this.guard(() => fn(target));
     }
 
-    protected async guard(fn: () => Promise<unknown>): Promise<void> {
-        try {
-            await fn();
-        } catch (e) {
-            this.messages.error(e instanceof Error ? e.message : String(e));
-        }
+    protected guard(fn: () => Promise<unknown>): Promise<void> {
+        return reportErrors(this.messages, fn);
     }
 
     async pickInstance(placeholder = '인스턴스 선택'): Promise<Instance | undefined> {

@@ -51,8 +51,8 @@ def _fake_mod_project(env, mod_id="gems"):
 
 def test_mod_content_all_files_and_validates(env):
     root = _fake_mod_project(env)
-    r = scaffold.add_mod_content(env.inst, root, [{"id": "ruby", "name_ko": "루비", "name_en": "Ruby"}],
-                                 [{"id": "ruby_block", "name_ko": "루비 블록"}])
+    scaffold.add_mod_content(env.inst, root, [{"id": "ruby", "name_ko": "루비", "name_en": "Ruby"}],
+                             [{"id": "ruby_block", "name_ko": "루비 블록"}])
     a = root / "src/main/resources/assets/gems"
     for f in ("textures/item/ruby.png", "models/item/ruby.json", "items/ruby.json",
               "textures/block/ruby_block.png", "models/block/ruby_block.json", "blockstates/ruby_block.json",

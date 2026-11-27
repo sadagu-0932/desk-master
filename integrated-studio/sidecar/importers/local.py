@@ -59,7 +59,7 @@ def _jvm_args(memory_mb: int | None, java_args: str | None) -> str | None:
 
 def _copytree(src: Path, dst: Path, on_file: Callable[[int], None]) -> int:
     n = 0
-    for root, dirs, files in os.walk(src):
+    for root, _dirs, files in os.walk(src):
         rel = Path(root).relative_to(src)
         (dst / rel).mkdir(parents=True, exist_ok=True)
         for f in files:

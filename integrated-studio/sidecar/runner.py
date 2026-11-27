@@ -15,27 +15,12 @@ import minecraft_launcher_lib as mll
 from instances import InstanceStore, write_cc_config
 from paths import safe_join
 import modrinth
+import net
 import server_runner
 from rpc import RpcError, notify
 
-USER_AGENT = "integrated-studio/0.1 (personal launcher)"
 LOG_LEVEL = re.compile(r"/(TRACE|DEBUG|INFO|WARN|WARNING|ERROR|FATAL)\]")
 EULA_URL = "https://aka.ms/MinecraftEULA"
-
-
-def _http_json(url: str) -> Any:
-    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-    with urllib.request.urlopen(req, timeout=30) as r:
-        return json.load(r)
-
-
-def _download(url: str, dest: Path) -> None:
-    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-    tmp = dest.with_suffix(dest.suffix + ".part")
-    with urllib.request.urlopen(req, timeout=120) as r, open(tmp, "wb") as f:
-        while chunk := r.read(1 << 16):
-            f.write(chunk)
-    tmp.replace(dest)
 
 
 def _level(line: str) -> str:
@@ -90,7 +75,7 @@ class Runner:
         if loader != "fabric":
             raise RpcError(f"지원하지 않는 로더입니다: {loader}")
         try:
-            data = _http_json(f"https://meta.fabricmc.net/v2/versions/loader/{urllib.parse.quote(version)}")
+            data = net.get_json(f"https://meta.fabricmc.net/v2/versions/loader/{urllib.parse.quote(version)}")
             versions = [{"version": d["loader"]["version"], "stable": bool(d["loader"].get("stable"))} for d in data]
         except Exception:  # noqa: BLE001 - 메타 서버가 안 되면 라이브러리로
             fabric = mll.mod_loader.get_mod_loader("fabric")
@@ -240,14 +225,14 @@ class Runner:
         vjson = json.loads((self.mc_dir / "versions" / version / f"{version}.json").read_text("utf-8")) \
             if (self.mc_dir / "versions" / version).exists() else None
         if vjson is None:
-            manifest = _http_json("https://piston-meta.mojang.com/mc/game/version_manifest_v2.json")
+            manifest = net.get_json("https://piston-meta.mojang.com/mc/game/version_manifest_v2.json")
             url = next(v["url"] for v in manifest["versions"] if v["id"] == version)
-            vjson = _http_json(url)
+            vjson = net.get_json(url)
         server = vjson.get("downloads", {}).get("server")
         if not server:
             raise RpcError(f"{version}에는 서버 jar가 없습니다.")
         dest.parent.mkdir(parents=True, exist_ok=True)
-        _download(server["url"], dest)
+        net.download(server["url"], dest, hashes={"sha1": server.get("sha1")})
 
     def _runtime_java(self, version: str) -> str:
         java = self._java_for(version)

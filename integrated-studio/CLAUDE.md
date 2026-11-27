@@ -194,6 +194,9 @@ Theia 확장은 TypeScript로 작성한다. Python 쪽은 `sidecar/` 아래에�
   ③ Prism 데이터 폴더 찾기: 위로 올라가며 + 알려진 데이터 폴더(·exe 옆 포터블)의 cfg `InstanceDir` 비교. 그래도 없으면 실행 때 `[launcher-root]` 오류 →
   프런트가 폴더 고르기 → RPC `set_launcher_root(id, path)`(그 데이터 폴더의 인스턴스 목록에 있어야 함). 시작 때 `migrate_linked` 가 빈 root 를 다시 찾음.
   ④ 사용 중 확인: 게임 폴더와 원래 인스턴스 폴더(`sourceDir`, Prism java 의 `<인스턴스>/natives`)를 `/`·`\`·대소문자 무시로 비교, Prism·MultiMC 는 실행 뒤 30초 다시 실행 막음.
+- 정리(2026-11-27, 사용자 요청 "최적화·알아보기 쉽게"): 안 쓰는 함수·변수·import 제거(vulture·pyflakes·tsc --noUnusedLocals 로 찾고 사용처 확인),
+  인터넷 요청·다운로드는 `sidecar/net.py` 하나로(네 모듈에 따로 있던 복사본 제거, 시험 `tests/test_net.py`) — **새 코드도 urllib 을 직접 쓰지 말고 net.py 를 쓴다**.
+  명령 오류 알림은 launcher-core `reportErrors`/`errorMessage` 하나로(다섯 확장에 같은 코드가 있었음). README 에 "코드 구조" 절 추가.
 
 ### M9. 패키징 (내 PC용)
 - electron-builder로 Windows 설치 파일 또는 압축 실행판을 만든다. **배포하지 않는다** — 개인 사용 전용.

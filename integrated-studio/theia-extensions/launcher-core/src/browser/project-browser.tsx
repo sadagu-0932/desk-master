@@ -1,5 +1,6 @@
 import * as React from '@theia/core/shared/react';
 import { InstanceManager } from './instance-manager.js';
+import { errorMessage } from './report-errors.js';
 
 export type Platform = 'modrinth' | 'curseforge';
 export type ProjectKind = 'modpack' | 'mod';
@@ -58,7 +59,7 @@ export function ProjectBrowser(props: {
             setTotal(res.total);
             setHits(prev => offset === 0 ? res.hits : [...prev, ...res.hits]);
         } catch (e) {
-            if (my === seq.current) { setError(e instanceof Error ? e.message : String(e)); }
+            if (my === seq.current) { setError(errorMessage(e)); }
         } finally {
             if (my === seq.current) { setLoading(false); }
         }
@@ -124,7 +125,7 @@ export function VersionList(props: {
             if (!alive) { return; }
             setVersions(vs);
             onPick(vs[0]);
-        }).catch(e => alive && setError(e instanceof Error ? e.message : String(e)));
+        }).catch(e => alive && setError(errorMessage(e)));
         return () => { alive = false; };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [manager, platform, projectId, gameVersion, loader]);
@@ -167,7 +168,7 @@ export function CurseForgeKeyForm(props: {
             await props.manager.call('cf_set_key', { key });
             props.onSaved();
         } catch (e) {
-            setError(e instanceof Error ? e.message : String(e));
+            setError(errorMessage(e));
         } finally {
             setBusy(false);
         }

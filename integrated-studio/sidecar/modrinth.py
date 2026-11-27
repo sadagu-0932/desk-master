@@ -13,11 +13,9 @@ API 형식은 api.modrinth.com/v2 실제 응답(2026-11, e4mc·fabric-api)으로
 """
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import re
-import shutil
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -25,9 +23,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable
 
+import net
 from rpc import RpcError
 
-USER_AGENT = "integrated-studio/0.1 (personal launcher)"
 API = os.environ.get("INTEGRATED_STUDIO_MODRINTH_API", "https://api.modrinth.com/v2")
 # 받는 파일은 이 호스트에서만(Modrinth 규격의 허용 목록). 시험용 API 주소면 그 호스트도 허용.
 DOWNLOAD_HOSTS = {"cdn.modrinth.com", "github.com", "raw.githubusercontent.com", "gitlab.com"}
@@ -57,13 +55,6 @@ def _api() -> str:
     return os.environ.get("INTEGRATED_STUDIO_MODRINTH_API", API).rstrip("/")
 
 
-def _request(url: str, data: bytes | None = None, timeout: int = 60):
-    h = {"User-Agent": USER_AGENT, "Accept": "application/json"}
-    if data is not None:
-        h["Content-Type"] = "application/json"
-    return urllib.request.urlopen(urllib.request.Request(url, data=data, headers=h), timeout=timeout)
-
-
 def get_json(path: str, params: dict[str, Any] | None = None, body: Any = None) -> Any:
     """Modrinth API 호출. path 는 '/project/x/version' 처럼 API 기준 경로."""
     url = _api() + path
@@ -72,7 +63,7 @@ def get_json(path: str, params: dict[str, Any] | None = None, body: Any = None) 
                                              for k, v in params.items() if v is not None})
     data = json.dumps(body).encode() if body is not None else None
     try:
-        with _request(url, data) as r:
+        with net.open_url(url, data=data) as r:
             return json.load(r)
     except urllib.error.HTTPError as e:
         if e.code == 404:
@@ -86,22 +77,12 @@ def get_json(path: str, params: dict[str, Any] | None = None, body: Any = None) 
 
 # ---------------------------------------------------------------- 해시·다운로드
 
-def file_hashes(path: Path, algos: Iterable[str] = ("sha512", "sha1")) -> dict[str, str]:
-    hs = {a: hashlib.new(a) for a in algos}
-    with open(path, "rb") as f:
-        for chunk in iter(lambda: f.read(1 << 16), b""):
-            for h in hs.values():
-                h.update(chunk)
-    return {a: h.hexdigest() for a, h in hs.items()}
+file_hashes = net.file_hashes
 
 
 def verify(path: Path, hashes: dict[str, str] | None) -> bool:
     """API 가 준 해시로 확인. sha512 가 있으면 그것만, 없으면 sha1. 해시가 하나도 없으면 실패로 본다."""
-    hashes = {k.lower(): (v or "").lower() for k, v in (hashes or {}).items() if v}
-    for algo in ("sha512", "sha1"):
-        if algo in hashes:
-            return file_hashes(path, (algo,))[algo] == hashes[algo]
-    return False
+    return net.hashes_match(path, hashes, require=True)
 
 
 def _allowed_url(url: str) -> bool:
@@ -117,19 +98,12 @@ def download(file: dict[str, Any], dest: Path) -> Path:
         raise RpcError(f"허용되지 않은 주소라 받지 않았습니다: {url}")
     if dest.is_file() and verify(dest, file.get("hashes")):
         return dest
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    tmp = dest.with_name(dest.name + ".part")
     try:
-        with _request(url, timeout=180) as r, open(tmp, "wb") as f:
-            shutil.copyfileobj(r, f, 1 << 16)
+        return net.download(url, dest, hashes=file.get("hashes"), require_hash=True)
+    except net.HashMismatch as e:
+        raise RpcError(f"받은 파일의 해시가 맞지 않아 버렸습니다: {dest.name}") from e
     except (urllib.error.URLError, OSError) as e:
-        tmp.unlink(missing_ok=True)
         raise RpcError(f"파일을 받지 못했습니다({dest.name}): {e}") from e
-    if not verify(tmp, file.get("hashes")):
-        tmp.unlink(missing_ok=True)
-        raise RpcError(f"받은 파일의 해시가 맞지 않아 버렸습니다: {dest.name}")
-    tmp.replace(dest)
-    return dest
 
 
 # ---------------------------------------------------------------- 버전 비교

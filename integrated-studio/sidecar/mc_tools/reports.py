@@ -28,12 +28,6 @@ NOT_KINDS = {"datapacks"}
 VERSION_RE = re.compile(r"[0-9A-Za-z._\-]{1,64}")
 
 
-def _fmt_tuple(v: Any) -> tuple[int, int]:
-    if isinstance(v, list):
-        return (int(v[0]), int(v[1]) if len(v) > 1 else 0)
-    return (int(v), 0)
-
-
 class VersionData:
     """한 게임 버전의 자료. 파일이 없으면 ensure() 로 만든다."""
 
@@ -250,10 +244,7 @@ class VersionData:
         """알 수 없는 종류는 안전하게 '재접속 필요'로 본다."""
         if kind in ("", "pack.mcmeta"):
             return False
-        rk = self.reload_kinds
-        if kind in rk["reload"]:
-            return False
-        return True
+        return kind not in self.reload_kinds["reload"]
 
     # ---------- ID ----------
     def registry_ids(self, registry: str) -> set[str] | None:

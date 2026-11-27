@@ -7,12 +7,12 @@ import re
 import sys
 import shutil
 import subprocess
-import urllib.request
 import zipfile
 from pathlib import Path
 from typing import Any
 
 from instances import InstanceStore
+import net
 from paths import safe_join, trash
 from rpc import RpcError, notify
 
@@ -231,9 +231,7 @@ class Packs:
         found = {"loader": "0.20.1", "loom": "1.19.4", "fabric_api": f"0.166.2+{mc}", "gradle": "9.8.2", "checked": False}
 
         def get(url: str) -> bytes:
-            req = urllib.request.Request(url, headers={"User-Agent": "integrated-studio/0.1"})
-            with urllib.request.urlopen(req, timeout=20) as r:
-                return r.read()
+            return net.get_bytes(url, timeout=20)
 
         def vkey(v: str) -> tuple:
             return tuple(int(x) for x in re.findall(r"\d+", v))
