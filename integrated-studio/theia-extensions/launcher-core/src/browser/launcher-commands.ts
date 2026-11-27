@@ -13,6 +13,9 @@ import { isWindows } from '@theia/core/lib/common/os';
 import { InstanceManager } from './instance-manager.js';
 import { TaskCommandIds } from '../common/command-ids.js';
 
+/** 사이드카 local.py NEED_ROOT_TAG 와 같아야 한다 */
+const NEED_ROOT_TAG = '[launcher-root]';
+
 interface OfficialInfo { installed: boolean; message: string }
 interface OfficialResult { ok: boolean; message: string; method?: string | null; removed?: boolean; warnings?: string[] }
 
@@ -127,10 +130,10 @@ export class LauncherCommandContribution implements CommandContribution {
                 if (!name) {
                     return;
                 }
-                const copy = await this.manager.call<Instance>('duplicate_instance', { id: i.id, name });
+                const copy = await this.manager.call<Instance & { notice?: string }>('duplicate_instance', { id: i.id, name });
                 await this.manager.refresh();
                 this.manager.ensureVisible(copy.id, copy.name);
-                this.messages.info(`'${copy.name}'을(를) 만들었습니다.`);
+                this.messages.info(`'${copy.name}'을(를) 만들었습니다.${copy.notice ? ' ' + copy.notice : ''}`);
             }),
         });
         registry.registerCommand(StudioCommands.MEMORY, {
@@ -298,7 +301,25 @@ export class LauncherCommandContribution implements CommandContribution {
             this.messages.warn(`${inst.name}: 이미 이 폴더로 게임이 켜져 있습니다. ${use.reasons.join(' ')}`);
             return;
         }
-        const r = await this.manager.call<{ launcher: string; kind: string; file: string }>('launch_linked', { id: inst.id });
+        let r: { launcher: string; kind: string; file: string };
+        try {
+            r = await this.manager.call<{ launcher: string; kind: string; file: string }>('launch_linked', { id: inst.id });
+        } catch (e) {
+            const msg = (e as Error).message ?? String(e);
+            if (!msg.includes(NEED_ROOT_TAG)) {
+                throw e;
+            }
+            // Prism·MultiMC 데이터 폴더를 못 찾음(설정에서 인스턴스 폴더를 옮긴 경우 등) → 사용자가 고르게 하고 다시 실행
+            this.messages.warn(msg.replace(NEED_ROOT_TAG, '').replace(/\s*\([^()]*\.py:\d+[^()]*\)\s*$/, '').trim());
+            const uri = await this.fileDialog.showOpenDialog({ title: '런처 데이터 폴더 고르기(prismlauncher.cfg 가 있는 폴더)',
+                openLabel: '고르기', canSelectFiles: false, canSelectFolders: true });
+            const one = Array.isArray(uri) ? uri[0] : uri;
+            if (!one) {
+                return;
+            }
+            await this.manager.call('set_launcher_root', { id: inst.id, path: FileUri.fsPath(one) });
+            r = await this.manager.call<{ launcher: string; kind: string; file: string }>('launch_linked', { id: inst.id });
+        }
         await this.manager.call('official_tail_log', { id: inst.id }).catch(() => undefined);   // 게임 로그·실행 상태
         await this.manager.setTarget(inst.id);
         await this.registry.executeCommand(TaskCommandIds.GAME_LOG_TOGGLE).catch(() => undefined);

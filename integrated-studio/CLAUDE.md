@@ -188,6 +188,12 @@ Theia 확장은 TypeScript로 작성한다. Python 쪽은 `sidecar/` 아래에�
   만들기·불러오기·실행이 멈추고 껐다 켜야 보이던 원인. `rpc.py` 가 시작할 때 프로토콜을 복제한 설명자로 떼어 내고 표준 입력=빈 입력,
   표준 출력=로그로 바꿈(Windows 는 SetStdHandle 까지). 시험 `tests/test_rpc_isolation.py`(고치기 전 코드로는 실패 확인). git 은 서명·후크·프롬프트 끄고 시간 제한.
   RPC 인자 이름 점검 시험 `tests/test_rpc_args.py`(프런트·백엔드의 `.call('이름', {…})` ↔ 사이드카 핸들러) — 'iid'/'id' 불일치로 연결 실행이 통째로 안 되던 문제 재발 방지.
+- 고침(2026-11-27): 코드 점검으로 찾은 4가지. ① 실행 파일을 `cmd /d /s /c ""경로""`(문자열)로 실행 — 예전 `cmd /c "경로"` 는 경로에 `( ) &` 가 있으면
+  따옴표가 떼어져 실패(대체 이름 `통합 작업실 실행 (통합 작업실).cmd` 는 항상 해당). rem 줄의 이름은 `%`→`%%`. ② 연결 인스턴스 복제: `installed`/`versionId` 는
+  공식 .minecraft 에 그 버전이 실제로 있을 때만(아니면 첫 실행 때 설치), 우리 실행 파일은 복사하지 않음, Prism 연결 복제면 "공식 런처로 실행" 안내.
+  ③ Prism 데이터 폴더 찾기: 위로 올라가며 + 알려진 데이터 폴더(·exe 옆 포터블)의 cfg `InstanceDir` 비교. 그래도 없으면 실행 때 `[launcher-root]` 오류 →
+  프런트가 폴더 고르기 → RPC `set_launcher_root(id, path)`(그 데이터 폴더의 인스턴스 목록에 있어야 함). 시작 때 `migrate_linked` 가 빈 root 를 다시 찾음.
+  ④ 사용 중 확인: 게임 폴더와 원래 인스턴스 폴더(`sourceDir`, Prism java 의 `<인스턴스>/natives`)를 `/`·`\`·대소문자 무시로 비교, Prism·MultiMC 는 실행 뒤 30초 다시 실행 막음.
 
 ### M9. 패키징 (내 PC용)
 - electron-builder로 Windows 설치 파일 또는 압축 실행판을 만든다. **배포하지 않는다** — 개인 사용 전용.

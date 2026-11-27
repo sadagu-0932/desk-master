@@ -197,7 +197,8 @@ class InstanceStore:
         new = self.create((name or f"{src_meta['name']} 복사본")[:64], src_meta["version"], src_meta["loader"],
                           src_meta.get("loaderVersion"), src_meta.get("group"), src_meta.get("icon"),
                           cc_enabled=bool(src_meta.get("ccEnabled")))
-        from importers.launchers import is_account_file   # 계정·토큰 파일은 복사하지 않는다
+        from importers import launchfile
+        from importers.launchers import default_roots, is_account_file   # 계정·토큰 파일은 복사하지 않는다
 
         def skip(_d: str, names: list[str]) -> set[str]:
             return {n for n in names if n == "session.lock" or is_account_file(n)}
@@ -205,17 +206,37 @@ class InstanceStore:
         for item in src.iterdir():
             if item.name in self.DUPLICATE_SKIP or item.is_symlink() or is_account_file(item.name):
                 continue
+            if item.name.startswith(launchfile.BASENAME) and item.is_file() and launchfile.is_ours(item):
+                continue   # 연결 인스턴스의 실행 파일(원래 런처의 원래 인스턴스를 켠다) → 복사본엔 맞지 않음
             target = safe_join(dst, item.name)
             if item.is_dir():
                 shutil.copytree(item, target, dirs_exist_ok=True, ignore=skip)
             else:
                 shutil.copy2(item, target)
         meta = self.get(new["id"])
-        for key in ("jvmArgs", "versionId", "installed"):
-            if src_meta.get(key) is not None:
-                meta[key] = src_meta[key]
+        if src_meta.get("jvmArgs") is not None:
+            meta["jvmArgs"] = src_meta["jvmArgs"]
+        notice = None
+        if src_meta.get("linkedDir"):
+            # 복사본은 앱의 보통 인스턴스(공식 런처로 실행). 원본이 Prism·MultiMC 연결이면 '설치됨'은 그 런처 기준이라
+            # 그대로 옮기면 설치를 건너뛰고 등록에서 막혔다 → 공식 .minecraft 에 그 버전이 실제로 있을 때만 설치됨.
+            from importers.local import official_version_id
+            have = official_version_id(src_meta["version"], src_meta["loader"], src_meta.get("loaderVersion"),
+                                       [Path(d) for d in default_roots().get("official", [])])
+            meta["installed"] = bool(have)
+            meta["versionId"] = have
+            if src_meta.get("launchKind") in ("prism", "multimc"):
+                notice = ("복사본은 원래 런처가 아니라 공식 런처로 실행합니다."
+                          + ("" if have else " 처음 실행할 때 게임·로더를 한 번 설치합니다."))
+        else:
+            for key in ("versionId", "installed"):
+                if src_meta.get(key) is not None:
+                    meta[key] = src_meta[key]
         self.save(meta)
-        return self.get(new["id"])
+        out = self.get(new["id"])
+        if notice:
+            out["notice"] = notice
+        return out
 
     def set_memory(self, inst_id: str, memory_mb: int | None = None, java_args: str | None = None) -> dict[str, Any]:
         """공식 런처 항목의 JVM 인자(최대 메모리 -Xmx + 추가 인자)."""

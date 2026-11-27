@@ -520,3 +520,108 @@ def test_in_use_survives_powershell_returning_none(world, monkeypatch):
     assert seen["encoding"] == "utf-8" and "OutputEncoding" in seen["cmd"][-1]
     r = imp.in_use(inst["id"])
     assert r["linked"] is True
+
+
+# ---------------------------------------------------------------- 2026-11-27 고침 4가지
+def test_win_command_keeps_quotes_for_special_paths():
+    """1) `cmd /c "경로"` 는 ( ) & 가 든 경로에서 따옴표가 떼어져 실패했다 → /s + 겹 따옴표."""
+    from importers import launchfile
+    p = Path(r"C:\Users\a (1)\instances\A & B\minecraft\통합 작업실 실행 (통합 작업실).cmd")
+    assert launchfile.win_command(p) == f'cmd /d /s /c ""{p}""'
+    meta = {"name": "100%~ 팩\r\n", "launchKind": "prism",
+            "launchVia": {"kind": "prism", "root": r"C:\P (x)", "instance": "A & B"}}
+    text = launchfile.script_text(meta, r"C:\P (x)\prismlauncher.exe", windows=True)
+    rem = next(line for line in text.splitlines() if line.startswith("rem 통합"))
+    assert "100%%~ 팩" in rem                     # %~ 가 배치 파일을 멈추지 않게
+    assert '--dir "C:\\P (x)" --launch "A & B"' in text
+
+
+def test_duplicate_of_prism_linked_installs_and_skips_launch_file(world):
+    """2) Prism 연결 복제본: '설치됨'을 그대로 옮기면 설치를 건너뛰고 등록에서 막혔다."""
+    imp, store = world["imp"], world["store"]
+    e = by_name(imp.detect(), "Fabric 팩")
+    linked = imp.import_many([{"key": e["key"]}], "link")["imported"][0]
+    assert Path(linked["launchFile"]).is_file()
+    dup = store.duplicate(linked["id"])
+    assert dup["installed"] is False and not dup.get("versionId")
+    assert "공식 런처" in dup["notice"]
+    assert not list(Path(dup["path"]).glob("통합 작업실 실행*"))     # 원래 인스턴스를 켜는 파일은 복사 안 함
+    assert (Path(dup["path"]) / "mods" / "mod0.jar").is_file()
+
+
+def test_duplicate_of_linked_keeps_installed_when_official_has_version(world, monkeypatch):
+    imp, store = world["imp"], world["store"]
+    mc = world["mc"]
+    w(mc / "versions" / "fabric-loader-0.20.1-26.3" / "fabric-loader-0.20.1-26.3.json", "{}")
+    monkeypatch.setenv("APPDATA", str(mc.parent))
+    e = by_name(imp.detect(), "Fabric 팩")
+    linked = imp.import_many([{"key": e["key"]}], "link")["imported"][0]
+    dup = store.duplicate(linked["id"])
+    assert dup["installed"] is True and dup["versionId"] == "fabric-loader-0.20.1-26.3"
+    assert "처음 실행할 때" not in dup["notice"]
+
+
+def test_in_use_detects_prism_java_and_launch_guard(world, monkeypatch):
+    """4) Prism 이 띄운 java 명령줄엔 '<인스턴스>/natives' 가 '/' 로 들어간다. 실행 직후 30초는 다시 실행 막기."""
+    from importers import launchfile
+    imp = world["imp"]
+    e = by_name(imp.detect(), "Fabric 팩")
+    inst = imp.import_many([{"key": e["key"]}], "link")["imported"][0]
+    src = inst["sourceDir"]
+    old = time.time() - 3600
+    os.utime(Path(inst["path"]) / "logs" / "latest.log", (old, old))
+    natives = src.replace("\\", "/").upper() + "/natives"
+    monkeypatch.setenv("INTEGRATED_STUDIO_FAKE_PROCS", f"javaw.exe|javaw -Djava.library.path={natives} -cp x Main")
+    assert imp.in_use(inst["id"])["busy"] is True
+    monkeypatch.setenv("INTEGRATED_STUDIO_FAKE_PROCS", f"javaw.exe|javaw -Djava.library.path={src}2/natives")
+    assert imp.in_use(inst["id"])["busy"] is False                 # 'X' 가 'X2' 에 걸리지 않음
+    monkeypatch.setenv("INTEGRATED_STUDIO_FAKE_PROCS", "")
+    monkeypatch.setattr(launchfile, "run", lambda p: None)
+    import importers.local as local_mod
+    monkeypatch.setattr(local_mod, "find_launcher_exe", lambda k, r: Path("/x/prismlauncher"))
+    imp.launch_linked(inst["id"])
+    r = imp.in_use(inst["id"])
+    assert r["busy"] and "켜지는 중" in r["reasons"][0]
+    imp._launched[inst["id"]] -= local_mod.LAUNCH_GUARD_S + 1
+    assert imp.in_use(inst["id"])["busy"] is False
+
+
+def test_prism_root_found_when_instance_dir_moved_elsewhere(tmp_path, monkeypatch):
+    """3) Prism 설정에서 인스턴스 폴더를 데이터 폴더 밖으로 옮긴 경우에도 데이터 폴더를 찾는다(설정 InstanceDir)."""
+    appdata = tmp_path / "Roaming"
+    prism = appdata / "PrismLauncher"
+    elsewhere = tmp_path / "D" / "MC 인스턴스"
+    w(prism / "prismlauncher.cfg", f"[General]\nInstanceDir={elsewhere}\n")
+    inst = elsewhere / "팩 (1)"
+    w(inst / "mmc-pack.json", json.dumps({"components": [{"uid": "net.minecraft", "version": "26.3"}]}))
+    (inst / "minecraft").mkdir()
+    monkeypatch.setenv("APPDATA", str(appdata))
+    assert launchers.guess_launcher_root(inst) == prism
+    assert launchers.guess_launcher_root(tmp_path / "없는" / "곳") is None
+
+
+def test_missing_prism_root_asks_user_then_launches(world, monkeypatch, tmp_path):
+    from importers import launchfile
+    import importers.local as local_mod
+    imp, store = world["imp"], world["store"]
+    e = by_name(imp.detect(), "Fabric 팩")
+    inst = imp.import_many([{"key": e["key"]}], "link")["imported"][0]
+    meta = store.get(inst["id"])
+    meta["launchVia"]["root"] = None
+    store.save(meta)
+    monkeypatch.setattr(launchers, "guess_launcher_root", lambda f, extra=None: None)
+    monkeypatch.setattr(launchfile, "run", lambda p: None)
+    monkeypatch.setattr(local_mod, "find_launcher_exe", lambda k, r: Path("/x/prismlauncher"))
+    with pytest.raises(RpcError) as ex:
+        imp.launch_linked(inst["id"])
+    assert local_mod.NEED_ROOT_TAG in str(ex.value)
+    with pytest.raises(RpcError):
+        imp.set_launcher_root(inst["id"], str(tmp_path))            # 데이터 폴더가 아님
+    other = tmp_path / "다른 Prism"
+    w(other / "prismlauncher.cfg", "[General]\n")
+    with pytest.raises(RpcError):
+        imp.set_launcher_root(inst["id"], str(other))               # 이 인스턴스가 없는 데이터 폴더
+    out = imp.set_launcher_root(inst["id"], str(world["prism"]))
+    assert out["launchVia"]["root"] == str(world["prism"].resolve())
+    assert f'--dir "{world["prism"].resolve()}"' in Path(out["launchFile"]).read_text("utf-8").replace("'", '"')
+    assert imp.launch_linked(inst["id"])["ok"]

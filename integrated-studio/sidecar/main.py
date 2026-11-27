@@ -145,6 +145,7 @@ def main() -> None:
         "import_in_use": lambda id: local_import.in_use(id),
         "launch_external": lambda id: local_import.launch_external(id),
         "launch_linked": lambda id: local_import.launch_linked(id),
+        "set_launcher_root": lambda id, path: local_import.set_launcher_root(id, path),
         "sync_now": settings_sync.sync_now,
     }
     background = {"install", "duplicate_instance", "list_versions", "list_loader_versions", "server_start", "server_stop", "generate_reports", "mod_new", "mod_build", "read_commands", "inspect_import", "import_file",

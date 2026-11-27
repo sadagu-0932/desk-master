@@ -181,11 +181,37 @@ def read_prism_instance(folder: Path, launcher: str = "prism") -> dict[str, Any]
                   last, mem, java, launcherInstanceId=folder.name, launcherRoot=str(root) if root else None)
 
 
-def guess_launcher_root(instance_folder: Path) -> Path | None:
-    """인스턴스 폴더에서 Prism·MultiMC 데이터 폴더를 찾는다(보통 <데이터>/instances/<인스턴스>)."""
+def is_launcher_root(cand: Path) -> bool:
+    return any((cand / n).is_file() for n in ("prismlauncher.cfg", "multimc.cfg", "accounts.json")) or \
+        any((cand / n).is_file() for n in ("prismlauncher.exe", "MultiMC.exe", "multimc.exe"))
+
+
+def root_has_instance(root: Path, instance_folder: Path) -> bool:
+    """그 데이터 폴더의 인스턴스 목록(설정 InstanceDir 반영)에 이 인스턴스 폴더가 있는지."""
+    try:
+        want = instance_folder.resolve()
+    except OSError:
+        return False
+    for d in _prism_instance_dirs(root):
+        try:
+            if (d / instance_folder.name).resolve() == want:
+                return True
+        except OSError:
+            continue
+    return False
+
+
+def guess_launcher_root(instance_folder: Path, extra: list[Path] | None = None) -> Path | None:
+    """인스턴스 폴더에서 Prism·MultiMC 데이터 폴더를 찾는다.
+    1) 보통 <데이터>/instances/<인스턴스> → 위로 올라가며 확인
+    2) Prism 설정에서 인스턴스 폴더를 다른 곳으로 바꾼 경우 → 알려진 데이터 폴더(+ 찾은 exe 옆 포터블)의
+       prismlauncher.cfg/multimc.cfg 의 InstanceDir 가 이 인스턴스의 상위 폴더인지(설정 파일은 읽기만)."""
     for cand in (instance_folder.parent.parent, instance_folder.parent):
-        if any((cand / n).is_file() for n in ("prismlauncher.cfg", "multimc.cfg", "accounts.json")) or \
-                any((cand / n).is_file() for n in ("prismlauncher.exe", "MultiMC.exe", "multimc.exe")):
+        if is_launcher_root(cand):
+            return cand
+    roots = default_roots()
+    for cand in [*(extra or []), *roots.get("prism", []), *roots.get("multimc", [])]:
+        if cand and cand.is_dir() and is_launcher_root(cand) and root_has_instance(cand, instance_folder):
             return cand
     return None
 

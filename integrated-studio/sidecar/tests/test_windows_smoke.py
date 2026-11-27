@@ -96,3 +96,24 @@ def test_windows_link_run_delete(tmp_path):
         assert inst.is_dir() and (game / "saves" / "w" / "level.dat").is_file()   # 원래 폴더는 그대로
     finally:
         sc.close()
+
+
+def test_windows_launch_file_runs_with_special_characters(tmp_path):
+    """1) 경로·파일 이름에 ( ) & 한글이 있어도 실행 파일이 실제로 실행된다(launchfile.run).
+    예전 `cmd /c "경로"` 는 따옴표가 떼어져 '...\\통합' 에서 끊겼다. 실행되면 표시 파일을 남기는 파일로 확인."""
+    sys.path.insert(0, str(SIDECAR))
+    from importers import launchfile
+    for sub in ("보통 폴더", "괄호 (1) & 한글"):
+        game = tmp_path / sub / "instances" / "팩 A & B (1)" / "minecraft"
+        game.mkdir(parents=True)
+        for name in (launchfile.file_name(), launchfile.file_name().replace(launchfile.BASENAME, launchfile.BASENAME + " (통합 작업실)")):
+            path = game / name
+            marker = game / "ran.txt"
+            marker.unlink(missing_ok=True)
+            path.write_bytes(f'@echo off\r\nrem {launchfile.MARKER}\r\necho ok> "%~dp0ran.txt"\r\n'.encode("utf-8"))
+            launchfile.run(path)
+            for _ in range(150):
+                if marker.exists():
+                    break
+                time.sleep(0.1)
+            assert marker.exists(), f"실행되지 않음: {path}"

@@ -40,6 +40,11 @@ def _bat(s: str) -> str:
     return s.replace("%", "%%")
 
 
+def _rem(s: str) -> str:
+    """rem 줄에 넣는 이름: % 는 %% 로(%~ 같은 글자가 배치 파일을 멈추지 않게), 줄바꿈 제거."""
+    return _bat(str(s)).replace("\r", " ").replace("\n", " ")
+
+
 def _candidates(kind: str, root: str | None, found: str | None) -> tuple[list[str], list[str], str | None]:
     """(실제 경로 후보, 환경 변수를 쓰는 후보, PATH 에서 찾을 이름)"""
     lit: list[str] = [found] if found else []
@@ -84,7 +89,7 @@ def script_text(meta: dict[str, Any], found_exe: str | None = None, windows: boo
     if windows:
         out = ["@echo off", "chcp 65001 >nul",
                f"rem {MARKER}",
-               f"rem 통합 작업실이 만든 파일: '{meta.get('name', '')}' 을(를) {name}(으)로 엽니다. 지워도 통합 작업실에서 실행하면 다시 만듭니다."]
+               f"rem 통합 작업실이 만든 파일: '{_rem(meta.get('name', ''))}' 을(를) {name}(으)로 엽니다. 지워도 통합 작업실에서 실행하면 다시 만듭니다."]
         for c in lit:
             out.append(f'if exist "{_bat(c)}" start "" "{_bat(c)}"{args_w} & exit /b 0')
         for c in env:   # 환경 변수는 실행할 때 풀린다
@@ -132,10 +137,17 @@ def write(meta: dict[str, Any], folder: Path, found_exe: str | None = None) -> P
     return path
 
 
+def win_command(path: Path) -> str:
+    """cmd 로 실행 파일을 부르는 한 줄. `cmd /c "경로"` 는 경로에 ( ) & ^ @ 가 있으면 cmd 가 따옴표를 떼어
+    띄어쓰기에서 끊겼다. /s 는 맨 앞·맨 뒤 따옴표 하나씩만 떼므로 ""경로"" → "경로" 가 그대로 남는다.
+    목록으로 넘기면 파이썬이 안쪽 따옴표를 \\" 로 바꿔서 cmd 가 못 알아들으니 문자열로 넘긴다. /d = AutoRun 무시."""
+    return f'cmd /d /s /c ""{path}""'
+
+
 def run(path: Path) -> None:
     """실행 파일을 실행한다(창 없이). 런처는 파일 안의 start 로 따로 뜬다."""
     if sys.platform == "win32":
-        subprocess.Popen(["cmd", "/c", str(path)], cwd=str(path.parent),
+        subprocess.Popen(win_command(path), cwd=str(path.parent), stdin=subprocess.DEVNULL,
                          creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0), close_fds=True)
     else:
         subprocess.Popen(["sh", str(path)], cwd=str(path.parent), close_fds=True, start_new_session=True)

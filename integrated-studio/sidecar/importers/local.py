@@ -30,6 +30,26 @@ LAUNCHER_PROCS = {"prismlauncher.exe": "Prism Launcher", "multimc.exe": "MultiMC
                   "minecraftlauncher.exe": "공식 런처", "minecraft.exe": "공식 런처"}
 
 
+LAUNCH_GUARD_S = 30   # Prism 으로 켠 뒤 게임 로그가 시작 줄을 쓰기 전까지 다시 실행을 막는 시간
+NEED_ROOT_TAG = "[launcher-root]"   # 프런트가 이 글자를 보면 데이터 폴더 고르기 창을 띄운다
+
+
+def _norm_path(s: str) -> str:
+    return s.replace("/", "\\").rstrip("\\").lower()
+
+
+def _path_in_cmd(target: str, cmd: str) -> bool:
+    """명령줄에 그 폴더(또는 그 안의 경로)가 있는지. '/'·'\\'·대소문자 무시, 'X' 가 'X2' 에 걸리지 않게 뒤 글자 확인."""
+    c = _norm_path(cmd)
+    i = c.find(target)
+    while i >= 0:
+        end = i + len(target)
+        if end == len(c) or c[end] in '\\" \t;':
+            return True
+        i = c.find(target, i + 1)
+    return False
+
+
 def _jvm_args(memory_mb: int | None, java_args: str | None) -> str | None:
     parts = [a for a in (java_args or "").split() if not re.match(r"-Xm[xs]\d", a)]
     if memory_mb:
@@ -59,6 +79,7 @@ class LocalImporter:
         self.install = install
         self.roots = roots
         self._cache: dict[str, dict[str, Any]] = {}
+        self._launched: dict[str, float] = {}   # 연결 인스턴스를 마지막으로 실행한 시각(겹쳐 켜기 방지)
 
     # ---------- 감지 ----------
     def detect(self) -> list[dict[str, Any]]:
@@ -239,6 +260,13 @@ class LocalImporter:
                 meta["sourceDir"] = rest if prefix in ("prism", "multimc", "curseforge", "modrinth", "folder") and Path(rest).is_dir() \
                     else meta["linkedDir"]
                 changed = True
+            via = meta.get("launchVia") or {}
+            if via.get("kind") in ("prism", "multimc") and not via.get("root") and meta.get("sourceDir"):
+                root = launchers.guess_launcher_root(Path(meta["sourceDir"]))
+                if root:
+                    meta["launchVia"] = {**via, "root": str(root)}
+                    meta["launchFile"] = None    # 새 --dir 로 다시 만든다
+                    changed = True
             want_kind = (meta.get("launchVia") or {}).get("kind") or "official"
             if meta.get("launchKind") != want_kind:
                 meta["launchKind"] = want_kind
@@ -314,6 +342,14 @@ class LocalImporter:
         kind = meta.get("launchKind") or "official"
         if kind in ("prism", "multimc"):
             via = meta.get("launchVia") or {}
+            if not via.get("root"):
+                path = self._refind_root(iid) or path
+                meta = self.store.get(iid)
+                via = meta.get("launchVia") or {}
+            if not via.get("root"):
+                name = launchfile.KIND_NAMES[kind]
+                raise RpcError(f"{NEED_ROOT_TAG} {name} 데이터 폴더(인스턴스 목록이 있는 곳)를 찾지 못했습니다. "
+                               f"{name} 데이터 폴더를 골라 주세요.")
             if not find_launcher_exe(kind, Path(via["root"]) if via.get("root") else None):
                 name = launchfile.KIND_NAMES[kind]
                 raise RpcError(f"{name} 실행 파일을 찾지 못했습니다. {name}이(가) 설치돼 있는지 확인하세요.")
@@ -321,7 +357,44 @@ class LocalImporter:
             launchfile.run(path)
         except OSError as e:
             raise RpcError(f"실행 파일을 실행하지 못했습니다: {e}") from e
+        self._launched[iid] = time.time()
         return {"ok": True, "kind": kind, "launcher": launchfile.KIND_NAMES[kind], "file": str(path)}
+
+    def _refind_root(self, iid: str) -> Path | None:
+        """데이터 폴더를 다시 찾아 저장하고 실행 파일을 다시 만든다(못 찾으면 None)."""
+        meta = self.store.get(iid)
+        via = dict(meta.get("launchVia") or {})
+        src = meta.get("sourceDir")
+        if not src:
+            return None
+        kind = meta.get("launchKind") or via.get("kind") or "prism"
+        exe = find_launcher_exe(kind, None)
+        root = launchers.guess_launcher_root(Path(src), [exe.parent] if exe else None)
+        if not root:
+            return None
+        via["root"] = str(root)
+        meta["launchVia"] = via
+        self.store.save(meta)
+        return self.ensure_launch_file(iid)
+
+    def set_launcher_root(self, iid: str, path: str) -> dict[str, Any]:
+        """사용자가 고른 Prism·MultiMC 데이터 폴더를 저장(그 폴더의 인스턴스 목록에 이 인스턴스가 있어야 함)."""
+        meta = self.store.get(iid)
+        via = dict(meta.get("launchVia") or {})
+        if (meta.get("launchKind") or "") not in ("prism", "multimc") or not meta.get("sourceDir"):
+            raise RpcError("Prism·MultiMC 로 연결한 인스턴스가 아닙니다.")
+        root = Path(path)
+        if not root.is_dir():
+            raise RpcError(f"폴더가 없습니다: {root}")
+        if not launchers.is_launcher_root(root):
+            raise RpcError("Prism·MultiMC 데이터 폴더가 아닙니다(prismlauncher.cfg·multimc.cfg 가 있는 폴더를 골라 주세요).")
+        if not launchers.root_has_instance(root, Path(meta["sourceDir"])):
+            raise RpcError(f"이 데이터 폴더의 인스턴스 목록에 '{Path(meta['sourceDir']).name}' 이(가) 없습니다.")
+        via["root"] = str(root.resolve())
+        meta["launchVia"] = via
+        self.store.save(meta)
+        self.ensure_launch_file(iid)
+        return self.store.get(iid)
 
     def launch_external(self, iid: str) -> dict[str, Any]:
         """예전 이름(호환)."""
@@ -338,10 +411,18 @@ class LocalImporter:
         for lock in game.glob("saves/*/session.lock"):
             if _locked(lock):
                 reasons.append(f"월드 '{lock.parent.name}' 가 열려 있습니다(session.lock).")
+        kind = meta.get("launchKind") or "official"
+        started = self._launched.get(iid)
+        if kind in ("prism", "multimc") and started and time.time() - started < LAUNCH_GUARD_S:
+            reasons.append(f"방금({int(time.time() - started)}초 전) 실행했습니다 — 켜지는 중입니다. "
+                           f"{LAUNCH_GUARD_S}초 뒤에도 안 켜지면 다시 눌러 주세요.")
         procs = _processes()
-        game_s = str(game).lower().rstrip("\\/")
+        # Prism 이 띄운 java 명령줄엔 게임 폴더(minecraft)가 없고 '<인스턴스>/natives' 처럼 원래 인스턴스 폴더가, '/' 구분자로 들어간다
+        targets = [_norm_path(str(game))]
+        if meta.get("sourceDir"):
+            targets.append(_norm_path(meta["sourceDir"]))
         for name, cmd in procs:
-            if name in ("java.exe", "javaw.exe", "java") and game_s and game_s in cmd.lower():
+            if name in ("java.exe", "javaw.exe", "java") and any(_path_in_cmd(t, cmd) for t in targets if t):
                 reasons.append("이 폴더로 켜진 마인크래프트가 있습니다.")
                 break
         owners = sorted({LAUNCHER_PROCS[n] for n, _ in procs if n in LAUNCHER_PROCS and LAUNCHER_PROCS[n] != "공식 런처"})
