@@ -219,6 +219,35 @@ test('playit: 검증값이 다르면 버림, 거절·한도 초과는 한국어 
     await fp.close();
 });
 
+test('playit: 연결이 풀리면 키를 옆으로 옮겨 "연결 안 됨"이 되고, 다시 연결하면 에이전트도 새 키로', async () => {
+    const fp = await fakePlayit();
+    const d = tmp();
+    const secretPath = path.join(d, 'playit_gg', 'playit.toml');
+    const spawned = [];
+    const pm = new PlayitManager({ dir: path.join(d, 'agent'), apiBase: fp.base, releaseApi: fp.base + '/release', secretPath,
+        claimPollMs: 5, spawnAgent: () => { const p = fakeAgent(); spawned.push(p); return p; } });
+    await pm.install();
+    await pm.claim();
+    pm.acquire('srv');
+    assert.equal((await pm.verify()).linked, true);
+    fp.state.secret = 'ef'.repeat(32);                 // playit.gg 에서 에이전트를 지움 → 예전 키 무효
+    const st = await pm.verify();
+    assert.equal(st.linked, false);
+    assert.equal(st.agentRunning, false);              // 죽은 키로 돌던 에이전트는 끔
+    assert.match(st.message, /다시 연결/);
+    assert.ok(fs.readdirSync(path.dirname(secretPath)).some(f => f.startsWith('playit.toml.invalid-')));   // 지우지 않고 보관
+    await assert.rejects(pm.ensureTunnel('x', 1), /연결/);
+    await pm.claim(true);                              // [playit 다시 연결]
+    assert.equal(readSecret(secretPath), 'ef'.repeat(32));
+    assert.equal(pm.status().linked, true);
+    assert.equal(pm.status().agentRunning, true);      // 쓰던 서버가 있어 새 키로 다시 켬
+    assert.equal(spawned.length, 2);
+    await pm.claim(true);                              // 연결돼 있어도 force 면 새로
+    assert.equal(pm.status().linked, true);
+    pm.stopAgent();
+    await fp.close();
+});
+
 test('readLines: 1MB 넘는 로그를 조각으로 읽어도 줄·한글이 깨지지 않음', async () => {
     const { readLines } = await import('../lib/node/lan-watcher.js');
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lanlog-'));

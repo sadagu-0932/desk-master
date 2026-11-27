@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from instances import InstanceStore
+import java_find
 import net
 from paths import safe_join, trash
 from rpc import RpcError, notify
@@ -268,8 +269,11 @@ class Packs:
             raise RpcError("이미 빌드 중입니다.")
         win = sys.platform == "win32"
         cmd = [str(root / ("gradlew.bat" if win else "gradlew")), "build", "--console=plain"]
-        env = dict(os.environ)  # 빌드는 사용자가 설치한 JDK 25(JAVA_HOME)를 쓴다. 게임용 런타임에는 javac가 없다
+        # 빌드는 이 PC 의 JDK 25 를 쓴다(게임용 런타임에는 javac 가 없다). 찾으면 JAVA_HOME 을 그 JDK 로 맞춘다(옛 JAVA_HOME 이 8·17 이어도 되게)
+        env, jdk = java_find.build_env()
         notify("log", {"id": id, "level": "info", "source": "build", "line": f"빌드 시작: {label} (./gradlew build)"})
+        notify("log", {"id": id, "level": "info" if jdk else "warn", "source": "build",
+                       "line": f"JDK: {jdk['home']} (Java {jdk['major']})" if jdk else java_find.missing_message("빌드")})
         proc = subprocess.Popen(cmd, cwd=root, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                 stdin=subprocess.DEVNULL, text=True, encoding="utf-8", errors="replace",
                                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
@@ -285,7 +289,8 @@ class Packs:
         finally:
             self.builds.pop(id, None)
         if code != 0:
-            raise RpcError(f"빌드 실패(코드 {code}). 게임 로그 탭의 빌드 출력을 확인하세요. JDK 25가 설치돼 있고 JAVA_HOME이 그 JDK를 가리켜야 합니다.")
+            hint = "" if jdk else " " + java_find.missing_message("빌드")
+            raise RpcError(f"[BUILD-{code}] 빌드 실패(코드 {code}). 게임 로그 탭의 빌드 출력을 확인하세요.{hint}")
         libs = root / "build" / "libs"
         jars = [j for j in libs.glob("*.jar") if not j.name.endswith(("-sources.jar", "-dev.jar", "-javadoc.jar"))]
         if not jars:

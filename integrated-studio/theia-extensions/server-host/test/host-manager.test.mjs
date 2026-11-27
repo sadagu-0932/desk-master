@@ -187,3 +187,58 @@ test('실제 상태 조회와 함께(가짜 마인크래프트 서버)', async (
     assert.equal(igd.mappings.size, 0);
     await mc.close();
 });
+
+test('전용 서버 오류 코드: 로그 오류(ds_error)·종료 코드가 카드에 남고, 다시 시작하면 지워짐', async () => {
+    const { m, sidecar } = setup();
+    const s = await m.createServer({ kind: 'dedicated', instanceId: 'inst_aaaaaaaa', name: '모드 서버' });
+    sidecar.nextPort = 25570;
+    await m.startServer(s.id);
+    const sid = m.snapshot().servers[0].serverId;
+    sidecar.notify('ds_error', { id: sid, error: { code: 'MOD-201', title: '필요한 모드가 없거나', hint: '모드 확인', details: ['requires fabric-api'] } });
+    sidecar.notify('ds_state', { id: sid, state: 'stopped', exitCode: 1, errors: [{ code: 'MOD-201', title: 'x', hint: 'y' }, { code: 'CRASH-101', title: '튕김', hint: 'z' }] });
+    assert.ok(await wait(() => m.snapshot().servers[0].state === 'error'));
+    let v = m.snapshot().servers[0];
+    assert.deepEqual(v.errors.map(e => e.code), ['MOD-201', 'CRASH-101']);
+    assert.match(v.message, /종료 코드 1.*MOD-201/);
+    assert.ok(m.console(s.id).some(l => l.includes('[MOD-201]')));
+    await m.startServer(s.id);
+    v = m.snapshot().servers[0];
+    assert.equal(v.errors.length, 0);
+    // 시작 자체가 실패(사이드카 오류에 코드)
+    sidecar.call = async (method) => { if (method === 'ds_start') { throw new Error('[JAVA-001] Java 25 을(를) 찾지 못했습니다.'); } return {}; };
+    await m.startServer(s.id);
+    v = m.snapshot().servers[0];
+    assert.equal(v.state, 'error');
+    assert.equal(v.errors[0].code, 'JAVA-001');
+    await m.dispose();
+});
+
+test('친구가 못 들어와요: UPnP 로 열린 주소를 닫고 playit 으로 다시 열기, 방화벽 확인', async () => {
+    const fp = await fakePlayit();
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'shn-'));
+    const playit = new PlayitManager({ dir: path.join(dir, 'agent'), apiBase: fp.base, releaseApi: fp.base + '/release',
+        secretPath: path.join(dir, 'playit.toml'), claimPollMs: 5, spawnAgent: () => fakeAgent() });
+    await playit.install();
+    await playit.claim();
+    const { m, sidecar, pings, igd } = setup({ playit });
+    const fw = { ok: false, block: 1, message: '[NET-201] 막고 있습니다', path: 'C:/java.exe' };
+    const orig = sidecar.call.bind(sidecar);
+    sidecar.call = async (method, params) => method === 'firewall_check' ? fw : orig(method, params);
+    const s = await m.createServer({ kind: 'dedicated', instanceId: 'inst_aaaaaaaa', name: '전용2' });
+    sidecar.nextPort = 25580;
+    await m.startServer(s.id);
+    const sid = m.snapshot().servers[0].serverId;
+    pings.set(25580, okPing());
+    sidecar.notify('ds_state', { id: sid, state: 'ready', port: 25580 });
+    assert.ok(await wait(() => m.snapshot().servers[0].address.state === 'open'));
+    assert.equal(m.snapshot().servers[0].address.provider, 'upnp');
+    assert.ok(await wait(() => m.snapshot().servers[0].firewall?.block === 1));       // UPnP 면 방화벽도 확인
+    await m.nextProvider(s.id);
+    const v = m.snapshot().servers[0];
+    assert.equal(v.address.provider, 'playit');
+    assert.equal(igd.mappings.size, 0);                                             // UPnP 매핑은 닫음
+    assert.ok(v.address.attempts.some(a => a.provider === 'upnp' && !a.ok && /건너뜀/.test(a.reason)));
+    await m.stopServer(s.id);
+    await m.dispose();
+    await fp.close();
+});

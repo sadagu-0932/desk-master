@@ -31,7 +31,8 @@ import net
 from instances import InstanceStore
 from paths import safe_join
 from rpc import RpcError, notify
-from server_mods import E4MC_IDS, client_required_mods, scan_mods
+import server_errors
+from server_mods import E4MC_IDS, client_required_mods, mods_config, read_mod_info, scan_mods
 
 EULA_URL = "https://aka.ms/MinecraftEULA"
 DONE_RE = re.compile(r'Done \([0-9.,]+s\)! For help, type')
@@ -152,6 +153,7 @@ class ServerRunner:
         self.ready: dict[str, bool] = {}
         self.lock = threading.Lock()
         self._current = ""
+        self.diag: dict[str, server_errors.Diagnoser] = {}
 
     # ---------- 폴더·설정 ----------
     def _sdir(self, inst_id: str, sid: str) -> Path:
@@ -445,23 +447,222 @@ class ServerRunner:
             raise RpcError(f"{LOADER_NAMES[loader]} 서버 설치에 실패했습니다(코드 {proc.returncode}). 콘솔을 확인하세요.")
         marker.write_text(full, "utf-8")
 
+    # ---------- 모드: 인스턴스 → 서버 복사, 일치 확인(사용자 요청 2026-11-27 "복사가 이상함 · 일치하는지 확인") ----------
+    MANIFEST = ".studio-mods.json"          # (서버 폴더) 앱이 서버 mods/ 에 복사한 파일 목록(사용자가 직접 넣은 건 건드리지 않으려고)
+    CONFIG_DIRS = ("config", "defaultconfigs", "kubejs")
+
+    @staticmethod
+    def _server_side(info: dict[str, Any] | None) -> bool:
+        """서버에서도 돌릴 모드인가. 정보를 못 읽는 jar(라이브러리 등)는 넣는다 — 빼면 의존 모드가 없어 서버가 안 켜진다."""
+        if info is None:
+            return True
+        if info["id"] in E4MC_IDS:
+            return False
+        return info.get("environment") not in ("client",)
+
+    def _read_manifest(self, d: Path) -> dict[str, Any]:
+        try:
+            return json.loads((d / self.MANIFEST).read_text("utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return {"copied": {}}
+
     def _sync_server_mods(self, id: str, d: Path) -> list[str]:
-        """인스턴스 mods/ 중 서버에서도 도는 모드를 서버 mods/ 로. 인스턴스에서 빠진 모드는 서버에서도 뺀다(휴지통)."""
+        """인스턴스 mods/ 중 서버에서도 도는 모드를 서버 mods/ 로(크기·수정 시각이 다르면 다시).
+        지우는 것은 '예전에 앱이 복사했는데 인스턴스에서 빠진 것'만(휴지통). 사용자가 서버에 직접 넣은 jar 는 그대로.
+        같은 모드 id 의 다른 파일(옛 버전)이 서버에 있으면 그것도 휴지통으로(중복 MOD-105 방지).
+        config·defaultconfigs·kubejs 는 서버에 없거나 인스턴스 쪽이 더 새 파일만 복사한다(서버에서 고친 설정은 덮지 않음)."""
         src = self.store.game_dir(id) / "mods"
         dst = d / "mods"
         dst.mkdir(exist_ok=True)
+        base = self.store.dir_of(id)
+        manifest = self._read_manifest(d)
         wanted: dict[str, Path] = {}
-        for m in scan_mods(src):
-            if m["environment"] != "client" and m["id"] not in E4MC_IDS:
-                wanted[m["file"]] = src / m["file"]
-        for p in dst.iterdir():
+        wanted_ids: dict[str, str] = {}
+        if src.is_dir():
+            for p in sorted(src.iterdir()):
+                if p.is_file() and p.suffix == ".jar":
+                    info = read_mod_info(p)
+                    if self._server_side(info):
+                        wanted[p.name] = p
+                        if info and info.get("id"):
+                            wanted_ids[info["id"]] = p.name
+        for name in list(manifest.get("copied", {})):
+            if name not in wanted and (dst / name).is_file():
+                _trash(dst / name, base)
+        for p in list(dst.iterdir()):
             if p.is_file() and p.suffix == ".jar" and p.name not in wanted:
-                _trash(p, self.store.dir_of(id))
+                info = read_mod_info(p)
+                if info and wanted_ids.get(info.get("id", "")) not in (None, p.name):
+                    _trash(p, base)            # 같은 모드의 옛 버전
         for name, p in wanted.items():
             t = dst / name
-            if not t.is_file() or t.stat().st_size != p.stat().st_size:
+            st = p.stat()
+            if not t.is_file() or t.stat().st_size != st.st_size or int(t.stat().st_mtime) != int(st.st_mtime):
                 shutil.copy2(p, t)
+        (d / self.MANIFEST).write_text(json.dumps({"copied": {n: wanted[n].stat().st_size for n in wanted}},
+                                                    ensure_ascii=False, indent=1), "utf-8")
+        self._sync_configs(id, d)
         return sorted(wanted)
+
+    def _sync_configs(self, id: str, d: Path) -> int:
+        game = self.store.game_dir(id)
+        n = 0
+        for folder in self.CONFIG_DIRS:
+            root = game / folder
+            if not root.is_dir():
+                continue
+            for f in root.rglob("*"):
+                if not f.is_file() or f.is_symlink():
+                    continue
+                rel = f.relative_to(game)
+                t = safe_join(d, *rel.parts)
+                if not t.is_file() or f.stat().st_mtime > t.stat().st_mtime + 1:
+                    t.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(f, t)
+                    n += 1
+        return n
+
+    def mod_check(self, id: str, sid: str) -> dict[str, Any]:
+        """인스턴스(참가자 쪽)와 서버 mods/ 비교. issues = [{code, kind, title, fix, id, name, file, clientFile, serverFile, ...}]
+        MOD-101 서버에 없음 · MOD-102 인스턴스에 없음(참가자도 필요) · MOD-103 버전 다름 · MOD-104 클라이언트 전용이 서버에 · MOD-105 서버에 중복 · MOD-106 로더가 다른 모드"""
+        meta = self._meta(id, sid)
+        d = self._sdir(id, sid)
+        loader = meta.get("loader")
+        if loader in ("vanilla", "paper"):
+            return {"loader": loader, "issues": [], "client": [], "server": [],
+                    "message": "바닐라·Paper 서버는 모드를 쓰지 않습니다(Paper 는 plugins/)."}
+        host_only = set(mods_config().get("hostOnly", []))
+
+        def load(folder: Path) -> list[dict[str, Any]]:
+            out = []
+            if folder.is_dir():
+                for p in sorted(folder.iterdir()):
+                    if p.is_file() and p.suffix == ".jar":
+                        info = read_mod_info(p) or {"id": "", "name": p.stem, "version": None, "loader": None,
+                                                    "environment": "*", "clientRequired": False, "unknown": True}
+                        out.append({**info, "file": p.name})
+            return out
+        client = load(self.store.game_dir(id) / "mods")
+        server = load(d / "mods")
+        cby = {m["id"]: m for m in client if m["id"]}
+        sby: dict[str, list[dict[str, Any]]] = {}
+        for m in server:
+            if m["id"]:
+                sby.setdefault(m["id"], []).append(m)
+        compatible = {"fabric": ("fabric", "quilt"), "quilt": ("fabric", "quilt"), "neoforge": ("neoforge",), "forge": ("forge",)}
+        issues: list[dict[str, Any]] = []
+
+        def add(code: str, title: str, fix: str | None, m: dict[str, Any], **kw: Any) -> None:
+            issues.append({"code": code, "title": title, "fix": fix, "id": m.get("id"), "name": m.get("name") or m.get("file"),
+                           **kw})
+        for mid, ms in sby.items():
+            if len(ms) > 1:
+                for extra in sorted(ms, key=lambda x: x["file"])[:-1]:
+                    add("MOD-105", "서버에 같은 모드가 두 개", "removeServer", extra, serverFile=extra["file"],
+                        version=extra.get("version"))
+        for m in server:
+            if m.get("environment") == "client":
+                add("MOD-104", "클라이언트 전용 모드가 서버에 있음(서버가 안 켜질 수 있음)", "removeServer", m, serverFile=m["file"])
+            elif m.get("loader") and loader in compatible and m["loader"] not in compatible[loader]:
+                add("MOD-106", f"{LOADER_NAMES.get(m['loader'], m['loader'])} 모드가 {LOADER_NAMES.get(loader, loader)} 서버에 있음",
+                    "removeServer", m, serverFile=m["file"])
+        for mid, c in cby.items():
+            if not self._server_side(c) or mid in E4MC_IDS:
+                continue
+            ss = sby.get(mid)
+            if not ss:
+                add("MOD-101", "서버에 없음", "toServer", c, clientFile=c["file"], clientVersion=c.get("version"))
+            elif all(s.get("version") != c.get("version") for s in ss):
+                s0 = ss[-1]
+                add("MOD-103", "버전이 다름", "toServer", c, clientFile=c["file"], serverFile=s0["file"],
+                    clientVersion=c.get("version"), serverVersion=s0.get("version"))
+        for mid, ss in sby.items():
+            s0 = ss[-1]
+            wrong_loader = bool(s0.get("loader") and loader in compatible and s0["loader"] not in compatible[loader])
+            if mid in cby or not s0.get("clientRequired") or mid in host_only or s0.get("environment") == "client" or wrong_loader:
+                continue
+            add("MOD-102", "인스턴스(참가자 쪽)에 없음 — 들어가려면 필요", "toClient", s0, serverFile=s0["file"],
+                serverVersion=s0.get("version"))
+        unknown_c = [m["file"] for m in client if m.get("unknown")]
+        return {"loader": loader, "issues": issues, "client": client, "server": server, "unknownClient": unknown_c,
+                "ok": not issues}
+
+    def mod_fix(self, id: str, sid: str, items: list[dict[str, Any]]) -> dict[str, Any]:
+        """mod_check 의 항목 고치기. fix: toServer(인스턴스 → 서버, 같은 모드 옛 파일은 휴지통) · toClient(서버 → 인스턴스) · removeServer(서버에서 휴지통).
+        실행 중인 서버 mods/ 는 바꾸지 않는다(다시 시작해야 적용 — 켜져 있으면 막음)."""
+        if sid in self.procs and self.procs[sid].poll() is None and any(i.get("fix") in ("toServer", "removeServer") for i in items):
+            raise RpcError("서버가 켜져 있습니다. 서버 모드를 바꾸려면 먼저 중지하세요.")
+        d = self._sdir(id, sid)
+        game_mods = self.store.game_dir(id) / "mods"
+        srv_mods = d / "mods"
+        base_srv = self.store.dir_of(id)
+        done, failed = [], []
+        manifest = self._read_manifest(d)
+        for it in items:
+            fix = it.get("fix")
+            try:
+                if fix == "toServer":
+                    srcf = safe_join(game_mods, str(it["clientFile"]))
+                    self._replace_mod(srcf, srv_mods, base_srv)
+                    manifest.setdefault("copied", {})[srcf.name] = srcf.stat().st_size
+                elif fix == "toClient":
+                    srcf = safe_join(srv_mods, str(it["serverFile"]))
+                    game_mods.mkdir(parents=True, exist_ok=True)
+                    self._replace_mod(srcf, game_mods, game_mods.parent)
+                elif fix == "removeServer":
+                    f = safe_join(srv_mods, str(it["serverFile"]))
+                    if f.is_file():
+                        _trash(f, base_srv)
+                    manifest.get("copied", {}).pop(f.name, None)
+                else:
+                    raise RpcError(f"모르는 작업: {fix}")
+                done.append(it)
+            except Exception as e:  # noqa: BLE001 - 하나가 실패해도 나머지는
+                failed.append({**it, "error": str(e)})
+        (d / self.MANIFEST).write_text(json.dumps(manifest, ensure_ascii=False, indent=1), "utf-8")
+        return {"done": len(done), "failed": failed, "check": self.mod_check(id, sid)}
+
+    @staticmethod
+    def _replace_mod(src: Path, dst_dir: Path, base: Path) -> None:
+        """src 를 dst_dir 에 복사. 같은 모드 id 의 다른 파일은 휴지통으로."""
+        if not src.is_file():
+            raise RpcError(f"파일이 없습니다: {src.name}")
+        info = read_mod_info(src)
+        dst_dir.mkdir(parents=True, exist_ok=True)
+        if info and info.get("id"):
+            for p in dst_dir.iterdir():
+                if p.is_file() and p.suffix == ".jar" and p.name != src.name:
+                    o = read_mod_info(p)
+                    if o and o.get("id") == info["id"]:
+                        _trash(p, base)
+        shutil.copy2(src, dst_dir / src.name)
+
+    def open_folder(self, id: str, sid: str) -> dict[str, Any]:
+        """서버 폴더를 파일 탐색기로(사용자 요청 2026-11-27)."""
+        d = self._sdir(id, sid)
+        if not d.is_dir():
+            raise RpcError(f"서버 폴더가 없습니다: {d}")
+        if sys.platform == "win32":
+            import os
+            os.startfile(str(d))  # type: ignore[attr-defined]
+        else:
+            subprocess.Popen(["xdg-open" if sys.platform != "darwin" else "open", str(d)])
+        return {"ok": True, "path": str(d)}
+
+    def errors(self, id: str, sid: str) -> list[dict[str, Any]]:
+        dg = self.diag.get(sid)
+        return dg.found if dg else []
+
+    def _write_run_script(self, d: Path, java: list[str], xmx: str, launch: list[str]) -> None:
+        """앱 밖에서 켜도 되는 run.bat. Forge 설치기가 만든 run.bat 은 PATH 의 자바(옛 8 이면 '@user_jvm_args.txt 를 찾을 수 없음')를
+        써서 실패했다 — 앱이 고른 자바의 전체 경로로 바꿔 쓴다. 앱의 주소 열기·상태 표시는 앱의 [시작]으로 켤 때만."""
+        if sys.platform != "win32":
+            return
+        args = " ".join(f'"{a}"' if " " in a else a for a in [*java, xmx, *launch])
+        (d / "run.bat").write_text(
+            "@echo off\r\nchcp 65001 >nul\r\n"
+            "rem 통합 작업실이 만든 실행 파일. 앱 밖에서 켜면 주소 열기·상태 표시는 되지 않습니다(앱의 [시작]을 권장).\r\n"
+            f'cd /d "%~dp0"\r\n{args} %*\r\npause\r\n', "utf-8")
 
     def prepare_launch(self, id: str, sid: str) -> list[str]:
         """java 뒤에 붙일 인자(메모리 제외). 바닐라·Fabric = -jar <jar> nogui, Forge 계열 = @인자파일 nogui."""
@@ -515,7 +716,13 @@ class ServerRunner:
                 port = free_port()
             write_properties(d / "server.properties", {"server-ip": "", "server-port": port})
             launch = self.prepare_launch(id, sid)
-            cmd = [*self.java_cmd(meta["version"]), memory.server_xmx(meta), *launch]
+            java = self.java_cmd(meta["version"])
+            cmd = [*java, memory.server_xmx(meta), *launch]
+            try:
+                self._write_run_script(d, java, memory.server_xmx(meta), launch)
+            except OSError:
+                pass
+            self.diag[sid] = server_errors.Diagnoser()
             proc = subprocess.Popen(cmd, cwd=d, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                     stdin=subprocess.PIPE, text=True, encoding="utf-8", errors="replace",
                                     creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
@@ -533,6 +740,9 @@ class ServerRunner:
             if not line:
                 continue
             self.emit("ds_log", {"id": sid, "instanceId": id, "line": line})
+            hit = self.diag.setdefault(sid, server_errors.Diagnoser()).feed(line)
+            if hit:
+                self.emit("ds_error", {"id": sid, "instanceId": id, "error": hit})
             if not self.ready.get(sid) and DONE_RE.search(line):
                 self.ready[sid] = True
                 self.emit("ds_state", {"id": sid, "instanceId": id, "state": "ready", "port": port})
@@ -548,7 +758,9 @@ class ServerRunner:
         self.procs.pop(sid, None)
         self.ready.pop(sid, None)
         self.players.pop(sid, None)
-        self.emit("ds_state", {"id": sid, "instanceId": id, "state": "stopped", "exitCode": code})
+        dg = self.diag.get(sid)
+        self.emit("ds_state", {"id": sid, "instanceId": id, "state": "stopped", "exitCode": code,
+                               "errors": dg.summary(code) if dg else []})
 
     def command(self, id: str, sid: str, command: str) -> bool:
         proc = self.procs.get(sid)

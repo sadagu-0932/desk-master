@@ -137,3 +137,25 @@ def test_windows_process_query_filtered_and_encoded(monkeypatch):
         assert all(n in ("python.exe", "java.exe", "javaw.exe") or n in local.LAUNCHER_PROCS for n, _c in rows)
     finally:
         child.kill()
+
+
+def test_windows_firewall_check_and_java_find():
+    """방화벽 확인 PowerShell 이 실제 Windows 에서 돌고(듣는 서버가 있으면 그 java.exe 를 찾음), 자바 찾기가 동작하는지."""
+    import socket
+    sys.path.insert(0, str(SIDECAR))
+    import java_find
+    import firewall
+    srv = socket.socket()
+    srv.bind(("0.0.0.0", 0))
+    srv.listen()
+    port = srv.getsockname()[1]
+    try:
+        st = firewall.check(port)
+        print("firewall:", st)
+        assert st["supported"] and "message" in st
+        assert st.get("unknown") or st["path"].lower().endswith("python.exe")    # 이 시험 프로세스가 듣고 있음
+    finally:
+        srv.close()
+    found = java_find.find_all()
+    print("java:", [(j["major"], j["jdk"], j["home"]) for j in found])
+    assert all(j["major"] > 0 for j in found)

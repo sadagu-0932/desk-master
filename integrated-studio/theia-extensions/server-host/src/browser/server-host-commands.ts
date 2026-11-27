@@ -13,4 +13,9 @@ export namespace ServerHostCommands {
     export const OPEN_LAN: Command = { id: 'studio.serverHost.openLan' };
     export const HOST_INSTANCE: Command = { id: 'studio.serverHost.hostInstance' };
     export const MEMORY: Command = { id: 'studio.serverHost.memory' };
+    export const MOD_CHECK: Command = { id: 'studio.serverHost.modCheck' };
+    export const FIREWALL: Command = { id: 'studio.serverHost.firewall' };
+    export const PLAYIT_RELINK: Command = { id: 'studio.serverHost.playitRelink', category: CATEGORY, label: 'playit 계정 다시 연결' };
+    export const PLAYIT_VERIFY: Command = { id: 'studio.serverHost.playitVerify', category: CATEGORY, label: 'playit 연결 확인' };
+    export const JAVA_INSTALL: Command = { id: 'studio.java.install', category: CATEGORY, label: 'Java 25 JDK 설치' };
 }

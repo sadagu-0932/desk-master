@@ -171,6 +171,10 @@ export class PlayitManager extends EventEmitter {
         } catch (e) {
             throw new PlayitError(`playit 서버에 연결하지 못했습니다(일부 통신사·회사망에서 막힐 수 있음): ${(e as Error).message}`);
         }
+        if (auth && (res.status === 401 || res.status === 403)) {
+            this.unlink('playit 계정 연결이 풀렸습니다(playit.gg 에서 에이전트를 지웠거나 키가 바뀜). [playit 다시 연결]을 눌러 주세요.');
+            throw new PlayitError('[PLAYIT-401] playit 계정 연결이 풀렸습니다. 서버 패널의 [playit 다시 연결]을 눌러 주세요.');
+        }
         if (res.status === 429) {
             throw new PlayitError('playit 요청이 너무 많습니다. 잠시 뒤 다시 해 주세요.');
         }
@@ -184,8 +188,9 @@ export class PlayitManager extends EventEmitter {
             return json.data as T;
         }
         const detail = typeof json.data === 'string' ? json.data : JSON.stringify(json.data);
-        if (/Auth|Unauthorized|InvalidAgentKey/i.test(detail)) {
-            throw new PlayitError('playit 계정 연결이 풀렸습니다. 다시 연결해 주세요.');
+        if (auth && /Auth|Unauthorized|InvalidAgentKey|InvalidSignature|AgentNotFound/i.test(detail)) {
+            this.unlink('playit 계정 연결이 풀렸습니다(playit.gg 에서 에이전트를 지웠거나 키가 바뀜). [playit 다시 연결]을 눌러 주세요.');
+            throw new PlayitError('[PLAYIT-401] playit 계정 연결이 풀렸습니다. 서버 패널의 [playit 다시 연결]을 눌러 주세요.');
         }
         if (/Limit|Quota|Premium|Tunnel.*Exceed|RequiresPlayitPremium/i.test(detail)) {
             throw new PlayitError(`playit 무료 요금제 한도에 걸렸습니다(${detail}). playit.gg 계정에서 쓰지 않는 터널을 지워 주세요.`);
@@ -194,10 +199,51 @@ export class PlayitManager extends EventEmitter {
     }
 
     // ---------------------------------------------------------------- 계정 연결
-    /** 브라우저로 연결 링크를 열고, 사용자가 승인할 때까지 기다린다. 비밀키는 단독판이 읽는 위치에만 쓴다. */
-    async claim(): Promise<PlayitStatus> {
-        if (readSecret(this.secretPath)) {
+    /**
+     * 연결이 풀렸을 때(사용자 요청 2026-11-27): 쓸모없어진 비밀키 파일을 옆에 .invalid 로 옮기고(지우지 않음) 에이전트를 끈다.
+     * 그러면 상태가 '연결 안 됨'이 되어 패널에 [playit 다시 연결]이 뜨고, claim() 이 새로 연결한다.
+     */
+    unlink(message: string): void {
+        try {
+            if (fs.existsSync(this.secretPath)) {
+                fs.renameSync(this.secretPath, `${this.secretPath}.invalid-${Date.now()}`);
+            }
+        } catch {
+            // 옮기지 못해도 상태 메시지는 남긴다
+        }
+        const hadUsers = this.users.size > 0;
+        if (this.agent && this.agent.exitCode === null) {
+            const p = this.agent;
+            this.agent = undefined;
+            p.kill();
+        }
+        this.changed(message + (hadUsers ? ' 다시 연결하면 열려 있던 서버 주소를 다시 여세요.' : ''));
+    }
+
+    /** 지금 키가 아직 유효한지 playit 에 물어본다(풀렸으면 unlink 까지). */
+    async verify(): Promise<PlayitStatus> {
+        if (!readSecret(this.secretPath)) {
             return this.status();
+        }
+        try {
+            await this.tunnels();
+            this.changed('playit 계정 연결이 정상입니다.');
+        } catch (e) {
+            if (!(e instanceof PlayitError) || !/PLAYIT-401/.test(e.message)) {
+                this.changed(`playit 연결을 확인하지 못했습니다: ${(e as Error).message}`);
+            }
+        }
+        return this.status();
+    }
+
+    /** 브라우저로 연결 링크를 열고, 사용자가 승인할 때까지 기다린다. 비밀키는 단독판이 읽는 위치에만 쓴다.
+     *  force = 지금 키가 있어도 새로 연결(다른 계정으로 바꾸거나 풀린 연결 고치기). */
+    async claim(force = false): Promise<PlayitStatus> {
+        if (readSecret(this.secretPath)) {
+            if (!force) {
+                return this.status();
+            }
+            this.unlink('playit 계정을 새로 연결합니다.');
         }
         const code = crypto.randomBytes(5).toString('hex');
         const url = `https://playit.gg/claim/${code}`;
@@ -226,6 +272,11 @@ export class PlayitManager extends EventEmitter {
             fs.mkdirSync(path.dirname(this.secretPath), { recursive: true });
             fs.writeFileSync(this.secretPath, `secret_key = "${secret_key}"\n`, { mode: 0o600 });
             this.claimUrl = undefined;
+            if (this.users.size && fs.existsSync(this.exe)) {      // 쓰던 서버가 있으면 새 키로 에이전트 다시 켜기
+                const users = [...this.users];
+                this.users.clear();
+                users.forEach(u => { try { this.acquire(u); } catch { /* 상태 메시지로 */ } });
+            }
             this.changed('playit 계정을 연결했습니다.');
         } catch (e) {
             this.claimUrl = undefined;
@@ -297,7 +348,8 @@ export class PlayitManager extends EventEmitter {
         p.on('exit', code => {
             if (this.agent === p) {
                 this.agent = undefined;
-                this.changed(this.users.size ? `playit 에이전트가 멈췄습니다(코드 ${code}).` : undefined);
+                this.changed(this.users.size ? `[PLAYIT-${code ?? 'X'}] playit 에이전트가 멈췄습니다(코드 ${code}). `
+                    + '계정 연결이 풀렸을 수 있습니다 — [playit 연결 확인]을 눌러 보세요.' : undefined);
             }
         });
         p.on('error', e => this.changed(`playit 에이전트를 켜지 못했습니다: ${e.message}`));

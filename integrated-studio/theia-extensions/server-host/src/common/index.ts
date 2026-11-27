@@ -43,6 +43,50 @@ export interface ClientMod {
     library?: boolean;
 }
 
+/** 서버 로그로 찾은 오류(sidecar server_errors.py). code 예: MOD-201, JAVA-101, NET-101, EXIT-1 */
+export interface ServerError {
+    code: string;
+    title: string;
+    hint: string;
+    line?: string;
+    details?: string[];
+    crashFile?: string;
+}
+
+/** Windows 방화벽 확인(sidecar firewall.py) */
+export interface FirewallStatus {
+    supported?: boolean;
+    ok: boolean;
+    unknown?: boolean;
+    path?: string;
+    allow?: number;
+    block?: number;
+    message?: string;
+}
+
+/** 서버·인스턴스 모드 비교 한 줄(sidecar ServerRunner.mod_check) */
+export interface ModIssue {
+    code: string;
+    title: string;
+    fix: 'toServer' | 'toClient' | 'removeServer' | null;
+    id?: string;
+    name?: string;
+    clientFile?: string;
+    serverFile?: string;
+    clientVersion?: string;
+    serverVersion?: string;
+    version?: string;
+}
+
+export interface ModCheck {
+    loader: string;
+    issues: ModIssue[];
+    client: Array<{ id: string; name?: string; version?: string; file: string }>;
+    server: Array<{ id: string; name?: string; version?: string; file: string }>;
+    ok?: boolean;
+    message?: string;
+}
+
 export interface ServerView {
     id: string;
     kind: ServerKind;
@@ -72,6 +116,14 @@ export interface ServerView {
     preference: 'auto' | ProviderId;
     /** 전용 서버 최대 메모리(MB), 없으면 기본값 */
     memoryMb?: number;
+    /** 로그로 찾은 오류(오류 코드) */
+    errors: ServerError[];
+    /** 이 PC 방화벽이 서버를 막는지 */
+    firewall?: FirewallStatus;
+    /** 같은 공유기(와이파이)에 있는 사람이 쓸 주소 */
+    lanAddress?: string;
+    /** 서버 폴더(전용 서버) */
+    folder?: string;
 }
 
 export interface LanGame {
@@ -204,8 +256,21 @@ export interface ServerHostService {
     playitStatus(): Promise<PlayitStatus>;
     /** 사용자가 확인한 뒤에만: 공식 배포처에서 에이전트 받기 */
     playitInstall(): Promise<PlayitStatus>;
-    /** 계정 연결 링크 만들기(브라우저로 열기) → 연결될 때까지 기다림 */
-    playitClaim(): Promise<PlayitStatus>;
+    /** 계정 연결 링크 만들기(브라우저로 열기) → 연결될 때까지 기다림. force = 지금 연결이 있어도 새로(풀렸을 때·계정 바꿀 때) */
+    playitClaim(force?: boolean): Promise<PlayitStatus>;
+    /** 지금 playit 키가 아직 유효한지 확인(풀렸으면 '연결 안 됨'으로 바뀜) */
+    playitVerify(): Promise<PlayitStatus>;
+    /** 친구가 못 들어올 때: 지금 방식을 닫고 다음 방식(UPnP → playit 등)으로 다시 열기 */
+    nextProvider(id: string): Promise<ServerView>;
+    /** 전용 서버: 인스턴스(참가자 쪽)와 서버 모드 비교 */
+    modCheck(id: string): Promise<ModCheck>;
+    /** 비교 결과 고치기(복사·빼기) */
+    modFix(id: string, items: ModIssue[]): Promise<{ done: number; failed: Array<ModIssue & { error: string }>; check: ModCheck }>;
+    /** 전용 서버 폴더를 파일 탐색기로 */
+    openFolder(id: string): Promise<string>;
+    /** Windows 방화벽: 확인 / 허용(관리자 확인 창) */
+    firewallCheck(id: string): Promise<FirewallStatus>;
+    firewallAllow(id: string): Promise<FirewallStatus>;
     setUpnpSettings(s: { ddnsUrl?: string; ddnsDomain?: string; ddnsToken?: string }): Promise<UpnpSettings>;
     // 불러오기
     importDetect(): Promise<DetectedInstance[]>;

@@ -250,6 +250,25 @@ Theia 확장은 TypeScript로 작성한다. Python 쪽은 `sidecar/` 아래에�
   인스턴스(줄·카드)를 폴더 머리로 끌어다 놓으면 그 그룹으로, 관리 메뉴 "그룹(폴더) 지정"(있는 그룹/새 그룹/빼기). 접힘은 화면마다 localStorage.
   시험 `tests/test_prism.py::test_groups_follow_prism_both_ways`. e2e 에서 Playwright 마우스 끌기는 이 Electron(CDP 연결)에서 HTML 끌기 이벤트를
   만들지 않아, 끌기 이벤트를 직접 보내 확인함(놓으면 그룹·instgroups.json 바뀜).
+- **서버 열기 보강**(사용자 요청 2026-11-27 "서버 여는 쪽이 부실 · 모드 복사가 이상 · 주소 연결이 잘 안 됨 · 자바가 없어서 오류"):
+  - 자바: 설치 파일에 "Java 25 JDK" 체크박스(Temurin, winget `EclipseAdoptium.Temurin.25.JDK` — 목록에서 확인: Scope machine·ADDLOCAL=ALL,
+    있으면 체크 해제·없으면 체크·해제 가능, 관리자 확인 창). `sidecar/java_find.py`: JAVA_HOME·PATH·표준 폴더에서 `release` 파일로 버전 읽기,
+    빌드(F7·F9)는 JDK 25 를 찾아 JAVA_HOME 으로 맞춤, 명령 "Java 25 JDK 설치"(`java_install`). 서버 자바(`runner._runtime_java`):
+    받아 둔 Mojang 런타임 → PC 의 같은 주 버전 자바 → Mojang 런타임만 받기(예전엔 게임 전체를 설치했음). 서버 폴더 `run.bat` 은 앱이 고른 자바의
+    전체 경로로 다시 씀(Forge 설치기의 run.bat 이 PATH 의 자바 8 로 `@user_jvm_args.txt` 오류).
+  - 모드 복사 규칙(`ServerRunner._sync_server_mods`): 클라이언트 전용(environment=client·clientSideOnly)·e4mc 만 빼고 넣음(정보를 못 읽는 jar 도 넣음 — 라이브러리),
+    앱이 복사한 목록 `.studio-mods.json`(서버 폴더)으로 **사용자가 서버에 직접 넣은 jar 는 지우지 않음**, 같은 모드 id 의 옛 파일은 휴지통,
+    config·defaultconfigs·kubejs 는 서버에 없거나 인스턴스 쪽이 더 새 파일만.
+  - [모드 확인](`ds_mod_check`/`ds_mod_fix`): MOD-101 서버에 없음 · 102 인스턴스에 없음(참가자 필요) · 103 버전 다름 · 104 클라이언트 전용이 서버에 ·
+    105 서버에 중복 · 106 로더 다름 → 골라서 복사(인스턴스↔서버)·빼기(휴지통). 서버가 켜져 있으면 서버 쪽은 안 바꿈.
+  - 오류 코드(`sidecar/server_errors.py`): 서버 로그를 보고 JAVA-101/102 · EULA-101 · MOD-104/105/110/201/301 · NET-101 · WORLD-101 · MEM-101 · CRASH-101,
+    아무것도 못 찾고 비정상 종료면 EXIT-<코드>, 시작 실패는 사이드카 오류 앞의 `[코드]`(JAVA-001). 카드에 코드·설명·관련 줄, [모드 확인]·[Java 설치]·[오류 복사].
+  - 주소: UPnP 로 열면 Windows 방화벽 확인(`firewall.py`, NET-201 차단/202 규칙 없음) → [방화벽 허용](관리자 확인 창, 프로그램 기준 규칙
+    "통합 작업실 - 마인크래프트 서버"), 같은 공유기용 사설 주소 표시(집 안에서는 공인 주소로 안 되는 공유기가 많음), [친구가 못 들어와요] = 지금 방식을 닫고 다음 방식으로.
+  - playit 연결 풀림: API 가 키를 거부하면(401·403·Auth) 키 파일을 `playit.toml.invalid-<시각>` 으로 옮기고 에이전트를 꺼 '연결 안 됨'으로 →
+    [playit 다시 연결](`claim(force)`, 쓰던 서버가 있으면 새 키로 에이전트 다시 켬)·[연결 확인](`verify`, 앱을 켤 때도 한 번). 오류 코드 PLAYIT-401.
+  - 전용 서버 카드 [폴더](`ds_open_folder`).
+  - 시험: `tests/test_server_tools.py`, server-host `npm test` 20개(연결 풀림·다른 방식·오류 코드 추가), Windows 스모크(방화벽 PowerShell·자바 찾기).
 ### M9. 패키징 (내 PC용)
 - electron-builder로 Windows 설치 파일 또는 압축 실행판을 만든다. **배포하지 않는다** — 개인 사용 전용.
 - 서명이 없어서 SmartScreen 경고가 뜨는 건 그대로 둔다.
@@ -286,4 +305,6 @@ Theia 확장은 TypeScript로 작성한다. Python 쪽은 `sidecar/` 아래에�
 - 파일을 다루는 모든 코드는 경로를 정규화하고 인스턴스 폴더 밖이면 거부한다. 삭제는 휴지통으로.
 - 로컬 서버의 EULA는 사용자가 직접 읽고 동의하게 한다(자동 동의 금지).
 - 바닐라 원본 에셋을 리소스팩에 그대로 넣어 배포하지 않는다(수정한 파일만).
+- **수정하면 항상 EXE 를 올린다**(사용자 결정 2026-11-27): 커밋·푸시 뒤 `integrated-studio-windows.yml` 을 실행한다.
+  이전 빌드가 아직 돌고 있으면 그 빌드를 취소하고 새로 실행한다.
 - 외부 라이브러리 버전은 추측하지 말고 설치 시점의 최신 안정판을 확인해서 쓴다. Theia·CommandCrafter·minecraft-launcher-lib는 빠르게 바뀐다.

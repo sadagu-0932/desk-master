@@ -16,6 +16,8 @@ from paths import trash  # noqa: E402
 from instances import InstanceStore  # noqa: E402
 from packs import Packs  # noqa: E402
 from importers import Importers  # noqa: E402
+import firewall  # noqa: E402
+import java_find  # noqa: E402
 import prism  # noqa: E402
 from game_log import Confirmer, GameLogs  # noqa: E402
 from prism_sync import PrismSync, migrate as prism_migrate, migrate_candidates  # noqa: E402
@@ -89,6 +91,10 @@ def main() -> None:
 
     def prism_install(id: str = ""):
         return prism.install(confirmer.callback(id), lambda line: notify(
+            "log", {"id": id, "line": line, "level": "info", "source": "studio"}))
+
+    def java_install(id: str = ""):
+        return java_find.install(confirmer.callback(id), lambda line: notify(
             "log", {"id": id, "line": line, "level": "info", "source": "studio"}))
 
     def prism_open():
@@ -172,6 +178,14 @@ def main() -> None:
         "ds_delete": servers.delete,
         "ds_running": servers.running,
         "host_mods": servers.mods,
+        "ds_mod_check": servers.mod_check,
+        "ds_mod_fix": lambda id, sid, items: servers.mod_fix(id, sid, items),
+        "ds_open_folder": servers.open_folder,
+        "ds_errors": servers.errors,
+        "firewall_check": lambda port: firewall.check(int(port)),
+        "firewall_allow": lambda port: firewall.allow(int(port), confirmer.callback("")),
+        "java_status": java_find.status,
+        "java_install": java_install,
         "e4mc_status": e4mc.status,
         "e4mc_install": e4mc.install,
         "e4mc_disable": e4mc.disable,
@@ -193,7 +207,8 @@ def main() -> None:
     }
     background = {"create_instance", "duplicate_instance", "list_versions", "list_loader_versions", "server_start", "server_stop", "generate_reports", "mod_new", "mod_build", "plugin_new", "plugin_build", "read_commands", "inspect_import", "import_file",
                   "modrinth_search", "modrinth_versions", "modrinth_install_modpack", "modrinth_add_mod",
-                  "cf_key_status", "cf_set_key", "cf_search", "cf_files", "cf_install_modpack", "cf_add_mod"} | {"prism_install", "prism_sync", "prism_migrate", "launch_linked"} | {"ds_create", "ds_set_world", "ds_start", "ds_stop", "host_mods", "e4mc_install", "e4mc_check_crash",
+                  "cf_key_status", "cf_set_key", "cf_search", "cf_files", "cf_install_modpack", "cf_add_mod"} | {"prism_install", "prism_sync", "prism_migrate", "launch_linked"} | {"ds_create", "ds_set_world", "ds_start", "ds_stop", "host_mods", "ds_mod_check", "ds_mod_fix",
+                     "firewall_check", "firewall_allow", "java_status", "java_install", "e4mc_install", "e4mc_check_crash",
                      "import_detect", "import_inspect_folder", "import_preview", "import_run", "import_in_use"} | {"sync_now", "delete_instance", "memory_usage"}
     notify("ready", {"version": VERSION})
     settings_sync.start()

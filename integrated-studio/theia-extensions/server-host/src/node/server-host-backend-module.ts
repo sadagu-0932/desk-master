@@ -4,8 +4,8 @@ import { ConnectionHandler, RpcConnectionHandler } from '@theia/core/lib/common/
 import { BackendApplicationContribution } from '@theia/core/lib/node/backend-application';
 import { SidecarProcess } from 'integrated-studio-launcher-core/lib/node/sidecar-process.js';
 import {
-    CreateServerOptions, DetectedInstance, E4mcPrepare, HostSnapshot, ImportPreview, ImportResult, PingResult, PlayitStatus,
-    ProviderId, SERVER_HOST_PATH, ServerHostClient, ServerHostService, ServerView, UpnpSettings,
+    CreateServerOptions, DetectedInstance, E4mcPrepare, FirewallStatus, HostSnapshot, ImportPreview, ImportResult, ModCheck, ModIssue,
+    PingResult, PlayitStatus, ProviderId, SERVER_HOST_PATH, ServerHostClient, ServerHostService, ServerView, UpnpSettings,
 } from '../common/index.js';
 import { HostManager } from './host-manager.js';
 import { LanDiscovery } from './lan-discovery.js';
@@ -68,7 +68,16 @@ class ServerHostServiceImpl implements ServerHostService {
         return (await this.m()).playit!.status();
     }
     async playitInstall(): Promise<PlayitStatus> { return (await this.m()).playit!.install(); }
-    async playitClaim(): Promise<PlayitStatus> { return (await this.m()).playit!.claim(); }
+    async playitClaim(force?: boolean): Promise<PlayitStatus> { return (await this.m()).playit!.claim(!!force); }
+    async playitVerify(): Promise<PlayitStatus> { return (await this.m()).playit!.verify(); }
+    async nextProvider(id: string): Promise<ServerView> { return (await this.m()).nextProvider(id); }
+    async modCheck(id: string): Promise<ModCheck> { return (await this.m()).modCheck(id); }
+    async modFix(id: string, items: ModIssue[]): Promise<{ done: number; failed: Array<ModIssue & { error: string }>; check: ModCheck }> {
+        return (await this.m()).modFix(id, items);
+    }
+    async openFolder(id: string): Promise<string> { return (await this.m()).openFolder(id); }
+    async firewallCheck(id: string): Promise<FirewallStatus> { return (await this.m()).checkFirewall(id); }
+    async firewallAllow(id: string): Promise<FirewallStatus> { return (await this.m()).allowFirewall(id); }
     async setUpnpSettings(s: { ddnsUrl?: string; ddnsDomain?: string; ddnsToken?: string }): Promise<UpnpSettings> {
         return (await this.m()).setUpnpSettings(s);
     }

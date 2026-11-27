@@ -6,7 +6,7 @@ import { CommandService } from '@theia/core/lib/common/command';
 import { MessageService } from '@theia/core/lib/common/message-service';
 import { ClipboardService } from '@theia/core/lib/browser/clipboard-service';
 import { LOADER_LABELS } from 'integrated-studio-launcher-core/lib/common';
-import { PROVIDER_LABEL, ProviderId, ServerView } from '../common/index.js';
+import { PROVIDER_LABEL, ProviderId, ServerError, ServerView } from '../common/index.js';
 import { ServerHostStore } from './server-host-store.js';
 import { ServerHostCommands } from './server-host-commands.js';
 
@@ -85,8 +85,12 @@ export class ServerHostWidget extends ReactWidget {
             <h3>주소 방식 설정</h3>
             <div className='sh-small sh-setting'>
                 <b>playit 중계</b> — {playit.linked ? '계정 연결됨' : '계정 연결 안 됨'} · {playit.agentInstalled ? (playit.agentRunning ? '에이전트 켜짐' : '에이전트 꺼짐') : '에이전트 없음'}
-                {(!playit.linked || !playit.agentInstalled) &&
+                {!playit.agentInstalled &&
                     <button className='theia-button secondary sh-mini' onClick={() => this.commands.executeCommand(ServerHostCommands.PLAYIT_SETUP.id)}>playit 준비</button>}
+                {playit.agentInstalled && !playit.claimUrl &&
+                    <button className={'theia-button sh-mini' + (playit.linked ? ' secondary' : '')} title='연결이 풀렸거나 다른 계정으로 바꿀 때'
+                        onClick={() => this.commands.executeCommand(ServerHostCommands.PLAYIT_RELINK.id)}>{playit.linked ? '다시 연결' : 'playit 다시 연결'}</button>}
+                {playit.linked && <button className='theia-button secondary sh-mini' onClick={() => this.commands.executeCommand(ServerHostCommands.PLAYIT_VERIFY.id)}>연결 확인</button>}
                 {playit.claimUrl && <div className='sh-note'>브라우저에서 승인을 기다리는 중: <a href={playit.claimUrl} target='_blank' rel='noreferrer'>{playit.claimUrl}</a></div>}
                 {playit.message && <div className='sh-muted'>{playit.message}</div>}
             </div>
@@ -128,14 +132,26 @@ export class ServerHostWidget extends ReactWidget {
                     <button className='theia-button' onClick={() => this.copy(a.address!, '주소')}>복사</button>
                     {a.provider && <span className='sh-chip via'>{PROVIDER_LABEL[a.provider]}</span>}
                     <span className={'sh-chip ' + (a.fixed ? 'fixed' : 'changing')}>{a.fixed ? '고정 주소' : '매번 바뀜'}</span>
+                    <button className='theia-button secondary sh-mini' title='지금 방식을 닫고 다음 방식(UPnP → playit 등)으로 다시 엽니다'
+                        onClick={() => this.run(() => this.store.service.nextProvider(s.id))}>친구가 못 들어와요</button>
                 </>}
             </div>
+            {s.lanAddress && (a.state === 'open' || s.state === 'running') && <div className='sh-small sh-muted'>
+                같은 와이파이·공유기에 있는 사람은 <code className='sh-code'>{s.lanAddress}</code>
+                <button className='theia-button secondary sh-mini' onClick={() => this.copy(s.lanAddress!, '같은 공유기용 주소')}>복사</button>
+                — 집 안에서는 공인 주소로 안 들어가지는 공유기가 많습니다.
+            </div>}
+            {s.firewall && !s.firewall.ok && !s.firewall.unknown && <div className='sh-note error'>
+                {s.firewall.message}
+                <button className='theia-button sh-mini' onClick={() => this.commands.executeCommand(ServerHostCommands.FIREWALL.id, s.id)}>방화벽 허용</button>
+            </div>}
             {a.attempts.filter(t => !t.ok).length > 0 && <ul className='sh-attempts'>
                 {a.attempts.filter(t => !t.ok).map((t, i) => <li key={i}>
                     <span className={codicon('arrow-small-right')} aria-hidden='true' /> {PROVIDER_LABEL[t.provider]} 건너뜀: {t.reason}</li>)}
             </ul>}
             {a.notes.length > 0 && <ul className='sh-notes'>{a.notes.map((n, i) => <li key={i}>{n}</li>)}</ul>}
             {s.message && <div className={'sh-note' + (s.state === 'error' || a.state === 'failed' ? ' error' : '')}>{s.message}</div>}
+            {s.errors.length > 0 && this.renderErrors(s)}
             {s.clientMods.length > 0 && <details className='sh-mods'>
                 <summary>참가자도 같은 모드가 필요합니다({s.clientMods.length}개)</summary>
                 <ul>{s.clientMods.map(m => <li key={m.file}>{m.name ?? m.id} <span className='sh-muted'>{m.version ?? ''}{m.library ? ' · 라이브러리' : ''}</span></li>)}</ul>
@@ -167,6 +183,12 @@ export class ServerHostWidget extends ReactWidget {
                 {s.kind === 'dedicated' && <button className='theia-button secondary' title='서버 최대 메모리(다음 시작부터)'
                     onClick={() => this.commands.executeCommand(ServerHostCommands.MEMORY.id, s.id)}>
                     메모리 {s.memoryMb ? `${Math.round(s.memoryMb / 102.4) / 10}GB` : '기본'}</button>}
+                {s.kind === 'dedicated' && <button className='theia-button secondary' title='서버 폴더(월드·mods·config·logs)를 파일 탐색기로'
+                    onClick={() => this.run(() => this.store.service.openFolder(s.id))}>
+                    <span className={codicon('folder-opened')} aria-hidden='true' /> 폴더</button>}
+                {s.kind === 'dedicated' && s.loader && !['vanilla', 'paper'].includes(s.loader) &&
+                    <button className='theia-button secondary' title='서버와 인스턴스(참가자 쪽) 모드가 같은지 확인하고 맞춥니다'
+                        onClick={() => this.commands.executeCommand(ServerHostCommands.MOD_CHECK.id, s.id)}>모드 확인</button>}
                 {s.kind === 'dedicated' && <button className='theia-button secondary'
                     onClick={() => { if (consoleOpen) { this.openConsole.delete(s.id); } else { this.openConsole.add(s.id); this.store.loadConsole(s.id); } this.update(); }}>
                     콘솔 {consoleOpen ? '닫기' : '열기'}</button>}
@@ -175,6 +197,27 @@ export class ServerHostWidget extends ReactWidget {
             </div>
             {consoleOpen && this.renderConsole(s)}
         </section>;
+    }
+
+    protected renderErrors(s: ServerView): React.ReactNode {
+        const modErr = s.errors.some(e => e.code.startsWith('MOD-'));
+        const javaErr = s.errors.some(e => e.code.startsWith('JAVA-'));
+        return <div className='sh-errors' role='alert'>
+            {s.errors.map((e: ServerError) => <details key={e.code} className='sh-error'>
+                <summary><span className='sh-code-chip'>{e.code}</span> {e.title}</summary>
+                <div className='sh-small'>{e.hint}</div>
+                {e.line && <pre className='sh-mono sh-small'>{[e.line, ...(e.details ?? [])].join('\n')}</pre>}
+                {e.crashFile && <div className='sh-muted sh-small'>크래시 리포트: {e.crashFile}</div>}
+            </details>)}
+            <div className='sh-card-actions'>
+                {modErr && s.kind === 'dedicated' && <button className='theia-button sh-mini'
+                    onClick={() => this.commands.executeCommand(ServerHostCommands.MOD_CHECK.id, s.id)}>모드 확인</button>}
+                {javaErr && <button className='theia-button sh-mini'
+                    onClick={() => this.commands.executeCommand(ServerHostCommands.JAVA_INSTALL.id)}>Java 25 JDK 설치</button>}
+                <button className='theia-button secondary sh-mini' onClick={() => this.copy(
+                    s.errors.map(e => `[${e.code}] ${e.title}\n${e.line ?? ''}\n${(e.details ?? []).join('\n')}`).join('\n\n'), '오류 내용')}>오류 복사</button>
+            </div>
+        </div>;
     }
 
     protected renderConsole(s: ServerView): React.ReactNode {

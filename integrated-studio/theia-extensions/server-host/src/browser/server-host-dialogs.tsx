@@ -2,7 +2,7 @@ import * as React from '@theia/core/shared/react';
 import { ReactDialog } from '@theia/core/lib/browser/dialogs/react-dialog';
 import { Message } from '@theia/core/shared/@lumino/messaging';
 import { Instance, LOADER_LABELS } from 'integrated-studio-launcher-core/lib/common';
-import { CreateServerOptions, LanGame, PingResult, ServerKind } from '../common/index.js';
+import { CreateServerOptions, LanGame, ModCheck, ModIssue, PingResult, ServerKind } from '../common/index.js';
 
 // ================================================================ 서버 열기
 export interface OpenDialogDeps {
@@ -261,6 +261,61 @@ export class DdnsDialog extends ReactDialog<DdnsValue> {
                     onChange={e => { this.v.ddnsToken = e.target.value.trim(); this.update(); }} />
             </label>
             <p className='sh-muted'>토큰은 이 PC 의 앱 데이터 폴더에만 저장되고 git 에는 들어가지 않습니다.</p>
+        </div>;
+    }
+}
+
+// ================================================================ 모드 확인(서버 ↔ 인스턴스)
+const FIX_LABEL: Record<string, string> = {
+    toServer: '인스턴스 → 서버로 복사', toClient: '서버 → 인스턴스로 복사', removeServer: '서버에서 빼기(휴지통)',
+};
+
+/** 서버·인스턴스 모드 차이를 오류 코드와 함께 보여 주고, 고를 것을 골라 고친다. 값 = 고칠 항목 */
+export class ModCheckDialog extends ReactDialog<ModIssue[]> {
+    protected picked: Set<number>;
+
+    constructor(protected readonly check: ModCheck, protected readonly serverName: string) {
+        super({ title: `모드 확인 — ${serverName}` });
+        this.picked = new Set(check.issues.map((i, n) => i.fix ? n : -1).filter(n => n >= 0));
+        if (check.issues.length) {
+            this.appendAcceptButton('고른 것 고치기');
+        }
+        this.appendCloseButton(check.issues.length ? '취소' : '닫기');
+    }
+
+    get value(): ModIssue[] {
+        return this.check.issues.filter((_, n) => this.picked.has(n));
+    }
+
+    protected override isValid(): string {
+        return this.check.issues.length && !this.picked.size ? '고칠 항목을 고르세요.' : '';
+    }
+
+    protected render(): React.ReactNode {
+        const c = this.check;
+        if (c.message) {
+            return <div className='sh-dialog'><p>{c.message}</p></div>;
+        }
+        return <div className='sh-dialog sh-modcheck'>
+            <p className='sh-small'>인스턴스(참가자가 쓰는 쪽) 모드 {c.client.length}개 · 서버 모드 {c.server.length}개를 비교했습니다.
+                {c.issues.length ? ' 맞지 않는 것:' : ''}</p>
+            {!c.issues.length && <p><b>모두 일치합니다.</b> 그래도 못 들어오면 참가자의 모드 목록이 이 인스턴스와 같은지 확인하세요.</p>}
+            <ul className='sh-issues'>
+                {c.issues.map((i, n) => <li key={n}>
+                    <label>
+                        <input type='checkbox' disabled={!i.fix} checked={this.picked.has(n)}
+                            onChange={e => { if (e.target.checked) { this.picked.add(n); } else { this.picked.delete(n); } this.update(); }} />
+                        <span className='sh-code-chip'>{i.code}</span> <b>{i.name ?? i.id}</b> — {i.title}
+                    </label>
+                    <div className='sh-muted sh-small'>
+                        {i.clientFile && <>인스턴스: {i.clientFile}{i.clientVersion ? ` (${i.clientVersion})` : ''} </>}
+                        {i.serverFile && <>· 서버: {i.serverFile}{i.serverVersion ? ` (${i.serverVersion})` : ''}</>}
+                        {i.fix && <> · 고치기: {FIX_LABEL[i.fix]}</>}
+                    </div>
+                </li>)}
+            </ul>
+            <p className='sh-muted sh-small'>서버 쪽을 바꾸면 다음 시작부터 적용됩니다. 지운 파일은 휴지통으로 갑니다.
+                참가자도 인스턴스와 같은 모드여야 들어올 수 있습니다(클라이언트 전용 모드는 달라도 됨).</p>
         </div>;
     }
 }

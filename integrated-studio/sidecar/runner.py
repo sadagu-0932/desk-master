@@ -12,6 +12,7 @@ from typing import Any
 
 from instances import InstanceStore, write_cc_config
 from paths import safe_join
+import java_find
 import modrinth
 import memory
 import net
@@ -104,11 +105,19 @@ class Runner:
 
         return {"setStatus": set_status, "setProgress": set_progress, "setMax": set_max}
 
+    def _runtime_map(self) -> dict[str, str]:
+        """{게임 버전: Mojang 런타임 이름} — 게임을 설치하지 않고 런타임만 받은 버전."""
+        try:
+            return json.loads((self.mc_dir / "runtime-for.json").read_text("utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return {}
+
     def _java_for(self, version_id: str) -> str | None:
         """버전 json이 요구하는 Mojang 자바 런타임 경로(설치돼 있으면)."""
         try:
-            vjson = json.loads((self.mc_dir / "versions" / version_id / f"{version_id}.json").read_text("utf-8"))
-            comp = vjson.get("javaVersion", {}).get("component")
+            f = self.mc_dir / "versions" / version_id / f"{version_id}.json"
+            vjson = json.loads(f.read_text("utf-8")) if f.is_file() else self.__dict__.get("_vjson_cache", {}).get(version_id, {})
+            comp = vjson.get("javaVersion", {}).get("component") or self._runtime_map().get(version_id)
             if comp:
                 path = mll.runtime.get_executable_path(comp, str(self.mc_dir))
                 if path:
@@ -221,30 +230,59 @@ class Runner:
         return {"game": list(self.procs), "server": list(self.servers)}
 
     # ---------- 로컬 서버 (F6) ----------
+    def _version_json(self, version: str) -> dict[str, Any]:
+        """버전 json(설치돼 있으면 그것, 아니면 Mojang 에서 받아 메모리에 둔다)."""
+        f = self.mc_dir / "versions" / version / f"{version}.json"
+        if f.is_file():
+            return json.loads(f.read_text("utf-8"))
+        cache = self.__dict__.setdefault("_vjson_cache", {})
+        if version not in cache:
+            manifest = net.get_json("https://piston-meta.mojang.com/mc/game/version_manifest_v2.json")
+            url = next((v["url"] for v in manifest["versions"] if v["id"] == version), None)
+            if not url:
+                raise RpcError(f"{version} 버전을 찾을 수 없습니다.")
+            cache[version] = net.get_json(url)
+        return cache[version]
+
     def _server_jar(self, version: str, dest: Path) -> None:
         if dest.exists():
             return
-        vjson = json.loads((self.mc_dir / "versions" / version / f"{version}.json").read_text("utf-8")) \
-            if (self.mc_dir / "versions" / version).exists() else None
-        if vjson is None:
-            manifest = net.get_json("https://piston-meta.mojang.com/mc/game/version_manifest_v2.json")
-            url = next(v["url"] for v in manifest["versions"] if v["id"] == version)
-            vjson = net.get_json(url)
-        server = vjson.get("downloads", {}).get("server")
+        server = self._version_json(version).get("downloads", {}).get("server")
         if not server:
             raise RpcError(f"{version}에는 서버 jar가 없습니다.")
         dest.parent.mkdir(parents=True, exist_ok=True)
         net.download(server["url"], dest, hashes={"sha1": server.get("sha1")})
 
     def _runtime_java(self, version: str) -> str:
+        """서버용 자바: ① 받아 둔 Mojang 런타임 ② 이 PC 의 맞는 자바(같은 주 버전 먼저) ③ Mojang 런타임만 받기(게임 전체는 받지 않음).
+        예전엔 런타임을 얻으려고 게임 전체(에셋 포함)를 설치했다."""
         java = self._java_for(version)
         if java:
             return java
-        mll.install.install_minecraft_version(version, str(self.mc_dir))
-        java = self._java_for(version)
-        if not java:
-            raise RpcError("자바 런타임을 찾을 수 없습니다.")
-        return java
+        try:
+            jv = self._version_json(version).get("javaVersion") or {}
+        except Exception as e:  # noqa: BLE001 - 인터넷이 안 되면 PC 의 자바라도
+            jv = {}
+            notify("log", {"id": "", "level": "warn", "source": "server", "line": f"버전 정보를 받지 못했습니다: {e}"})
+        major = int(jv.get("majorVersion") or 0) or (25 if not version.startswith("1.") else 21)
+        found = java_find.best(major)
+        if found:
+            return found["java"]
+        comp = jv.get("component")
+        if comp:
+            try:
+                notify("progress", {"id": "", "stage": "java", "text": f"Java {major} 런타임 받는 중(Mojang)"})
+                mll.runtime.install_jvm_runtime(comp, str(self.mc_dir))
+                path = mll.runtime.get_executable_path(comp, str(self.mc_dir))
+                if path:
+                    m = self._runtime_map()
+                    m[version] = comp           # 다음엔 인터넷 없이도 이 런타임을 찾는다
+                    (self.mc_dir / "runtime-for.json").write_text(json.dumps(m), "utf-8")
+                    return path
+            except Exception as e:  # noqa: BLE001
+                raise RpcError(f"[JAVA-001] Java {major} 을(를) 찾지도 받지도 못했습니다({e}). "
+                               f"명령 팔레트 'Java 25 JDK 설치'로 설치해 주세요.") from e
+        raise RpcError(f"[JAVA-001] Java {major} 을(를) 찾지 못했습니다. 명령 팔레트 'Java 25 JDK 설치'로 설치해 주세요.")
 
     def server_start(self, id: str, world: str | None = None) -> dict[str, Any]:
         """EULA는 사용자가 직접 읽고 eula.txt를 true로 바꿔야 한다(자동 동의하지 않는다)."""

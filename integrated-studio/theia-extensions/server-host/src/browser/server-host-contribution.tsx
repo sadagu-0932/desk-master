@@ -12,7 +12,7 @@ import { ServerHostStore } from './server-host-store.js';
 import { ServerHostWidget } from './server-host-widget.js';
 import { ImportWidget } from './import-widget.js';
 import { ServerHostCommands } from './server-host-commands.js';
-import { ChoiceDialog, DdnsDialog, EulaDialog, OpenServerDialog } from './server-host-dialogs.js';
+import { ChoiceDialog, DdnsDialog, EulaDialog, ModCheckDialog, OpenServerDialog } from './server-host-dialogs.js';
 import { QuickInputService } from '@theia/core/lib/browser/quick-input';
 
 @injectable()
@@ -53,6 +53,68 @@ export class ServerHostContribution extends AbstractViewContribution<ServerHostW
         registry.registerCommand(ServerHostCommands.PLAYIT_SETUP, { execute: () => this.guard(() => this.playitSetup()) });
         registry.registerCommand(ServerHostCommands.DDNS, { execute: () => this.guard(() => this.ddns()) });
         registry.registerCommand(ServerHostCommands.MEMORY, { execute: (id: string) => this.guard(() => this.serverMemory(id)) });
+        registry.registerCommand(ServerHostCommands.MOD_CHECK, { execute: (id: string) => this.guard(() => this.modCheck(id)) });
+        registry.registerCommand(ServerHostCommands.FIREWALL, { execute: (id: string) => this.guard(() => this.firewall(id)) });
+        registry.registerCommand(ServerHostCommands.PLAYIT_RELINK, { execute: () => this.guard(() => this.playitRelink()) });
+        registry.registerCommand(ServerHostCommands.PLAYIT_VERIFY, { execute: () => this.guard(async () => {
+            const st = await this.store.service.playitVerify();
+            this.messages.info(st.message ?? (st.linked ? 'playit 계정이 연결돼 있습니다.' : 'playit 계정이 연결돼 있지 않습니다.'));
+        }) });
+        registry.registerCommand(ServerHostCommands.JAVA_INSTALL, { execute: () => this.guard(() => this.javaInstall()) });
+    }
+
+    /** 모드 확인(사용자 요청 2026-11-27): 서버·인스턴스 모드 비교 → 고른 것 복사·빼기 */
+    protected async modCheck(id: string): Promise<void> {
+        const s = this.store.snapshot.servers.find(x => x.id === id);
+        const check = await this.store.service.modCheck(id);
+        const items = await new ModCheckDialog(check, s?.name ?? '서버').open();
+        if (!items?.length) {
+            return;
+        }
+        const res = await this.store.service.modFix(id, items);
+        const left = res.check.issues.length;
+        if (res.failed.length) {
+            this.messages.error(`모드 ${res.done}개를 고쳤고 ${res.failed.length}개는 실패했습니다: `
+                + res.failed.map(f => `${f.name ?? f.id}(${f.error})`).join(', '));
+        } else {
+            this.messages.info(`모드 ${res.done}개를 맞췄습니다.${left ? ` 남은 차이 ${left}개 — [모드 확인]으로 다시 보세요.` : ' 이제 모두 일치합니다.'}`
+                + (s && !['stopped', 'error', 'needs-eula'].includes(s.state) ? ' 서버를 다시 시작하면 적용됩니다.' : ''));
+        }
+    }
+
+    protected async firewall(id: string): Promise<void> {
+        const st = await this.store.service.firewallAllow(id);
+        if (st.ok) {
+            this.messages.info('Windows 방화벽에서 서버를 허용했습니다. 친구에게 다시 들어와 보라고 해 주세요.');
+        } else if (st.message) {
+            this.messages.warn(st.message);
+        }
+    }
+
+    protected async playitRelink(): Promise<void> {
+        let st = await this.store.service.playitStatus();
+        if (!st.agentInstalled) {
+            return this.playitSetup();
+        }
+        this.messages.info('브라우저에서 playit.gg 에 로그인하고 연결을 승인해 주세요(예전 연결 키는 옆에 보관해 둡니다).');
+        st = await this.store.service.playitClaim(true);
+        if (st.linked) {
+            this.messages.info('playit 계정을 다시 연결했습니다. 주소가 닫혀 있던 서버는 [주소 다시 열기]를 눌러 주세요.');
+        }
+    }
+
+    protected async javaInstall(): Promise<void> {
+        const r = await this.instances.call<{ ok: boolean; message: string; url?: string }>('java_install', {});
+        if (r.ok) {
+            this.messages.info(r.message);
+        } else if (r.url) {
+            const open = '내려받기 페이지';
+            if (await this.messages.warn(r.message, open) === open) {
+                this.windows.openNewWindow(r.url, { external: true });
+            }
+        } else {
+            this.messages.info(r.message);
+        }
     }
 
     /** 전용 서버 최대 메모리(다음 시작부터). 비우면 기본값(보통 2GB) */

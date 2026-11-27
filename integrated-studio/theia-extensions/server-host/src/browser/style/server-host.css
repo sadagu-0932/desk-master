@@ -55,3 +55,14 @@
 .imp-running { padding: 20px 0; }
 .sh-root .sh-actions > button { flex: 1 1 140px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sh-root .sh-card-actions > button { white-space: nowrap; }
+
+/* 오류 코드·모드 확인(2026-11-27) */
+.sh-errors { margin: 6px 0; padding: 6px; border-left: 3px solid var(--theia-errorForeground); background: var(--theia-input-background); }
+.sh-error summary { cursor: pointer; font-size: 12px; }
+.sh-error pre { white-space: pre-wrap; word-break: break-all; margin: 4px 0; max-height: 160px; overflow: auto; }
+.sh-code-chip { display: inline-block; font-family: var(--theia-code-font-family); font-size: 11px; padding: 0 5px; border-radius: 3px;
+    background: var(--theia-badge-background); color: var(--theia-badge-foreground); }
+.sh-note .theia-button, .sh-small .theia-button { margin-left: 6px; }
+.sh-modcheck .sh-issues { list-style: none; padding: 0; margin: 6px 0; max-height: 50vh; overflow: auto; }
+.sh-modcheck .sh-issues li { padding: 4px 0; border-bottom: 1px solid var(--theia-panel-border); }
+.sh-modcheck label { display: flex; gap: 6px; align-items: center; }

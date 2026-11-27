@@ -13,10 +13,11 @@
 import { EventEmitter } from 'events';
 import * as crypto from 'crypto';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import {
-    AddressView, ClientMod, CreateServerOptions, E4mcPrepare, HostSnapshot, PingResult, ProviderId, ServerKind,
-    ServerState, ServerView, UpnpSettings,
+    AddressView, ClientMod, CreateServerOptions, E4mcPrepare, FirewallStatus, HostSnapshot, ModCheck, ModIssue, PingResult,
+    ProviderId, ServerError, ServerKind, ServerState, ServerView, UpnpSettings,
 } from '../common/index.js';
 import { LanWatcher } from './lan-watcher.js';
 import { LanDiscovery } from './lan-discovery.js';
@@ -62,6 +63,26 @@ interface Runtime {
     e4mcEnabled?: boolean;
     clientMods: ClientMod[];
     opening?: Promise<void>;
+    errors: ServerError[];
+    firewall?: FirewallStatus;
+}
+
+/** 같은 공유기 안에서 쓸 이 PC 의 사설 IPv4(와이파이·유선). 가상 어댑터(VirtualBox·WSL 등 흔한 이름)는 뒤로. */
+export function lanIp(): string | undefined {
+    const cands: Array<{ ip: string; virt: boolean }> = [];
+    for (const [name, list] of Object.entries(os.networkInterfaces())) {
+        for (const a of list ?? []) {
+            if (a.family === 'IPv4' && !a.internal && /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(a.address)) {
+                cands.push({ ip: a.address, virt: /virtual|vbox|vmware|wsl|hyper-v|vethernet|docker|tailscale|zerotier|hamachi/i.test(name) });
+            }
+        }
+    }
+    cands.sort((a, b) => Number(a.virt) - Number(b.virt));
+    return cands[0]?.ip;
+}
+
+function errorText(e: ServerError): string {
+    return `[${e.code}] ${e.title} — ${e.hint}`;
 }
 
 const CONSOLE_MAX = 500;
@@ -115,6 +136,9 @@ export class HostManager extends EventEmitter {
         this.lan?.on('change', () => this.changed());
         this.lan?.start();
         this.poller = setInterval(() => this.poll().catch(() => undefined), opts.pollMs ?? 10_000);
+        if (this.playit?.status().linked) {
+            this.playit.verify().catch(() => undefined);     // 켤 때 한 번: 연결이 풀렸으면 바로 '다시 연결'이 보이게
+        }
     }
 
     // ---------------------------------------------------------------- 저장
@@ -140,7 +164,7 @@ export class HostManager extends EventEmitter {
     }
 
     protected freshRuntime(): Runtime {
-        return { state: 'stopped', players: [], pingFails: 0, console: [], clientMods: [], address: { state: 'closed', attempts: [], notes: [] } };
+        return { state: 'stopped', players: [], pingFails: 0, console: [], clientMods: [], errors: [], address: { state: 'closed', attempts: [], notes: [] } };
     }
 
     ddns(): { url: string; domain?: string; token?: string } | undefined {
@@ -179,6 +203,12 @@ export class HostManager extends EventEmitter {
             maxPlayers: r.ping?.max, motd: r.ping?.motd, serverVersion: r.ping?.version,
             address: { ...r.address, attempts: [...r.address.attempts], notes: [...r.address.notes] },
             clientMods: r.clientMods, preference: s.preference, memoryMb: s.memoryMb,
+            errors: [...r.errors], firewall: r.firewall,
+            lanAddress: (() => {
+                const port = r.gamePort ?? s.port;
+                const ip = port ? lanIp() : undefined;
+                return ip && port ? (port === 25565 ? ip : `${ip}:${port}`) : undefined;
+            })(),
         };
     }
 
@@ -319,6 +349,7 @@ export class HostManager extends EventEmitter {
         }
         if (s.kind === 'dedicated') {
             r.state = 'preparing';
+            r.errors = [];
             this.changed();
             try {
                 const res = await this.sidecar.call<{ needsEula?: boolean; eulaUrl?: string; port?: number }>(
@@ -332,7 +363,12 @@ export class HostManager extends EventEmitter {
                 }
             } catch (e) {
                 r.state = 'error';
-                r.message = `서버를 시작하지 못했습니다: ${(e as Error).message}`;
+                const msg = (e as Error).message;
+                const code = /^\[([A-Z]+-[\w]+)\]\s*/.exec(msg);
+                r.message = `서버를 시작하지 못했습니다: ${msg}`;
+                if (code) {
+                    r.errors = [{ code: code[1], title: '서버를 시작하지 못했습니다', hint: msg.slice(code[0].length) }];
+                }
             }
             this.refreshMods(id).catch(() => undefined);
         } else {
@@ -466,18 +502,18 @@ export class HostManager extends EventEmitter {
     }
 
     // ---------------------------------------------------------------- 주소 열기
-    async openAddress(id: string): Promise<ServerView> {
+    async openAddress(id: string, skip: ProviderId[] = []): Promise<ServerView> {
         const r = this.rt.get(id)!;
         if (r.opening) {
             await r.opening;
             return this.view(this.get(id));
         }
-        r.opening = this.doOpen(id).finally(() => { r.opening = undefined; });
+        r.opening = this.doOpen(id, skip).finally(() => { r.opening = undefined; });
         await r.opening;
         return this.view(this.get(id));
     }
 
-    protected async doOpen(id: string): Promise<void> {
+    protected async doOpen(id: string, skip: ProviderId[] = []): Promise<void> {
         const s = this.get(id);
         const r = this.rt.get(id)!;
         const port = s.kind === 'external' ? s.port! : r.gamePort;
@@ -511,6 +547,10 @@ export class HostManager extends EventEmitter {
             if (provider === 'e4mc' && keepE4mc.length) {
                 continue;   // 준비 단계에서 이미 실패(이유는 남겨 둠)
             }
+            if (skip.includes(provider)) {
+                r.address.attempts.push({ provider, ok: false, reason: '친구가 이 방식으로 들어오지 못해 건너뜀' });
+                continue;
+            }
             r.address.trying = provider;
             this.changed();
             try {
@@ -519,6 +559,9 @@ export class HostManager extends EventEmitter {
                     attempts: [...r.address.attempts, { provider, ok: true }], notes: res.notes };
                 this.log(id, `[통합 작업실] 주소 열림(${provider}): ${res.address}`);
                 this.changed();
+                if (provider === 'upnp') {
+                    this.checkFirewall(id).catch(() => undefined);   // 직접 들어오는 방식은 방화벽이 막으면 소용없다
+                }
                 return;
             } catch (e) {
                 const reason = (e as Error).message;
@@ -568,7 +611,7 @@ export class HostManager extends EventEmitter {
             throw new Error('playit 에이전트가 아직 없습니다. 패널의 [playit 준비]로 받으면 다음부터 자동으로 씁니다.');
         }
         if (!st.linked) {
-            throw new Error('playit 계정이 아직 연결되지 않았습니다. 패널의 [playit 계정 연결]을 한 번만 해 주세요.');
+            throw new Error('playit 계정이 연결돼 있지 않습니다(처음이거나 연결이 풀림). 패널의 [playit 다시 연결]을 눌러 주세요.');
         }
         const t = await pl.ensureTunnel(s.name, port, s.playitTunnelId);
         if (s.playitTunnelId !== t.id) {
@@ -626,6 +669,80 @@ export class HostManager extends EventEmitter {
         }
         this.changed();
         return this.view(s);
+    }
+
+    /** 친구가 못 들어올 때: 지금 방식(과 이미 건너뛴 방식)을 빼고 다음 방식으로 다시 연다. */
+    async nextProvider(id: string): Promise<ServerView> {
+        const r = this.rt.get(id)!;
+        const skip = [...new Set([...r.address.attempts.filter(a => !a.ok).map(a => a.provider),
+            ...(r.address.provider ? [r.address.provider] : [])])];
+        const s = this.get(id);
+        const chain = CHAINS[s.kind];
+        if (chain.every(p => skip.includes(p))) {
+            skip.length = 0;           // 다 해 봤으면 처음부터
+        }
+        await this.closeAddress(id);
+        this.log(id, `[통합 작업실] 다른 방식으로 다시 엽니다(건너뜀: ${skip.join(', ') || '없음'})`);
+        return this.openAddress(id, skip);
+    }
+
+    protected port(id: string): number | undefined {
+        const s = this.get(id);
+        return s.kind === 'external' ? s.port : this.rt.get(id)!.gamePort;
+    }
+
+    async checkFirewall(id: string): Promise<FirewallStatus> {
+        const port = this.port(id);
+        if (!port) {
+            throw new Error('서버가 켜져 있을 때 확인할 수 있습니다.');
+        }
+        const st = await this.sidecar.call<FirewallStatus>('firewall_check', { port });
+        const r = this.rt.get(id)!;
+        r.firewall = st;
+        if (!st.ok && !st.unknown) {
+            this.log(id, `[통합 작업실] ${st.message}`);
+        }
+        this.changed();
+        return st;
+    }
+
+    async allowFirewall(id: string): Promise<FirewallStatus> {
+        const port = this.port(id);
+        if (!port) {
+            throw new Error('서버를 켠 뒤 눌러 주세요(어느 프로그램인지 알아야 합니다).');
+        }
+        const st = await this.sidecar.call<FirewallStatus>('firewall_allow', { port });
+        this.rt.get(id)!.firewall = st;
+        this.changed();
+        return st;
+    }
+
+    protected dedicated(id: string): StoredServer {
+        const s = this.get(id);
+        if (s.kind !== 'dedicated' || !s.serverId || !s.instanceId) {
+            throw new Error('전용 서버에서만 됩니다.');
+        }
+        return s;
+    }
+
+    async modCheck(id: string): Promise<ModCheck> {
+        const s = this.dedicated(id);
+        return this.sidecar.call<ModCheck>('ds_mod_check', { id: s.instanceId, sid: s.serverId });
+    }
+
+    async modFix(id: string, items: ModIssue[]): Promise<{ done: number; failed: Array<ModIssue & { error: string }>; check: ModCheck }> {
+        const s = this.dedicated(id);
+        const res = await this.sidecar.call<{ done: number; failed: Array<ModIssue & { error: string }>; check: ModCheck }>(
+            'ds_mod_fix', { id: s.instanceId, sid: s.serverId, items });
+        this.log(id, `[통합 작업실] 모드 맞추기: ${res.done}개 처리${res.failed.length ? `, ${res.failed.length}개 실패` : ''}`);
+        this.refreshMods(id).catch(() => undefined);
+        return res;
+    }
+
+    async openFolder(id: string): Promise<string> {
+        const s = this.dedicated(id);
+        const r = await this.sidecar.call<{ path: string }>('ds_open_folder', { id: s.instanceId, sid: s.serverId });
+        return r.path;
     }
 
     async ping(port: number): Promise<PingResult> {
@@ -697,10 +814,29 @@ export class HostManager extends EventEmitter {
                 r.state = 'stopped';
                 r.players = [];
                 r.ping = undefined;
+                const errs = (p.errors as ServerError[] | undefined) ?? [];
+                for (const e of errs) {
+                    if (!r.errors.some(x => x.code === e.code)) {
+                        r.errors.push(e);
+                    }
+                }
                 if (p.exitCode && p.exitCode !== 0) {
                     r.state = 'error';
-                    r.message = `서버가 멈췄습니다(코드 ${p.exitCode}). 콘솔을 확인하세요.`;
+                    r.message = r.errors.length
+                        ? `서버가 멈췄습니다(종료 코드 ${p.exitCode}): ${errorText(r.errors[0])}`
+                        : `서버가 멈췄습니다(종료 코드 ${p.exitCode}). 콘솔을 확인하세요.`;
                 }
+                this.changed();
+            }
+        } else if (method === 'ds_error') {
+            const hit = this.byServerId(p.id);
+            if (hit) {
+                const r = this.rt.get(hit[0])!;
+                const err = p.error as ServerError;
+                if (!r.errors.some(e => e.code === err.code)) {
+                    r.errors.push(err);
+                }
+                this.log(hit[0], `[통합 작업실] 오류 ${errorText(err)}`);
                 this.changed();
             }
         } else if (method === 'ds_players') {
