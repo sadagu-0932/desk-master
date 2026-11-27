@@ -517,7 +517,9 @@ def test_in_use_survives_powershell_returning_none(world, monkeypatch):
         return R()
     monkeypatch.setattr(sp, "run", fake_run)
     assert local_mod._processes() == []
-    assert seen["encoding"] == "utf-8" and "OutputEncoding" in seen["cmd"][-1]
+    import base64
+    script = base64.b64decode(seen["cmd"][-1]).decode("utf-16-le")      # -EncodedCommand
+    assert seen["encoding"] == "utf-8" and "OutputEncoding" in script and "-Filter" in script
     r = imp.in_use(inst["id"])
     assert r["linked"] is True
 

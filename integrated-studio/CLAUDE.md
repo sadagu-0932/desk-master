@@ -197,7 +197,12 @@ Theia 확장은 TypeScript로 작성한다. Python 쪽은 `sidecar/` 아래에�
 - 정리(2026-11-27, 사용자 요청 "최적화·알아보기 쉽게"): 안 쓰는 함수·변수·import 제거(vulture·pyflakes·tsc --noUnusedLocals 로 찾고 사용처 확인),
   인터넷 요청·다운로드는 `sidecar/net.py` 하나로(네 모듈에 따로 있던 복사본 제거, 시험 `tests/test_net.py`) — **새 코드도 urllib 을 직접 쓰지 말고 net.py 를 쓴다**.
   명령 오류 알림은 launcher-core `reportErrors`/`errorMessage` 하나로(다섯 확장에 같은 코드가 있었음). README 에 "코드 구조" 절 추가.
-
+- 최적화(2026-11-27, 사용자 요청 "기본 최적화 + 기능·용량 영향 없으면 파일 나누기"):
+  사이드카 시작 0.17→0.08초(`lazy.py`: minecraft-launcher-lib 를 설치·등록할 때 불러옴). 30초 동기화는 파일 상태(경로·수정 시각·크기·쓰기 가능)가
+  지난번과 같으면 읽지 않음(`sync_now(force=False)`, 수동·실행 직전·게임 종료 뒤는 항상). 사용 중 확인은 필요한 프로세스만 WMI `-Filter` 로,
+  스크립트는 `-EncodedCommand`(따옴표 안전), 이미 막을 이유가 있으면 조회 생략. Theia 기본 확장은 전부 plugin-ext(CommandCrafter) 의존이라 그대로.
+  파일 나누기: `server_runner.py` → `server_mods.py`(모드 분석)·`e4mc_host.py`(e4mc). official_launcher·importers/__init__·host-manager.ts 는
+  한 클래스·한 주제이고 시험이 모듈 함수를 바꿔 끼우는 곳이 많아 나누지 않음(나누면 시험이 엉뚱한 걸 검사하게 될 위험).
 ### M9. 패키징 (내 PC용)
 - electron-builder로 Windows 설치 파일 또는 압축 실행판을 만든다. **배포하지 않는다** — 개인 사용 전용.
 - 서명이 없어서 SmartScreen 경고가 뜨는 건 그대로 둔다.

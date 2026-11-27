@@ -10,14 +10,15 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
-import minecraft_launcher_lib as mll
-
 from instances import InstanceStore, write_cc_config
 from paths import safe_join
 import modrinth
 import net
 import server_runner
 from rpc import RpcError, notify
+from lazy import lazy_module
+
+mll = lazy_module("minecraft_launcher_lib")   # 설치할 때만 필요 → 처음 쓸 때 불러옴
 
 LOG_LEVEL = re.compile(r"/(TRACE|DEBUG|INFO|WARN|WARNING|ERROR|FATAL)\]")
 EULA_URL = "https://aka.ms/MinecraftEULA"

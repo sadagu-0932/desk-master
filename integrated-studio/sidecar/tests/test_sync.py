@@ -140,6 +140,35 @@ def main() -> None:
         check(off.forget(a["id"]) and key not in json.loads((mc / "launcher_profiles.json").read_text("utf-8"))["profiles"],
               "인스턴스를 지우면 항목도 지움")
 
+        print("5) 30초마다 돌 때: 바뀐 게 없으면 파일을 읽지 않음(최적화)")
+        ss.sync_now()                                   # 지금 상태를 기억
+        calls = {"file": 0, "profiles": 0}
+        real_file, real_prof = ss._sync_file, ss._sync_profiles
+
+        def count_file(*a, **kw):
+            calls["file"] += 1
+            return real_file(*a, **kw)
+
+        def count_prof(*a, **kw):
+            calls["profiles"] += 1
+            return real_prof(*a, **kw)
+        ss._sync_file, ss._sync_profiles = count_file, count_prof
+        r = ss.sync_now(force=False)
+        check(calls == {"file": 0, "profiles": 0} and r == {"options": [], "servers": [], "profiles": 0},
+              "그대로면 options·servers·항목 모두 건너뜀")
+        (da / "options.txt").write_text("version:4000\nfov:0.42\n", "utf-8")
+        set_mtime(da / "options.txt", time.time() + 3600)   # 확실히 가장 최근
+        r = ss.sync_now(force=False)
+        check(calls["file"] == 1 and "fov:0.42" in (db / "options.txt").read_text("utf-8"),
+              "한 곳이라도 바뀌면 그 파일만 다시 맞춤")
+        meta = store.get(b["id"])
+        meta["name"] = "나 새이름"
+        store.save(meta)
+        ss.sync_now(force=False)
+        check(calls["profiles"] == 1, "인스턴스 설정이 바뀌면 공식 런처 항목도 다시 맞춤")
+        ss.sync_now()
+        check(calls["file"] == 3, "수동 동기화(force)는 항상 맞춤")
+
     print(f"\n통과 {PASSED}개")
 
 

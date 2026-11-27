@@ -89,7 +89,9 @@ npm run package:with-python   # Python 포함 설치 파일 (Windows에서만)
 | `sidecar/official_launcher.py`, `official_rpc.py` | 공식 런처 감지·설치·항목 등록·로그 따라 읽기 |
 | `sidecar/sync.py` | 설정(options.txt·servers.dat) 동기화 |
 | `sidecar/modrinth.py` | Modrinth 에서 받는 건 전부 여기(정확한 버전·해시 검증) |
-| `sidecar/server_runner.py` | 전용 서버(바닐라·Fabric·NeoForge·Forge), e4mc |
+| `sidecar/server_runner.py` | 전용 서버(바닐라·Fabric·NeoForge·Forge) |
+| `sidecar/server_mods.py`, `e4mc_host.py` | 참가자도 필요한 모드 분석 / e4mc(싱글 LAN 공개 → 인터넷 주소) |
+| `sidecar/lazy.py` | 무거운 라이브러리(minecraft-launcher-lib)를 처음 쓸 때 불러와 시작을 빠르게 |
 | `sidecar/importers/` | 모드팩 가져오기(`__init__`), 다른 런처 감지(`launchers`), 복사·연결·사용 중 확인(`local`), 연결 인스턴스 실행 파일(`launchfile`) |
 | `sidecar/mc_tools/` | 데이터팩·모드 검사 도구(Claude 후크용) |
 | `theia-extensions/launcher-core` | 인스턴스 모델·사이드카 연결(`InstanceManager`)·명령(`launcher-commands.ts`)·새 인스턴스 창 |

@@ -416,7 +416,8 @@ class LocalImporter:
         if kind in ("prism", "multimc") and started and time.time() - started < LAUNCH_GUARD_S:
             reasons.append(f"방금({int(time.time() - started)}초 전) 실행했습니다 — 켜지는 중입니다. "
                            f"{LAUNCH_GUARD_S}초 뒤에도 안 켜지면 다시 눌러 주세요.")
-        procs = _processes()
+        # 프로세스 목록(PowerShell)은 느리다(Windows 1~3초) → 이미 막을 이유가 있으면 건너뛴다
+        procs = [] if reasons else _processes()
         # Prism 이 띄운 java 명령줄엔 게임 폴더(minecraft)가 없고 '<인스턴스>/natives' 처럼 원래 인스턴스 폴더가, '/' 구분자로 들어간다
         targets = [_norm_path(str(game))]
         if meta.get("sourceDir"):
@@ -506,6 +507,21 @@ def _locked(p: Path) -> bool:
         return False
 
 
+# 사용 중 확인에 필요한 프로세스만 묻는다(전체 목록보다 빠르고 출력도 작다). WQL 비교는 대소문자를 가리지 않는다
+_WANTED_FILTER = " OR ".join(f"Name='{n}'" for n in ("java.exe", "javaw.exe", *LAUNCHER_PROCS))
+
+
+def _ps_script() -> str:
+    return ("[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; "
+            f'Get-CimInstance Win32_Process -Filter "{_WANTED_FILTER}" | ForEach-Object {{ $_.Name + "|" + $_.CommandLine }}')
+
+
+def _ps_encode(script: str) -> str:
+    """PowerShell -EncodedCommand 형식(UTF-16LE base64). 따옴표가 든 스크립트도 명령줄 해석에 깨지지 않는다."""
+    import base64
+    return base64.b64encode(script.encode("utf-16-le")).decode("ascii")
+
+
 def _processes() -> list[tuple[str, str]]:
     """(소문자 이름, 명령줄). 시험용: INTEGRATED_STUDIO_FAKE_PROCS='name|cmd;name|cmd'."""
     fake = os.environ.get("INTEGRATED_STUDIO_FAKE_PROCS")
@@ -517,9 +533,7 @@ def _processes() -> list[tuple[str, str]]:
         # 출력은 UTF-8 로 받는다. 시스템 코드 페이지(cp949)로 못 읽는 글자가 명령줄에 있으면 Windows 의 Python 은
         # 읽기 스레드 오류를 삼키고 stdout=None 을 돌려줘서 'splitlines' 오류로 실행이 막혔다.
         out = subprocess.run(
-            ["powershell", "-NoProfile", "-Command",
-             "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; "
-             "Get-CimInstance Win32_Process | ForEach-Object { $_.Name + '|' + $_.CommandLine }"],
+            ["powershell", "-NoProfile", "-NonInteractive", "-EncodedCommand", _ps_encode(_ps_script())],
             capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=15,
             creationflags=0x08000000, stdin=subprocess.DEVNULL).stdout
     except (OSError, subprocess.SubprocessError, UnicodeError):

@@ -50,7 +50,9 @@ import threading
 from pathlib import Path
 from typing import Any, Callable
 
-import minecraft_launcher_lib.vanilla_launcher as vanilla_launcher
+from lazy import lazy_module
+
+vanilla_launcher = lazy_module("minecraft_launcher_lib.vanilla_launcher")   # 항목 등록할 때만 → 처음 쓸 때 불러옴
 
 ConfirmCallback = Callable[[str], bool]
 LogCallback = Callable[[str], None]

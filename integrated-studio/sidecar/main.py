@@ -19,7 +19,8 @@ from sync import SettingsSync  # noqa: E402
 from rpc import notify, serve  # noqa: E402
 from runner import Runner  # noqa: E402
 from importers.local import LocalImporter  # noqa: E402
-from server_runner import E4mcHost, ServerRunner  # noqa: E402
+from e4mc_host import E4mcHost  # noqa: E402
+from server_runner import ServerRunner  # noqa: E402
 
 VERSION = "0.1.0"
 

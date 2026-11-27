@@ -11,7 +11,9 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import e4mc_host  # noqa: E402
 import net  # noqa: E402
+import server_mods  # noqa: E402
 import server_runner as sr  # noqa: E402
 from instances import InstanceStore  # noqa: E402
 from rpc import RpcError  # noqa: E402
@@ -205,13 +207,13 @@ def test_client_required_mods(tmp_path):
     make_jar(mods / "e4mc.jar", "fabric", "e4mc")                       # 호스트 전용
     make_jar(mods / "sodium.jar", "fabric", "sodium", "client")         # 클라이언트 전용 → 참가자 필요 없음
     make_jar(mods / "fabric-api.jar", "fabric", "fabric-api")           # 라이브러리
-    assert sr.client_required_mods(mods) == []                          # 콘텐츠 모드가 없으면 라이브러리도 안 보임
+    assert server_mods.client_required_mods(mods) == []                          # 콘텐츠 모드가 없으면 라이브러리도 안 보임
     make_jar(mods / "lithium.jar", "fabric", "lithium", "server")       # 서버 전용
     make_jar(mods / "create.jar", "fabric", "create")                   # 콘텐츠
     make_jar(mods / "q.jar", "quilt", "qmod", "*")
     make_jar(mods / "nf.jar", "neoforge", "jei", extra={"displayTest": "IGNORE_ALL_VERSION"})
     make_jar(mods / "nf2.jar", "neoforge", "mekanism")
-    ids = {m["id"]: m for m in sr.client_required_mods(mods)}
+    ids = {m["id"]: m for m in server_mods.client_required_mods(mods)}
     assert set(ids) == {"create", "qmod", "mekanism", "fabric-api"}
     assert ids["fabric-api"]["library"] is True and ids["create"]["library"] is False
 
@@ -253,7 +255,7 @@ def e4(tmp_path, monkeypatch):
         return r
 
     monkeypatch.setattr(modrinth, "install", fake_install)
-    host = sr.E4mcHost(store, install_fabric=lambda i, v: f"fabric-loader-0.20.1-{v}",
+    host = e4mc_host.E4mcHost(store, install_fabric=lambda i, v: f"fabric-loader-0.20.1-{v}",
                        register_host=lambda i, vid: {"ok": True, "message": "등록"})
     return host, store, iid, calls
 

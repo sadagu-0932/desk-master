@@ -72,6 +72,8 @@ class SettingsSync:
         self._lock = threading.Lock()
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
+        # 지난 동기화 직후의 파일 상태(경로·수정 시각·크기·쓰기 가능). 30초마다 돌 때 그대로면 파일을 읽지 않는다
+        self._last: dict[str, tuple] = {}
 
     # ---------- 위치 ----------
     def official_dir(self) -> Path | None:
@@ -173,12 +175,52 @@ class SettingsSync:
             self.log(f"공식 런처의 지워진 인스턴스 항목을 정리하지 못했습니다: {e}")
         return n
 
-    def sync_now(self) -> dict[str, Any]:
+    @staticmethod
+    def _file_state(name: str, targets: list[dict[str, Any]]) -> tuple:
+        out = []
+        for t in targets:
+            p = t["dir"] / name
+            try:
+                st = p.stat()
+                out.append((str(p), st.st_mtime_ns, st.st_size, t["writable"]))
+            except OSError:
+                out.append((str(p), None, None, t["writable"]))
+        return tuple(out)
+
+    def _profiles_state(self) -> tuple:
+        """공식 런처 항목에 영향을 주는 것: 인스턴스 설정 파일들과 launcher_profiles.json."""
+        out = []
+        for inst in self.store.list():
+            try:
+                st = (self.store.dir_of(inst["id"]) / "instance.json").stat()
+                out.append((inst["id"], st.st_mtime_ns, st.st_size))
+            except Exception:  # noqa: BLE001 - 지워진 인스턴스 등
+                out.append((inst["id"], None, None))
+        off = self.official_dir()
+        if off is not None:
+            try:
+                st = (off / "launcher_profiles.json").stat()
+                out.append(("launcher_profiles", st.st_mtime_ns, st.st_size))
+            except OSError:
+                out.append(("launcher_profiles", None, None))
+        return tuple(out)
+
+    def sync_now(self, force: bool = True) -> dict[str, Any]:
+        """force=False(30초마다): 지난번과 파일 상태가 같으면 그 부분은 건너뛴다. 수동·실행 직전·게임 종료 뒤는 항상."""
         with self._lock:
             targets = self._targets()
-            result = {"options": self._sync_file(OPTIONS, targets),
-                      "servers": self._sync_file(SERVERS, targets),
-                      "profiles": self._sync_profiles()}
+            result: dict[str, Any] = {}
+            for key, name in (("options", OPTIONS), ("servers", SERVERS)):
+                if not force and self._last.get(name) == self._file_state(name, targets):
+                    result[key] = []
+                    continue
+                result[key] = self._sync_file(name, targets)
+                self._last[name] = self._file_state(name, targets)   # 맞춘 뒤의 상태를 기억
+            if not force and self._last.get("profiles") == self._profiles_state():
+                result["profiles"] = 0
+            else:
+                result["profiles"] = self._sync_profiles()
+                self._last["profiles"] = self._profiles_state()
         return result
 
     # ---------- 항상 ----------
@@ -186,7 +228,7 @@ class SettingsSync:
         def loop() -> None:
             while not self._stop.is_set():
                 try:
-                    self.sync_now()
+                    self.sync_now(force=False)
                 except Exception as e:  # noqa: BLE001 - 동기화 실패로 사이드카가 죽지 않게
                     self.log(f"설정 동기화 중 오류: {e}")
                 self._stop.wait(interval)

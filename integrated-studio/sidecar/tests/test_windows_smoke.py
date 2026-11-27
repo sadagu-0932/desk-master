@@ -117,3 +117,23 @@ def test_windows_launch_file_runs_with_special_characters(tmp_path):
                     break
                 time.sleep(0.1)
             assert marker.exists(), f"실행되지 않음: {path}"
+
+
+def test_windows_process_query_filtered_and_encoded(monkeypatch):
+    """사용 중 확인의 프로세스 조회: 필요한 이름만 WMI 에서 거르고(-Filter), 스크립트는 -EncodedCommand 로 넘긴다.
+    필터에 python.exe 를 넣어 한글·이모지 명령줄의 자식 프로세스가 실제로 잡히는지 확인한다."""
+    sys.path.insert(0, str(SIDECAR))
+    from importers import local
+    monkeypatch.delenv("INTEGRATED_STUDIO_FAKE_PROCS", raising=False)
+    monkeypatch.setattr(local, "_WANTED_FILTER", local._WANTED_FILTER + " OR Name='python.exe'")
+    child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)", "🙂 크리에이트 ⛏"])
+    try:
+        time.sleep(1)
+        t = time.time()
+        rows = local._processes()
+        took = time.time() - t
+        print(f"process query: {len(rows)} rows in {took:.2f}s")
+        assert any("크리에이트" in cmd for _n, cmd in rows), rows[:5]
+        assert all(n in ("python.exe", "java.exe", "javaw.exe") or n in local.LAUNCHER_PROCS for n, _c in rows)
+    finally:
+        child.kill()
