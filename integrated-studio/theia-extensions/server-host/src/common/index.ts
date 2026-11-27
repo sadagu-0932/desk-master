@@ -116,6 +116,8 @@ export interface CreateServerOptions {
     /** 방식 C: 이 PC 의 포트 */
     port?: number;
     preference?: 'auto' | ProviderId;
+    /** 전용 서버 종류: 없으면 인스턴스 로더 그대로, 'paper' = Paper(플러그인 서버) */
+    software?: 'paper';
 }
 
 /** 서버 목록 핑(Server List Ping) 결과 */

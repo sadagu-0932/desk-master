@@ -139,6 +139,10 @@ def main() -> None:
         "resourcepack_import": packs.resourcepack_import,
         "resourcepack_apply": packs.resourcepack_apply,
         "list_mod_projects": packs.list_mod_projects,
+        # Paper 플러그인: 템플릿 → ./gradlew build → 그 인스턴스의 Paper 서버 plugins/ 에 넣고 켜져 있으면 다시 시작
+        "plugin_new": packs.plugin_new,
+        "list_plugin_projects": packs.list_plugin_projects,
+        "plugin_build": lambda id, name: (lambda jar: {"jar": str(jar), **servers.install_plugin(id, jar)})(packs.plugin_build(id, name)),
         "mod_new": packs.mod_new,
         "mod_build": packs.mod_build,
         "open_external": packs.open_external,
@@ -184,7 +188,7 @@ def main() -> None:
         "memory_usage": memory.usage,
         "sync_now": settings_sync.sync_now,
     }
-    background = {"create_instance", "duplicate_instance", "list_versions", "list_loader_versions", "server_start", "server_stop", "generate_reports", "mod_new", "mod_build", "read_commands", "inspect_import", "import_file",
+    background = {"create_instance", "duplicate_instance", "list_versions", "list_loader_versions", "server_start", "server_stop", "generate_reports", "mod_new", "mod_build", "plugin_new", "plugin_build", "read_commands", "inspect_import", "import_file",
                   "modrinth_search", "modrinth_versions", "modrinth_install_modpack", "modrinth_add_mod",
                   "cf_key_status", "cf_set_key", "cf_search", "cf_files", "cf_install_modpack", "cf_add_mod"} | {"prism_install", "prism_sync", "prism_migrate", "launch_linked"} | {"ds_create", "ds_set_world", "ds_start", "ds_stop", "host_mods", "e4mc_install", "e4mc_check_crash",
                      "import_detect", "import_inspect_folder", "import_preview", "import_run", "import_in_use"} | {"sync_now", "delete_instance", "memory_usage"}

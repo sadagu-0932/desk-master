@@ -21,6 +21,7 @@ const MODES: { id: WorkMode; label: string; detail: string }[] = [
     { id: 'datapack', label: '데이터팩', detail: 'datapacks/ 안만 수정 · 셸 명령 금지' },
     { id: 'mod', label: 'Fabric 모드', detail: 'mods-src/ 안만 수정 · ./gradlew build 만 허용' },
     { id: 'resourcepack', label: '리소스팩', detail: 'resourcepacks/ 안만 수정 · 원본 대신 "Claude 제안" 새 파일' },
+    { id: 'plugin', label: 'Paper 플러그인', detail: 'plugins-src/ 안만 수정 · ./gradlew build 만 허용' },
 ];
 
 export namespace ClaudeCommands {

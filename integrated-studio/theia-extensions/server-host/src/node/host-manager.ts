@@ -254,6 +254,7 @@ export class HostManager extends EventEmitter {
             if (o.kind === 'dedicated') {
                 const d = await this.sidecar.call<{ id: string }>('ds_create', {
                     id: o.instanceId, name: s.name, online_mode: o.onlineMode ?? true, world: o.world || null,
+                    software: o.software ?? null,
                 });
                 s.serverId = d.id;
                 s.onlineMode = o.onlineMode ?? true;

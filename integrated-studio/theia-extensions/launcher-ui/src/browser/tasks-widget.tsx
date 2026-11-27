@@ -14,6 +14,7 @@ interface TaskItem {
 const TASKS: TaskItem[] = [
     { label: '로컬 서버 실행', command: TaskCommandIds.SERVER_TOGGLE, key: 'F6' },
     { label: '모드 빌드 후 테스트 실행', command: TaskCommandIds.MOD_BUILD_TEST, key: 'F7' },
+    { label: 'Paper 플러그인 빌드 후 서버에 넣기', command: TaskCommandIds.PLUGIN_BUILD_TEST, key: 'F9' },
     { label: '리소스팩 적용 후 다시 불러오기', command: TaskCommandIds.RESOURCEPACK_APPLY, key: 'F8' },
     { label: '데이터팩 .zip 내보내기', command: TaskCommandIds.DATAPACK_ZIP, key: '' },
     { label: '데이터팩을 월드로 동기화', command: TaskCommandIds.DATAPACK_SYNC, key: '' },

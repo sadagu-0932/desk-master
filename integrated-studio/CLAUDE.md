@@ -233,6 +233,16 @@ Theia 확장은 TypeScript로 작성한다. Python 쪽은 `sidecar/` 아래에�
     Prism 은 있으면 체크 해제·없으면 체크(해제 가능). winget 으로 사용자 범위 설치, 실패하면 내려받기 페이지. 조용한 설치(/S)는 없는 것만. `makensis -WX` 로 문법 확인.
     앱은 PATH 에 아직 없는 새 Python 도 표준 위치(%LOCALAPPDATA%\Programs\Python\Python3xx 등)에서 찾는다(`findSystemPython`, WindowsApps 별칭 제외).
   - 시험: `tests/test_prism.py`(형식·찾기·만들기/지우기·자동 연동·옮기기), `test_launchers.py`·`test_sync.py` 새 규칙으로. 공식 런처 모듈·시험(`official_launcher.py`·`official_rpc.py`·t13) 삭제.
+- **Paper 플러그인 개발**(사용자 결정 2026-11-27: "페이퍼만 다룰거야" — Spigot·Velocity 는 하지 않음):
+  - 템플릿 `packs.plugin_new` → `<게임 폴더>/plugins-src/<이름>`: Gradle(코틀린 DSL) + `compileOnly("io.papermc.paper:paper-api:<mc>.build.+")`(1.x 는 `<mc>-R0.1-SNAPSHOT`),
+    저장소 `repo.papermc.io/repository/maven-public/`, 자바 툴체인 25(1.x 는 21), `plugin.yml`(name·version·main·api-version '<mc>') — docs.papermc.io(project-setup·plugin-yml)·
+    paper-api 메이븐 메타데이터로 확인(2026-11, 26.3 은 `26.3.build.263-stable` 형식). 예제: 접속하면 인사(Adventure Component). 실제 Gradle 빌드로 jar 확인함.
+  - Paper 서버 = 전용 서버 종류 `software="paper"`(서버 패널 [서버 열기] → 전용 서버 → "Paper 서버(플러그인)" 체크, 인스턴스 로더와 상관없이 같은 게임 버전).
+    jar 는 Fill v3 API(`fill.papermc.io/v3/projects/paper/versions/<mc>/builds`)에서 가장 새 STABLE(없으면 가장 새 것), `downloads["server:default"]`
+    의 sha256 검증, 주소는 fill-data.papermc.io 만, `data/server-jars/paper/` 에 두고 다시 씀. EULA 는 지금처럼 사용자가 직접 동의(자동 동의 금지).
+  - F9(작업 뷰 "Paper 플러그인 빌드 후 서버에 넣기") = `plugin_build`: `./gradlew build` → 그 인스턴스의 모든 Paper 서버 `plugins/` 에 넣고(같은 이름의 예전 버전은 휴지통),
+    켜져 있던 서버는 다시 시작(Paper 는 /reload 를 권하지 않음). Paper 서버가 없으면 만들라고 안내. Claude 작업 종류 "Paper 플러그인"(`plugins-src/` 만, `./gradlew build` 만).
+  - 시험: `tests/test_plugins.py`(템플릿·이름 검사·STABLE 고르기·해시·주소 검사·plugins/ 넣기·다시 시작·EULA 자동 동의 안 함).
 ### M9. 패키징 (내 PC용)
 - electron-builder로 Windows 설치 파일 또는 압축 실행판을 만든다. **배포하지 않는다** — 개인 사용 전용.
 - 서명이 없어서 SmartScreen 경고가 뜨는 건 그대로 둔다.

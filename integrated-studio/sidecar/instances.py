@@ -22,7 +22,7 @@ from rpc import RpcError
 LOADERS = ("vanilla", "fabric", "quilt", "neoforge", "forge")  # quilt·neoforge·forge 는 불러온 인스턴스용
 CC_BASE_PORT = 52853
 PENDING_DELETE = "instance.deleted.json"   # 지우려 했는데 폴더가 쓰는 중이었음 → 다음 시작 때 휴지통으로
-WORK_MODES = ("datapack", "mod", "resourcepack")
+WORK_MODES = ("datapack", "mod", "resourcepack", "plugin")
 
 INSTANCE_GITIGNORE = """# 통합 작업실이 만든 인스턴스 저장소: 직접 만든 것만 추적한다
 logs/
@@ -401,6 +401,14 @@ MODE_TEXT = {
         "- 셸 명령은 `./gradlew build`만 쓸 수 있다.\n"
         "- 아이템·블록을 추가하면 16×16 텍스처와 모델 JSON도 함께 만든다.",
     ),
+    "plugin": (
+        "Paper 플러그인",
+        ["Read", "Glob", "Grep", "Edit(plugins-src/**)", "Write(plugins-src/**)", "MultiEdit(plugins-src/**)",
+         "Bash(./gradlew build)", "Bash(./gradlew build:*)"],
+        "- 수정·생성은 `plugins-src/` 안에서만 한다.\n"
+        "- Paper API(`io.papermc.paper:paper-api`)만 쓴다. NMS·리플렉션으로 서버 내부를 건드리지 않는다.\n"
+        "- 명령·권한·설정은 `src/main/resources/plugin.yml` 에 적는다. 셸 명령은 `./gradlew build`만 쓸 수 있다.",
+    ),
     "resourcepack": (
         "리소스팩",
         ["Read", "Glob", "Grep", "Edit(resourcepacks/**)", "Write(resourcepacks/**)", "MultiEdit(resourcepacks/**)"],
@@ -419,7 +427,7 @@ def write_work_mode(d: Path, mode: str) -> None:
         "permissions": {
             "allow": allow,
             "deny": [
-                "Bash" if mode != "mod" else "Bash(rm:*)",
+                "Bash" if mode not in ("mod", "plugin") else "Bash(rm:*)",
                 "Edit(saves/**)", "Write(saves/**)",
                 "Edit(instance.json)", "Write(instance.json)",
                 "WebFetch",

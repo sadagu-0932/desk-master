@@ -289,12 +289,14 @@ export class StudioUiContribution implements FrontendApplicationContribution, Co
         this.keybindings.unregisterKeybinding('f6');
         this.keybindings.unregisterKeybinding('f7');
         this.keybindings.unregisterKeybinding('f8');
+        this.keybindings.unregisterKeybinding('f9');   // 디버그 중단점 대신 Paper 플러그인 빌드
         this.keybindings.registerKeybindings(
             { command: StudioCommands.LAUNCH.id, keybinding: 'f5' },
             { command: StudioCommands.STOP.id, keybinding: 'shift+f5' },
             { command: TaskCommandIds.SERVER_TOGGLE, keybinding: 'f6' },
             { command: TaskCommandIds.MOD_BUILD_TEST, keybinding: 'f7' },
             { command: TaskCommandIds.RESOURCEPACK_APPLY, keybinding: 'f8' },
+            { command: TaskCommandIds.PLUGIN_BUILD_TEST, keybinding: 'f9' },
             { command: TaskCommandIds.HOME_OPEN, keybinding: 'alt+home' },
         );
     }

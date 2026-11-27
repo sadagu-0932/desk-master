@@ -2,6 +2,7 @@
 export namespace TaskCommandIds {
     export const SERVER_TOGGLE = 'studio.server.toggle';
     export const MOD_BUILD_TEST = 'studio.mod.buildAndTest';
+    export const PLUGIN_BUILD_TEST = 'studio.plugin.buildAndTest';
     export const RESOURCEPACK_APPLY = 'studio.resourcepack.apply';
     export const DATAPACK_ZIP = 'studio.datapack.exportZip';
     export const DATAPACK_SYNC = 'studio.datapack.syncToWorld';

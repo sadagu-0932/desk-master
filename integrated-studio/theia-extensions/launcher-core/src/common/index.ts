@@ -5,7 +5,7 @@ export const LAUNCHER_SERVICE_PATH = '/services/integrated-studio/launcher';
 export type Loader = 'vanilla' | 'fabric' | 'quilt' | 'neoforge' | 'forge';  // quilt·neoforge·forge 는 다른 런처에서 불러온 인스턴스
 
 export const LOADER_LABELS: Record<string, string> = { vanilla: '바닐라', fabric: 'Fabric', quilt: 'Quilt', neoforge: 'NeoForge', forge: 'Forge' };
-export type WorkMode = 'datapack' | 'mod' | 'resourcepack';
+export type WorkMode = 'datapack' | 'mod' | 'resourcepack' | 'plugin';
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 export type ProcessSource = 'game' | 'server';
 

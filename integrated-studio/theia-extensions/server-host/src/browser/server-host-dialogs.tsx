@@ -19,6 +19,8 @@ export class OpenServerDialog extends ReactDialog<CreateServerOptions> {
     protected kind: ServerKind;
     protected name = '';
     protected onlineMode = true;
+    /** 전용 서버 종류: 인스턴스 로더 그대로 / Paper(플러그인 서버) */
+    protected paper = false;
     protected world = '';
     protected worlds: string[] = [];
     protected port = '25565';
@@ -44,6 +46,7 @@ export class OpenServerDialog extends ReactDialog<CreateServerOptions> {
         return {
             kind: this.kind, instanceId: this.kind === 'external' ? undefined : this.instanceId, name: this.name.trim() || undefined,
             onlineMode: this.onlineMode, world: this.world || undefined, port: this.kind === 'external' ? Number(this.port) : undefined,
+            software: this.kind === 'dedicated' && this.paper ? 'paper' : undefined,
         };
     }
 
@@ -56,7 +59,7 @@ export class OpenServerDialog extends ReactDialog<CreateServerOptions> {
         if (!inst) {
             return '인스턴스를 먼저 만드세요.';
         }
-        if (this.kind === 'dedicated' && !['vanilla', 'fabric', 'neoforge', 'forge'].includes(inst.loader)) {
+        if (this.kind === 'dedicated' && !this.paper && !['vanilla', 'fabric', 'neoforge', 'forge'].includes(inst.loader)) {
             return `전용 서버는 바닐라·Fabric·NeoForge·Forge 인스턴스만 됩니다(${LOADER_LABELS[inst.loader] ?? inst.loader}). 싱글 LAN 공개를 쓰세요.`;
         }
         return '';
@@ -136,7 +139,11 @@ export class OpenServerDialog extends ReactDialog<CreateServerOptions> {
                         {this.worlds.map(w => <option key={w} value={w}>{w} (복사해서 씀 — 원본은 그대로)</option>)}
                     </select>
                 </label>
-                {inst && inst.loader !== 'vanilla' && <div className='sh-muted'>
+                <label className='sh-check'>
+                    <input type='checkbox' checked={this.paper} onChange={e => { this.paper = e.target.checked; this.update(); }} />
+                    Paper 서버(플러그인) — 같은 게임 버전의 Paper 로 엽니다. F9 로 빌드한 플러그인이 이 서버의 plugins/ 에 들어갑니다(모드는 넣지 않음).
+                </label>
+                {inst && inst.loader !== 'vanilla' && !this.paper && <div className='sh-muted'>
                     {LOADER_LABELS[inst.loader]} 서버로 엽니다{inst.loader === 'fabric' ? '(Fabric 서버 런처)' : '(공식 메이븐 설치기, 처음 한 번 몇 분)'}. 인스턴스 mods 중 서버에서도 도는 모드를 서버에 넣습니다.</div>}
                 <label className='sh-check'>
                     <input type='checkbox' checked={this.onlineMode} onChange={e => { this.onlineMode = e.target.checked; this.update(); }} />

@@ -21,6 +21,13 @@ NS_RE = re.compile(r"[a-z0-9_.\-]{1,64}")
 TEMPLATES = Path(__file__).resolve().parent / "templates"
 
 
+def _check_plugin_name(name: str) -> str:
+    """Paper 플러그인 이름(plugin.yml name·폴더 이름): 영문자로 시작, 영문 대소문자·숫자·_·- 2~64자."""
+    if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_\-]{1,63}", name or ""):
+        raise RpcError("플러그인 이름은 영문자로 시작하고 영문·숫자·_·- 만 2~64자.")
+    return name
+
+
 def _check_name(name: str, what: str = "이름") -> str:
     name = (name or "").strip()
     if not NAME_RE.fullmatch(name):
@@ -255,6 +262,113 @@ class Packs:
             pass
         return found
 
+    def _gradle_build(self, id: str, root: Path, label: str) -> Path:
+        """./gradlew build 를 돌려 출력은 게임 로그(빌드)로, 결과 jar(-sources·-dev 제외, 가장 새 것)를 돌려준다."""
+        if id in self.builds:
+            raise RpcError("이미 빌드 중입니다.")
+        win = sys.platform == "win32"
+        cmd = [str(root / ("gradlew.bat" if win else "gradlew")), "build", "--console=plain"]
+        env = dict(os.environ)  # 빌드는 사용자가 설치한 JDK 25(JAVA_HOME)를 쓴다. 게임용 런타임에는 javac가 없다
+        notify("log", {"id": id, "level": "info", "source": "build", "line": f"빌드 시작: {label} (./gradlew build)"})
+        proc = subprocess.Popen(cmd, cwd=root, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                stdin=subprocess.DEVNULL, text=True, encoding="utf-8", errors="replace",
+                                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        self.builds[id] = proc
+        try:
+            assert proc.stdout is not None
+            for line in proc.stdout:
+                line = line.rstrip()
+                if line:
+                    level = "error" if ("error:" in line or "FAILED" in line) else "warn" if "warning:" in line else "info"
+                    notify("log", {"id": id, "level": level, "source": "build", "line": line})
+            code = proc.wait()
+        finally:
+            self.builds.pop(id, None)
+        if code != 0:
+            raise RpcError(f"빌드 실패(코드 {code}). 게임 로그 탭의 빌드 출력을 확인하세요. JDK 25가 설치돼 있고 JAVA_HOME이 그 JDK를 가리켜야 합니다.")
+        libs = root / "build" / "libs"
+        jars = [j for j in libs.glob("*.jar") if not j.name.endswith(("-sources.jar", "-dev.jar", "-javadoc.jar"))]
+        if not jars:
+            raise RpcError("build/libs 에서 jar를 찾지 못했습니다.")
+        return max(jars, key=lambda j: j.stat().st_mtime)
+
+    def _gradle_wrapper(self, root: Path, gradle: str) -> None:
+        shutil.copytree(TEMPLATES / "gradle-wrapper", root, dirs_exist_ok=True)
+        (root / "gradle" / "wrapper" / "gradle-wrapper.properties").write_text(
+            "distributionBase=GRADLE_USER_HOME\ndistributionPath=wrapper/dists\n"
+            f"distributionUrl=https\\://services.gradle.org/distributions/gradle-{gradle}-bin.zip\n"
+            "networkTimeout=10000\nvalidateDistributionUrl=true\n"
+            "zipStoreBase=GRADLE_USER_HOME\nzipStorePath=wrapper/dists\n", "utf-8")
+        (root / "gradlew").chmod(0o755)
+
+    # ---------- Paper 플러그인 (사용자 요청 2026-11-27: Paper 만) ----------
+    @staticmethod
+    def paper_api_version(mc: str) -> tuple[str, int]:
+        """(paper-api 버전, 자바 버전). 26.x 부터는 '<mc>.build.+'(가장 새 빌드), 1.x 는 '<mc>-R0.1-SNAPSHOT'
+        (docs.papermc.io/paper/dev/project-setup, repo.papermc.io paper-api 메타데이터로 확인 2026-11)."""
+        if mc.startswith("1."):
+            return f"{mc}-R0.1-SNAPSHOT", 21
+        return f"{mc}.build.+", 25
+
+    def plugin_new(self, id: str, name: str, group: str = "com.example") -> dict[str, Any]:
+        meta = self.store.get(id)
+        _check_plugin_name(name)
+        if not re.fullmatch(r"[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+", group or ""):
+            raise RpcError("그룹은 com.example 같은 패키지 이름이어야 합니다.")
+        base = self.store.game_dir(id)
+        root = safe_join(base, "plugins-src", name)
+        if root.exists():
+            raise RpcError(f"이미 있는 플러그인 폴더입니다: {name}")
+        mc = meta["version"]
+        api, java = self.paper_api_version(mc)
+        v = self._latest_versions(mc)
+        ident = re.sub(r"[^a-z0-9_]", "_", name.lower())
+        cls = "".join(p[0].upper() + p[1:] for p in re.split(r"[_\-]", name) if p) + "Plugin"   # HelloPaper → HelloPaperPlugin
+        pkg = f"{group}.{ident}"
+        java_dir = root / "src" / "main" / "java" / Path(*pkg.split("."))
+        res = root / "src" / "main" / "resources"
+        java_dir.mkdir(parents=True)
+        res.mkdir(parents=True)
+        self._gradle_wrapper(root, v["gradle"])
+        (root / "settings.gradle.kts").write_text(f'rootProject.name = "{name}"\n', "utf-8")
+        (root / "build.gradle.kts").write_text(
+            "plugins {\n    java\n}\n\n"
+            f'group = "{group}"\nversion = "0.1.0"\n\n'
+            "repositories {\n    mavenCentral()\n"
+            '    maven(url = "https://repo.papermc.io/repository/maven-public/") {\n        name = "papermc"\n    }\n}\n\n'
+            f'dependencies {{\n    compileOnly("io.papermc.paper:paper-api:{api}")\n}}\n\n'
+            f"java {{\n    toolchain.languageVersion.set(JavaLanguageVersion.of({java}))\n}}\n\n"
+            'tasks.withType<JavaCompile>().configureEach {\n    options.encoding = "UTF-8"\n}\n\n'
+            "tasks.processResources {\n    val props = mapOf(\"version\" to version)\n    inputs.properties(props)\n"
+            '    filesMatching("plugin.yml") {\n        expand(props)\n    }\n}\n', "utf-8")
+        (res / "plugin.yml").write_text(
+            f"name: {name}\nversion: '${{version}}'\nmain: {pkg}.{cls}\n"
+            f"description: {name} — 통합 작업실에서 만든 Paper 플러그인\napi-version: '{mc}'\n", "utf-8")
+        (java_dir / f"{cls}.java").write_text(
+            f"package {pkg};\n\n"
+            "import net.kyori.adventure.text.Component;\n"
+            "import org.bukkit.event.EventHandler;\nimport org.bukkit.event.Listener;\n"
+            "import org.bukkit.event.player.PlayerJoinEvent;\nimport org.bukkit.plugin.java.JavaPlugin;\n\n"
+            f"public final class {cls} extends JavaPlugin implements Listener {{\n"
+            "    @Override\n    public void onEnable() {\n"
+            "        getServer().getPluginManager().registerEvents(this, this);\n"
+            f"        getLogger().info(\"{name} 켜짐\");\n    }}\n\n"
+            "    @EventHandler\n    public void onJoin(PlayerJoinEvent event) {\n"
+            f"        event.getPlayer().sendMessage(Component.text(\"{name} 플러그인이 동작합니다\"));\n    }}\n}}\n", "utf-8")
+        (root / ".gitignore").write_text(".gradle/\nbuild/\n*.iml\n.idea/\n", "utf-8")
+        return {"path": str(root), "open": str(java_dir / f"{cls}.java"), "paperApi": api, "java": java}
+
+    def list_plugin_projects(self, id: str) -> list[str]:
+        d = self.store.game_dir(id) / "plugins-src"
+        return sorted(p.name for p in d.iterdir() if (p / "build.gradle.kts").is_file()) if d.is_dir() else []
+
+    def plugin_build(self, id: str, name: str) -> Path:
+        """./gradlew build → 플러그인 jar 경로(서버 plugins/ 에 넣는 건 ServerRunner.install_plugin)."""
+        root = safe_join(self.store.game_dir(id), "plugins-src", _check_plugin_name(name))
+        if not (root / "build.gradle.kts").is_file():
+            raise RpcError(f"플러그인 프로젝트가 없습니다: {name}")
+        return self._gradle_build(id, root, name)
+
     def mod_new(self, id: str, modid: str, name: str, group: str = "com.example") -> dict[str, Any]:
         meta = self.store.get(id)
         if meta["loader"] != "fabric":
@@ -275,12 +389,7 @@ class Packs:
         java_dir.mkdir(parents=True)
         (res / "assets" / modid / "lang").mkdir(parents=True)
 
-        shutil.copytree(TEMPLATES / "gradle-wrapper", root, dirs_exist_ok=True)
-        (root / "gradle" / "wrapper" / "gradle-wrapper.properties").write_text(
-            "distributionBase=GRADLE_USER_HOME\ndistributionPath=wrapper/dists\n"
-            f"distributionUrl=https\\://services.gradle.org/distributions/gradle-{v['gradle']}-bin.zip\n"
-            "networkTimeout=10000\nvalidateDistributionUrl=true\n"
-            "zipStoreBase=GRADLE_USER_HOME\nzipStorePath=wrapper/dists\n", "utf-8")
+        self._gradle_wrapper(root, v["gradle"])
         (root / "settings.gradle").write_text(
             "pluginManagement {\n\trepositories {\n\t\tmaven {\n\t\t\tname = 'Fabric'\n"
             "\t\t\turl = 'https://maven.fabricmc.net/'\n\t\t}\n\t\tmavenCentral()\n\t\tgradlePluginPortal()\n\t}\n}\n\n"
@@ -328,8 +437,6 @@ class Packs:
             f"\t\tLOGGER.info(\"{name or modid} 불러옴\");\n\t}}\n}}\n", "utf-8")
         (res / "assets" / modid / "lang" / "ko_kr.json").write_text("{}\n", "utf-8")
         (root / ".gitignore").write_text(".gradle/\nbuild/\nrun/\n*.iml\n.idea/\n", "utf-8")
-        for script in ("gradlew",):
-            (root / script).chmod(0o755)
         return {"path": str(root), "open": str(java_dir / f"{cls}.java"), "versions": v}
 
     def list_mod_projects(self, id: str) -> list[str]:
@@ -342,33 +449,7 @@ class Packs:
         root = safe_join(base, "mods-src", _check_name(modid, "모드 ID"))
         if not (root / "build.gradle").is_file():
             raise RpcError(f"모드 프로젝트가 없습니다: {modid}")
-        if id in self.builds:
-            raise RpcError("이미 빌드 중입니다.")
-        win = sys.platform == "win32"
-        cmd = [str(root / ("gradlew.bat" if win else "gradlew")), "build", "--console=plain"]
-        env = dict(os.environ)  # 빌드는 사용자가 설치한 JDK 25(JAVA_HOME)를 쓴다. 게임용 런타임에는 javac가 없다
-        notify("log", {"id": id, "level": "info", "source": "build", "line": f"빌드 시작: {modid} (./gradlew build)"})
-        proc = subprocess.Popen(cmd, cwd=root, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                stdin=subprocess.DEVNULL, text=True, encoding="utf-8", errors="replace",
-                                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-        self.builds[id] = proc
-        try:
-            assert proc.stdout is not None
-            for line in proc.stdout:
-                line = line.rstrip()
-                if line:
-                    level = "error" if ("error:" in line or "FAILED" in line) else "warn" if "warning:" in line else "info"
-                    notify("log", {"id": id, "level": level, "source": "build", "line": line})
-            code = proc.wait()
-        finally:
-            self.builds.pop(id, None)
-        if code != 0:
-            raise RpcError(f"빌드 실패(코드 {code}). 게임 로그 탭의 빌드 출력을 확인하세요. JDK 25가 설치돼 있고 JAVA_HOME이 그 JDK를 가리켜야 합니다.")
-        libs = root / "build" / "libs"
-        jars = [j for j in libs.glob("*.jar") if not j.name.endswith(("-sources.jar", "-dev.jar"))]
-        if not jars:
-            raise RpcError("build/libs 에서 jar를 찾지 못했습니다.")
-        jar = max(jars, key=lambda j: j.stat().st_mtime)
+        jar = self._gradle_build(id, root, modid)
         mods = base / "mods"
         for old in mods.glob(f"{modid}-*.jar"):
             trash(old, base)

@@ -14,6 +14,7 @@ import { HomeWidget } from './home-widget.js';
 import { StudioUiContribution } from './studio-ui-contribution.js';
 import { ClaudeIntegration } from './claude-integration.js';
 import { ModTools } from './mod-tools.js';
+import { PluginTools } from './plugin-tools.js';
 import { StudioFilterContribution } from './studio-filter.js';
 import { FilterContribution } from '@theia/core/lib/common/contribution-filter';
 import { ShellLayoutRestorer } from '@theia/core/lib/browser/shell/shell-layout-restorer';
@@ -57,6 +58,9 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
 
     bind(ModTools).toSelf().inSingletonScope();
     bind(CommandContribution).toService(ModTools);
+
+    bind(PluginTools).toSelf().inSingletonScope();
+    bind(CommandContribution).toService(PluginTools);
 
     bind(ClaudeIntegration).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(ClaudeIntegration);

@@ -21,6 +21,7 @@ import sys
 import subprocess
 import threading
 import time
+import urllib.parse
 import uuid
 from pathlib import Path
 from typing import Any, Callable
@@ -42,7 +43,11 @@ DEDICATED_LOADERS = ("vanilla", "fabric", "neoforge", "forge")
 NEOFORGE_MAVEN = "https://maven.neoforged.net/releases/net/neoforged/neoforge"
 FORGE_MAVEN = "https://maven.minecraftforge.net/net/minecraftforge/forge"
 FORGE_PROMOS = "https://files.minecraftforge.net/net/minecraftforge/forge/promotions_slim.json"
-LOADER_NAMES = {"neoforge": "NeoForge", "forge": "Forge", "fabric": "Fabric", "vanilla": "바닐라"}
+LOADER_NAMES = {"neoforge": "NeoForge", "forge": "Forge", "fabric": "Fabric", "vanilla": "바닐라", "paper": "Paper"}
+# Paper(플러그인 서버, 사용자 요청 2026-11-27). Fill v3 API — fill.papermc.io/v3/projects/paper/versions/<mc>/builds 로 확인(2026-11):
+# 빌드마다 channel(STABLE 등), downloads["server:default"] = {name, checksums.sha256, url(fill-data.papermc.io)}
+PAPER_API = "https://fill.papermc.io/v3/projects/paper"
+PAPER_DOWNLOAD_HOSTS = ("fill-data.papermc.io", "fill.papermc.io")
 
 
 def free_port() -> int:
@@ -198,10 +203,15 @@ class ServerRunner:
         return f.is_file() and bool(re.search(r"^\s*eula\s*=\s*true\s*$", f.read_text("utf-8"), re.M))
 
     def create(self, id: str, name: str, online_mode: bool = True, world: str | None = None,
-               max_players: int = 10) -> dict[str, Any]:
+               max_players: int = 10, software: str | None = None) -> dict[str, Any]:
+        """software="paper" 면 Paper 서버(플러그인 테스트·친구와 플레이). 인스턴스 로더와 상관없이 같은 게임 버전."""
         meta_i = self.store.get(id)
         loader = meta_i.get("loader", "vanilla")
-        if loader not in DEDICATED_LOADERS:
+        if software == "paper":
+            loader = "paper"
+        elif software:
+            raise RpcError(f"모르는 서버 종류입니다: {software}")
+        elif loader not in DEDICATED_LOADERS:
             raise RpcError(f"전용 서버는 바닐라·Fabric·NeoForge·Forge 인스턴스만 됩니다({loader}). 싱글 LAN 공개를 쓰세요.")
         name = (name or "").strip() or f"{meta_i['name']} 서버"
         if world:  # 만들기 전에 월드부터 확인(실패해도 빈 서버 폴더가 남지 않게)
@@ -284,6 +294,58 @@ class ServerRunner:
         return {"clientRequired": client_required_mods(mods_dir)}
 
     # ---------- jar ----------
+    def _paper_jar(self, version: str) -> Path:
+        """그 게임 버전의 가장 새 STABLE Paper 빌드(없으면 가장 새 빌드)를 받아 sha256 으로 검증한다(받아 둔 건 다시 씀)."""
+        try:
+            builds = _http_json(f"{PAPER_API}/versions/{version}/builds")
+        except Exception as e:  # noqa: BLE001
+            raise RpcError(f"Paper 에 {version} 서버가 없거나 연결하지 못했습니다: {e}") from e
+        if not isinstance(builds, list) or not builds:
+            raise RpcError(f"Paper 에 {version} 빌드가 아직 없습니다.")
+        build = next((b for b in builds if b.get("channel") == "STABLE"), builds[0])
+        dl = (build.get("downloads") or {}).get("server:default") or {}
+        name, url, sha = dl.get("name"), dl.get("url") or "", (dl.get("checksums") or {}).get("sha256")
+        host = urllib.parse.urlparse(url).hostname or ""
+        if not name or not sha or not url.startswith("https://") or host not in PAPER_DOWNLOAD_HOSTS:
+            raise RpcError("Paper 다운로드 정보가 이상해서 받지 않았습니다.")
+        dest = self.jars_dir / "paper" / Path(name).name
+        if dest.is_file() and net.hashes_match(dest, {"sha256": sha}):
+            return dest
+        self.emit("ds_log", {"id": self._current, "line": f"[통합 작업실] Paper {name} 받는 중(빌드 {build.get('id')}, {build.get('channel')})"})
+        try:
+            return net.download(url, dest, hashes={"sha256": sha})
+        except net.HashMismatch as e:
+            raise RpcError(f"받은 Paper 서버의 해시가 맞지 않아 버렸습니다: {name}") from e
+
+    def paper_servers(self, id: str) -> list[str]:
+        """이 인스턴스의 Paper 서버 id 들."""
+        return [m["id"] for m in self.list(id) if m.get("loader") == "paper"]
+
+    def install_plugin(self, id: str, jar: Path) -> dict[str, Any]:
+        """빌드한 플러그인 jar 를 이 인스턴스의 모든 Paper 서버 plugins/ 에 넣고(같은 이름의 예전 jar 는 휴지통),
+        켜져 있는 서버는 다시 시작한다(Paper 는 /reload 를 권하지 않는다)."""
+        sids = self.paper_servers(id)
+        if not sids:
+            return {"servers": [], "restarted": [],
+                    "message": "Paper 서버가 없어 넣지 않았습니다. 서버 패널 [서버 열기] → 전용 서버 → Paper 로 만들면 빌드할 때마다 자동으로 넣습니다."}
+        stem = jar.name.rsplit("-", 1)[0] if "-" in jar.name else jar.stem
+        restarted = []
+        for sid in sids:
+            plugins = self._sdir(id, sid) / "plugins"
+            plugins.mkdir(exist_ok=True)
+            for old in plugins.glob(f"{stem}-*.jar"):
+                if old.name != jar.name:
+                    _trash(old, self.store.dir_of(id))
+            shutil.copy2(jar, safe_join(plugins, jar.name))
+            if sid in self.procs and self.procs[sid].poll() is None:
+                self.emit("ds_log", {"id": sid, "line": f"[통합 작업실] 플러그인 {jar.name} 을(를) 넣고 서버를 다시 시작합니다"})
+                self.stop(id, sid)
+                self.start(id, sid)
+                restarted.append(sid)
+        return {"servers": sids, "restarted": restarted,
+                "message": f"Paper 서버 {len(sids)}개의 plugins/ 에 {jar.name} 을(를) 넣었습니다"
+                           + (f"(켜져 있던 {len(restarted)}개는 다시 시작)." if restarted else ". 서버를 켜면 적용됩니다.")}
+
     def _vanilla_jar(self, version: str) -> Path:
         dest = self.jars_dir / version / "server.jar"
         if dest.is_file():
@@ -407,6 +469,13 @@ class ServerRunner:
         meta = self._meta(id, sid)
         d = self._sdir(id, sid)
         loader = meta["loader"]
+        if loader == "paper":
+            jar = self._paper_jar(meta["version"])
+            target = d / "paper.jar"
+            if not target.is_file() or target.stat().st_size != jar.stat().st_size:
+                shutil.copy2(jar, target)
+            (d / "plugins").mkdir(exist_ok=True)
+            return ["-jar", "paper.jar", "nogui"]
         if loader in ("neoforge", "forge"):
             full = self._forge_version(loader, meta["version"], meta.get("loaderVersion"))
             installer = self._forge_installer(loader, full)
