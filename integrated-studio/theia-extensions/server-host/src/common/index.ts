@@ -70,6 +70,8 @@ export interface ServerView {
     clientMods: ClientMod[];
     /** 주소 여는 방식 선호(auto = 자동 순서) */
     preference: 'auto' | ProviderId;
+    /** 전용 서버 최대 메모리(MB), 없으면 기본값 */
+    memoryMb?: number;
 }
 
 export interface LanGame {
@@ -193,6 +195,8 @@ export interface ServerHostService {
     openAddress(id: string): Promise<ServerView>;
     closeAddress(id: string): Promise<ServerView>;
     setPreference(id: string, pref: 'auto' | ProviderId): Promise<ServerView>;
+    /** 전용 서버 최대 메모리(MB, 다음 시작부터). null = 기본값 */
+    setServerMemory(id: string, memoryMb: number | null): Promise<ServerView>;
     ping(port: number): Promise<PingResult>;
     /** e4mc 준비(설치·충돌 선택). choice: ask | disable_once | proceed | skip */
     prepareE4mc(id: string, choice: string): Promise<E4mcPrepare>;

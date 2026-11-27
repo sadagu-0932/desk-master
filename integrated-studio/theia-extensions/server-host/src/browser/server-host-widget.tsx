@@ -164,6 +164,9 @@ export class ServerHostWidget extends ReactWidget {
                     <option value='upnp'>UPnP 먼저</option>
                     <option value='playit'>playit 먼저</option>
                 </select>
+                {s.kind === 'dedicated' && <button className='theia-button secondary' title='서버 최대 메모리(다음 시작부터)'
+                    onClick={() => this.commands.executeCommand(ServerHostCommands.MEMORY.id, s.id)}>
+                    메모리 {s.memoryMb ? `${Math.round(s.memoryMb / 102.4) / 10}GB` : '기본'}</button>}
                 {s.kind === 'dedicated' && <button className='theia-button secondary'
                     onClick={() => { if (consoleOpen) { this.openConsole.delete(s.id); } else { this.openConsole.add(s.id); this.store.loadConsole(s.id); } this.update(); }}>
                     콘솔 {consoleOpen ? '닫기' : '열기'}</button>}

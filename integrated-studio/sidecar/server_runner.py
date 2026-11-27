@@ -25,6 +25,7 @@ import uuid
 from pathlib import Path
 from typing import Any, Callable
 
+import memory
 import net
 from instances import InstanceStore
 from paths import safe_join
@@ -240,7 +241,8 @@ class ServerRunner:
         self._save(id, meta)
         return {"world": world, "path": str(dst)}
 
-    def update(self, id: str, sid: str, name: str | None = None, online_mode: bool | None = None) -> dict[str, Any]:
+    def update(self, id: str, sid: str, name: str | None = None, online_mode: bool | None = None,
+               memory_mb: int | None = None) -> dict[str, Any]:
         meta = self._meta(id, sid)
         d = self._sdir(id, sid)
         props: dict[str, Any] = {}
@@ -250,6 +252,12 @@ class ServerRunner:
         if online_mode is not None:
             meta["onlineMode"] = bool(online_mode)
             props["online-mode"] = bool(online_mode)
+        if memory_mb == 0:
+            meta.pop("memoryMb", None)          # 기본값으로
+        elif memory_mb is not None:
+            if not (512 <= int(memory_mb) <= 65536):
+                raise RpcError("서버 메모리는 512MB ~ 64GB 사이로 정하세요.")
+            meta["memoryMb"] = int(memory_mb)   # 다음 시작부터
         self._save(id, meta)
         if props:
             write_properties(d / "server.properties", props)
@@ -438,7 +446,7 @@ class ServerRunner:
                 port = free_port()
             write_properties(d / "server.properties", {"server-ip": "", "server-port": port})
             launch = self.prepare_launch(id, sid)
-            cmd = [*self.java_cmd(meta["version"]), "-Xmx2G", *launch]
+            cmd = [*self.java_cmd(meta["version"]), memory.server_xmx(meta), *launch]
             proc = subprocess.Popen(cmd, cwd=d, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                     stdin=subprocess.PIPE, text=True, encoding="utf-8", errors="replace",
                                     creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))

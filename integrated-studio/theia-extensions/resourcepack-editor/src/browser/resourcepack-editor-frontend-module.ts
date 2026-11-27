@@ -3,7 +3,7 @@ import '../../src/browser/style/resourcepack.css';
 import { ContainerModule, inject, injectable, postConstruct } from '@theia/core/shared/inversify';
 import { Command, CommandContribution, CommandRegistry, CommandService } from '@theia/core/lib/common/command';
 import { MessageService } from '@theia/core/lib/common/message-service';
-import { BaseWidget } from '@theia/core/lib/browser/widgets/widget';
+import { BaseWidget, Message } from '@theia/core/lib/browser/widgets/widget';
 import { codicon } from '@theia/core/lib/browser/widgets';
 import { WidgetFactory, WidgetManager } from '@theia/core/lib/browser/widget-manager';
 import { ApplicationShell } from '@theia/core/lib/browser/shell/application-shell';
@@ -55,14 +55,58 @@ class TexelWidget extends BaseWidget {
             b.addEventListener('click', () => this.commands.executeCommand(cmd));
             return b;
         };
-        bar.append(info, mk('.zip 가져오기', ResourcepackCommands.IMPORT.id, true), mk('적용 후 다시 불러오기 (F8)', ResourcepackCommands.APPLY.id));
+        const unload = document.createElement('button');
+        unload.className = 'theia-button secondary';
+        unload.textContent = '메모리 비우기';
+        unload.title = 'Texel 페이지를 내려놓아 메모리를 비웁니다. 내보내지 않은 작업은 사라집니다.';
+        unload.addEventListener('click', () => this.unloadFrame());
+        bar.append(info, mk('.zip 가져오기', ResourcepackCommands.IMPORT.id, true), mk('적용 후 다시 불러오기 (F8)', ResourcepackCommands.APPLY.id), unload);
 
+        this.placeholder = document.createElement('div');
+        this.placeholder.className = 'studio-texel-placeholder';
+        const again = document.createElement('button');
+        again.className = 'theia-button';
+        again.textContent = 'Texel 다시 열기';
+        again.addEventListener('click', () => this.loadFrame());
+        const note = document.createElement('p');
+        note.textContent = '메모리를 아끼려고 Texel 페이지를 내려놓았습니다.';
+        this.placeholder.append(note, again);
+        this.node.append(bar, this.placeholder);
+    }
+
+    protected frame: HTMLIFrameElement | undefined;
+    protected placeholder: HTMLDivElement;
+
+    /** 웹 페이지 하나를 통째로 띄우므로(수백 MB) 탭이 처음 보일 때 불러온다 */
+    protected override onAfterShow(msg: Message): void {
+        super.onAfterShow(msg);
+        if (!this.frame && !this.placeholder.dataset.unloaded) {
+            this.loadFrame();
+        }
+    }
+
+    protected loadFrame(): void {
+        if (this.frame) {
+            return;
+        }
         const frame = document.createElement('iframe');
         frame.className = 'studio-texel-frame';
         frame.src = TEXEL_URL;
         frame.title = 'Texel 리소스팩 편집기';
         frame.setAttribute('allow', 'clipboard-read; clipboard-write');
-        this.node.append(bar, frame);
+        this.frame = frame;
+        delete this.placeholder.dataset.unloaded;
+        this.placeholder.replaceWith(frame);
+    }
+
+    protected unloadFrame(): void {
+        if (!this.frame) {
+            return;
+        }
+        this.frame.src = 'about:blank';   // 페이지를 먼저 비워 메모리를 돌려받는다
+        this.placeholder.dataset.unloaded = '1';
+        this.frame.replaceWith(this.placeholder);
+        this.frame = undefined;
     }
 }
 

@@ -11,6 +11,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import memory  # noqa: E402
 from instances import InstanceStore  # noqa: E402
 from packs import Packs  # noqa: E402
 from importers import Importers  # noqa: E402
@@ -147,12 +148,16 @@ def main() -> None:
         "launch_external": lambda id: local_import.launch_external(id),
         "launch_linked": lambda id: local_import.launch_linked(id),
         "set_launcher_root": lambda id, path: local_import.set_launcher_root(id, path),
+        # 메모리: 게임 추천값, 통합 작업실이 쓰는 메모리
+        "memory_advice": lambda id: memory.recommend_game_mb(memory.count_mods(store.game_dir(id)),
+                                                             store.get(id)["loader"], memory.system_memory_mb()),
+        "memory_usage": memory.usage,
         "sync_now": settings_sync.sync_now,
     }
     background = {"install", "duplicate_instance", "list_versions", "list_loader_versions", "server_start", "server_stop", "generate_reports", "mod_new", "mod_build", "read_commands", "inspect_import", "import_file",
                   "modrinth_search", "modrinth_versions", "modrinth_install_modpack", "modrinth_add_mod",
                   "cf_key_status", "cf_set_key", "cf_search", "cf_files", "cf_install_modpack", "cf_add_mod"} | official.BACKGROUND | {"ds_create", "ds_set_world", "ds_start", "ds_stop", "host_mods", "e4mc_install", "e4mc_check_crash",
-                     "import_detect", "import_inspect_folder", "import_preview", "import_run", "import_in_use"} | {"sync_now", "delete_instance"}
+                     "import_detect", "import_inspect_folder", "import_preview", "import_run", "import_in_use"} | {"sync_now", "delete_instance", "memory_usage"}
     notify("ready", {"version": VERSION})
     settings_sync.start()
     serve(handlers, background)

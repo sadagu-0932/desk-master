@@ -43,6 +43,8 @@ interface StoredServer {
     world?: string | null;
     preference: 'auto' | ProviderId;
     playitTunnelId?: string;
+    /** 전용 서버 최대 메모리(MB). 없으면 사이드카 기본값(보통 2GB) */
+    memoryMb?: number;
 }
 
 interface Runtime {
@@ -176,7 +178,7 @@ export class HostManager extends EventEmitter {
             players: r.players.length ? r.players : (r.ping?.players ?? []), playersOnline: r.ping?.online ?? (r.players.length || undefined),
             maxPlayers: r.ping?.max, motd: r.ping?.motd, serverVersion: r.ping?.version,
             address: { ...r.address, attempts: [...r.address.attempts], notes: [...r.address.notes] },
-            clientMods: r.clientMods, preference: s.preference,
+            clientMods: r.clientMods, preference: s.preference, memoryMb: s.memoryMb,
         };
     }
 
@@ -284,6 +286,19 @@ export class HostManager extends EventEmitter {
             throw new Error('e4mc 는 싱글 LAN 공개에서만 씁니다.');
         }
         s.preference = pref;
+        this.save();
+        this.changed();
+        return this.view(s);
+    }
+
+    /** 전용 서버 최대 메모리(다음 시작부터). null = 기본값 */
+    async setServerMemory(id: string, memoryMb: number | null): Promise<ServerView> {
+        const s = this.get(id);
+        if (s.kind !== 'dedicated' || !s.serverId) {
+            throw new Error('메모리는 전용 서버에서만 정합니다.');
+        }
+        await this.sidecar.call('ds_update', { id: s.instanceId, sid: s.serverId, memory_mb: memoryMb ?? 0 });
+        s.memoryMb = memoryMb ?? undefined;
         this.save();
         this.changed();
         return this.view(s);

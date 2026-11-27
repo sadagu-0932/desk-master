@@ -16,7 +16,22 @@
         "preferences": {
           "files.enableTrash": true,
           "security.workspace.trust.enabled": false,
-          "workbench.colorTheme": "integrated-studio-dark"
+          "workbench.colorTheme": "integrated-studio-dark",
+          "files.watcherExclude": {
+            "**/.git/objects/**": true,
+            "**/.git/subtree-cache/**": true,
+            "**/node_modules/**": true,
+            "**/saves/**": true,
+            "**/logs/**": true,
+            "**/crash-reports/**": true,
+            "**/screenshots/**": true,
+            "**/servers/*/world/**": true,
+            "**/servers/*/libraries/**": true,
+            "**/servers/*/logs/**": true,
+            "**/.gradle/**": true,
+            "**/build/**": true,
+            "**/.fabric/**": true
+          }
         },
         "electron": {
           "windowOptions": {

@@ -13,6 +13,7 @@ import { ServerHostWidget } from './server-host-widget.js';
 import { ImportWidget } from './import-widget.js';
 import { ServerHostCommands } from './server-host-commands.js';
 import { ChoiceDialog, DdnsDialog, EulaDialog, OpenServerDialog } from './server-host-dialogs.js';
+import { QuickInputService } from '@theia/core/lib/browser/quick-input';
 
 @injectable()
 export class ServerHostContribution extends AbstractViewContribution<ServerHostWidget> implements FrontendApplicationContribution {
@@ -23,6 +24,7 @@ export class ServerHostContribution extends AbstractViewContribution<ServerHostW
     @inject(CommandService) protected readonly commandService: CommandService;
     @inject(WidgetManager) protected readonly widgets: WidgetManager;
     @inject(ApplicationShell) protected readonly appShell: ApplicationShell;
+    @inject(QuickInputService) protected readonly quickInput: QuickInputService;
 
     constructor() {
         super({
@@ -50,6 +52,23 @@ export class ServerHostContribution extends AbstractViewContribution<ServerHostW
         registry.registerCommand(ServerHostCommands.EULA, { execute: (id: string) => this.guard(() => this.eula(id)) });
         registry.registerCommand(ServerHostCommands.PLAYIT_SETUP, { execute: () => this.guard(() => this.playitSetup()) });
         registry.registerCommand(ServerHostCommands.DDNS, { execute: () => this.guard(() => this.ddns()) });
+        registry.registerCommand(ServerHostCommands.MEMORY, { execute: (id: string) => this.guard(() => this.serverMemory(id)) });
+    }
+
+    /** 전용 서버 최대 메모리(다음 시작부터). 비우면 기본값(보통 2GB) */
+    protected async serverMemory(id: string): Promise<void> {
+        const s = this.store.snapshot.servers.find(x => x.id === id);
+        const cur = s?.memoryMb ? String(Math.round(s.memoryMb / 102.4) / 10) : '';
+        const gb = await this.quickInput.input({
+            prompt: `서버 최대 메모리(GB, 다음 시작부터). 비우면 기본값(보통 2GB). 게임과 같이 켜면 둘의 합이 PC 메모리를 넘지 않게 하세요.`,
+            value: cur,
+            validateInput: async v => (!v.trim() || (/^\d+(\.\d+)?$/.test(v.trim()) && Number(v) >= 0.5 && Number(v) <= 64)) ? undefined : '0.5 ~ 64 사이 숫자(GB)',
+        });
+        if (gb === undefined) {
+            return;
+        }
+        await this.store.service.setServerMemory(id, gb.trim() ? Math.round(Number(gb) * 1024) : null);
+        this.messages.info(`서버 메모리: ${gb.trim() ? gb + 'GB' : '기본값'} (다음 시작부터)`);
     }
 
     protected guard(fn: () => Promise<unknown>): Promise<void> {

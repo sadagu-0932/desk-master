@@ -61,6 +61,7 @@ class ServerHostServiceImpl implements ServerHostService {
     async openAddress(id: string): Promise<ServerView> { return (await this.m()).openAddress(id); }
     async closeAddress(id: string): Promise<ServerView> { return (await this.m()).closeAddress(id); }
     async setPreference(id: string, pref: 'auto' | ProviderId): Promise<ServerView> { return (await this.m()).setPreference(id, pref); }
+    async setServerMemory(id: string, memoryMb: number | null): Promise<ServerView> { return (await this.m()).setServerMemory(id, memoryMb); }
     async ping(port: number): Promise<PingResult> { return (await this.m()).ping(port); }
     async prepareE4mc(id: string, choice: string): Promise<E4mcPrepare> { return (await this.m()).prepareE4mc(id, choice); }
     async playitStatus(): Promise<PlayitStatus> {

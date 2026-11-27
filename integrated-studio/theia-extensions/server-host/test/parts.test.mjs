@@ -218,3 +218,18 @@ test('playit: 검증값이 다르면 버림, 거절·한도 초과는 한국어 
     assert.ok(assetName().startsWith('playit-'));
     await fp.close();
 });
+
+test('readLines: 1MB 넘는 로그를 조각으로 읽어도 줄·한글이 깨지지 않음', async () => {
+    const { readLines } = await import('../lib/node/lan-watcher.js');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lanlog-'));
+    const file = path.join(dir, 'latest.log');
+    const line = '[12:00] [Render thread/INFO]: 한글 로그 줄 테스트 ⛏ 1234567890';
+    const want = Array.from({ length: 40000 }, (_, i) => `${line} ${i}`);   // 약 3MB
+    fs.writeFileSync(file, want.join('\n') + '\n[tail] 반쪽');
+    const got = [];
+    const rest = readLines(file, 0, fs.statSync(file).size, '', l => got.push(l));
+    assert.equal(got.length, want.length);
+    assert.deepEqual(got.slice(-2), want.slice(-2));
+    assert.ok(got.every((l, i) => l === want[i]));
+    assert.equal(rest, '[tail] 반쪽');
+});

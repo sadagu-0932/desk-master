@@ -13,6 +13,7 @@ from typing import Any
 from instances import InstanceStore, write_cc_config
 from paths import safe_join
 import modrinth
+import memory
 import net
 import server_runner
 from rpc import RpcError, notify
@@ -271,7 +272,7 @@ class Runner:
         self._server_jar(meta["version"], jar)
         java = self._runtime_java(meta["version"])
         proc = subprocess.Popen(
-            [java, "-Xmx2G", "-jar", jar.name, "nogui"], cwd=sdir,
+            [java, memory.server_xmx({"memoryMb": meta.get("serverMemoryMb")}), "-jar", jar.name, "nogui"], cwd=sdir,
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, stdin=subprocess.PIPE,
             text=True, encoding="utf-8", errors="replace",
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),

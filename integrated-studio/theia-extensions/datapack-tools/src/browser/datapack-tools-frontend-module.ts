@@ -27,7 +27,13 @@ class DatapackTools implements CommandContribution, FrontendApplicationContribut
     @inject(QuickInputService) protected readonly quickInput: QuickInputService;
     @inject(OpenerService) protected readonly openers: OpenerService;
 
+    /** 명령어 자동완성 자료(버전마다 수 MB). 지금 인스턴스 버전 것 하나만 들고 있는다 */
     protected commandsData = new Map<string, CommandsData>();
+
+    protected keepOnly(version: string, data: CommandsData): void {
+        this.commandsData.clear();
+        this.commandsData.set(version, data);
+    }
 
     onStart(): void {
         registerMcfunctionLanguage();
@@ -53,7 +59,7 @@ class DatapackTools implements CommandContribution, FrontendApplicationContribut
             const status = await this.manager.call<{ data: string }>('ping');
             const dir = `${status.data}/reports/${version}`;
             const data = await this.manager.call<CommandsData>('read_commands', { reports_dir: dir });
-            this.commandsData.set(version, data);
+            this.keepOnly(version, data);
         } catch {
             // 아직 없음 — "자동완성 준비" 명령으로 만든다
         }
@@ -156,7 +162,7 @@ class DatapackTools implements CommandContribution, FrontendApplicationContribut
         if (!inst) { return; }
         const res = await this.manager.call<{ path: string }>('generate_reports', { version: inst.version });
         const data = await this.manager.call<CommandsData>('read_commands', { reports_dir: res.path });
-        this.commandsData.set(inst.version, data);
+        this.keepOnly(inst.version, data);
         this.messages.info(`Java ${inst.version} 명령어 목록을 준비했습니다. 게임이 꺼져 있어도 .mcfunction 자동완성이 됩니다.`);
     }
 }

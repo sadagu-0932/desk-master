@@ -13,6 +13,7 @@
  */
 import { EventEmitter } from 'events';
 import * as fs from 'fs';
+import { StringDecoder } from 'string_decoder';
 
 /** 줄 머리: "[시간] [스레드/레벨]: " (Fabric 은 "[시간] [스레드/레벨] (로거) "). 채팅으로 문구를 흉내 내도 맞지 않게 줄 처음에 고정. */
 const HEAD = String.raw`^\[[^\]]*\] \[[^\]]+\](?: \([^)]*\))?:? `;
@@ -56,22 +57,56 @@ export function parseLanLine(line: string): LanEvent | undefined {
 }
 
 /** 로그 전체에서 지금 상태(마지막으로 열린 포트와 그 뒤 e4mc 도메인, 그 뒤 닫혔는지). */
-export function currentLanState(text: string): { port?: number; domain?: string } {
-    let port: number | undefined;
-    let domain: string | undefined;
-    for (const line of text.split(/\r?\n/)) {
+/** 로그 줄을 하나씩 받아 "지금 LAN 공개 상태"만 기억한다(로그 전체를 메모리에 두지 않음). */
+export class LanStateTracker {
+    port: number | undefined;
+    domain: string | undefined;
+
+    feed(line: string): void {
         const ev = parseLanLine(line);
         if (ev?.type === 'open') {
-            port = ev.port;
-            domain = undefined;
-        } else if (ev?.type === 'domain' && port) {
-            domain = ev.domain;
+            this.port = ev.port;
+            this.domain = undefined;
+        } else if (ev?.type === 'domain' && this.port) {
+            this.domain = ev.domain;
         } else if (ev?.type === 'close') {
-            port = undefined;
-            domain = undefined;
+            this.port = undefined;
+            this.domain = undefined;
         }
     }
-    return { port, domain };
+}
+
+export function currentLanState(text: string): { port?: number; domain?: string } {
+    const t = new LanStateTracker();
+    text.split(/\r?\n/).forEach(line => t.feed(line));
+    return { port: t.port, domain: t.domain };
+}
+
+const READ_CHUNK = 1 << 20;   // 1MB 씩 읽는다(모드팩 로그는 수십 MB 가 되기도 함)
+
+/** file 의 [start, end) 를 조각으로 읽어 완성된 줄마다 onLine. 끝에 남은 반쪽 줄을 돌려준다. */
+export function readLines(file: string, start: number, end: number, carry: string, onLine: (line: string) => void): string {
+    const fd = fs.openSync(file, 'r');
+    try {
+        const chunk = Buffer.alloc(Math.min(READ_CHUNK, Math.max(end - start, 0)));
+        let pos = start;
+        let buf = carry;
+        const decoder = new StringDecoder('utf8');   // 조각 경계에서 한글이 반으로 잘려도 이어 붙인다
+        while (pos < end) {
+            const n = fs.readSync(fd, chunk, 0, Math.min(chunk.length, end - pos), pos);
+            if (n <= 0) {
+                break;
+            }
+            pos += n;
+            buf += decoder.write(chunk.subarray(0, n));
+            const lines = buf.split(/\r?\n/);
+            buf = lines.pop() ?? '';
+            lines.forEach(onLine);
+        }
+        return buf + decoder.end();
+    } finally {
+        fs.closeSync(fd);
+    }
 }
 
 /**
@@ -100,11 +135,12 @@ export class LanWatcher extends EventEmitter {
     start(): void {
         // 이미 공개된 상태에서 시작했으면 바로 알린다
         try {
-            const text = fs.readFileSync(this.logFile, 'utf8');
             const st = fs.statSync(this.logFile);
+            const cur = new LanStateTracker();
+            const rest = readLines(this.logFile, 0, st.size, '', line => cur.feed(line));
+            cur.feed(rest);
             this.pos = st.size;
             this.ident = `${st.dev}:${st.ino}:${st.birthtimeMs}`;
-            const cur = currentLanState(text);
             if (cur.port) {
                 this.set({ type: 'open', port: cur.port });
                 if (cur.domain) {
@@ -167,22 +203,13 @@ export class LanWatcher extends EventEmitter {
         if (st.size <= this.pos) {
             return;
         }
-        let chunk: Buffer;
+        const lines: string[] = [];
         try {
-            const fd = fs.openSync(this.logFile, 'r');
-            try {
-                chunk = Buffer.alloc(st.size - this.pos);
-                fs.readSync(fd, chunk, 0, chunk.length, this.pos);
-            } finally {
-                fs.closeSync(fd);
-            }
+            this.buf = readLines(this.logFile, this.pos, st.size, this.buf, line => lines.push(line));
         } catch {
             return;
         }
         this.pos = st.size;
-        this.buf += chunk.toString('utf8');
-        const lines = this.buf.split(/\r?\n/);
-        this.buf = lines.pop() ?? '';
         for (const line of lines) {
             this.emit('line', line);
             const ev = parseLanLine(line);

@@ -35,6 +35,7 @@ export namespace StudioCommands {
     export const OPEN_FOLDER: Command = { id: 'studio.instance.openFolder', category: CATEGORY, label: '인스턴스 폴더 열기 (파일 탐색기)' };
     export const DUPLICATE: Command = { id: 'studio.instance.duplicate', category: CATEGORY, label: '인스턴스 복제' };
     export const MEMORY: Command = { id: 'studio.instance.memory', category: CATEGORY, label: '인스턴스 메모리·자바 인자 설정' };
+    export const MEMORY_USAGE: Command = { id: 'studio.memoryUsage', category: CATEGORY, label: '메모리 사용량 보기' };
     export const MANAGE: Command = { id: 'studio.instance.manage', category: CATEGORY, label: '인스턴스 관리…' };
     export const TOGGLE_CC: Command = { id: 'studio.instance.toggleCommandCrafter', category: CATEGORY, label: 'CommandCrafter 모드 켜기/끄기' };
     export const REFRESH: Command = { id: 'studio.instance.refresh', category: CATEGORY, label: '인스턴스 목록 새로고침' };
@@ -141,8 +142,14 @@ export class LauncherCommandContribution implements CommandContribution {
             execute: (id: IdArg) => this.withInstance(id, async i => {
                 const cur = /-Xmx(\d+)([MmGg])/.exec(i.jvmArgs ?? '');
                 const curGb = cur ? (cur[2].toLowerCase() === 'g' ? Number(cur[1]) : Math.round(Number(cur[1]) / 1024 * 10) / 10) : undefined;
+                // 모드 수·PC 메모리로 고른 추천값(너무 많이 주면 오히려 끊김이 길어진다)
+                const adv = await this.manager.call<{ recommendedMb: number; reason: string; totalMb?: number }>('memory_advice', { id: i.id })
+                    .catch(() => undefined);
+                const recGb = adv ? Math.round(adv.recommendedMb / 102.4) / 10 : undefined;
+                const recText = adv ? ` · 추천 ${recGb}GB (${adv.reason})` : '';
                 const gb = await this.quickInput.input({
-                    prompt: `최대 메모리(GB). 비우면 공식 런처 기본값. 지금: ${curGb ? curGb + 'GB' : '기본값'}`, value: curGb ? String(curGb) : '',
+                    prompt: `최대 메모리(GB). 비우면 공식 런처 기본값. 지금: ${curGb ? curGb + 'GB' : '기본값'}${recText}`,
+                    value: curGb ? String(curGb) : (recGb ? String(recGb) : ''),
                     validateInput: async v => (!v.trim() || (/^\d+(\.\d+)?$/.test(v.trim()) && Number(v) >= 0.5 && Number(v) <= 64)) ? undefined : '0.5 ~ 64 사이 숫자(GB)',
                 });
                 if (gb === undefined) {
@@ -153,6 +160,7 @@ export class LauncherCommandContribution implements CommandContribution {
                 this.messages.info(`${i.name}: 최대 메모리 ${gb.trim() ? gb + 'GB' : '기본값'} (다음 실행부터)`);
             }),
         });
+        registry.registerCommand(StudioCommands.MEMORY_USAGE, { execute: () => this.guard(() => this.showMemoryUsage()) });
         registry.registerCommand({ id: 'studio.instance.openSourceFolder' }, {
             execute: (id: IdArg) => this.withInstance(id, i => this.manager.call('open_instance_folder', { id: i.id, which: 'source' })),
         });
@@ -328,6 +336,20 @@ export class LauncherCommandContribution implements CommandContribution {
         this.messages.info(direct
             ? `${r.launcher}(으)로 '${inst.name}'을(를) 켭니다(원래 폴더의 실행 파일: ${r.file}).`
             : `${r.launcher}을(를) 열었습니다. '${inst.name}'을(를) 골라 [플레이]를 눌러 주세요(원래 폴더의 실행 파일: ${r.file}).`);
+    }
+
+    /** 통합 작업실(화면·확장 실행기·Claude·사이드카·서버)과 게임이 지금 쓰는 메모리 */
+    protected async showMemoryUsage(): Promise<void> {
+        const r = await this.manager.call<{ supported: boolean; message?: string; items?: Array<{ label: string; mb: number; count: number }>;
+            totalMb?: number; systemMb?: number }>('memory_usage');
+        if (!r.supported || !r.items) {
+            this.messages.info(r.message ?? '메모리 사용량을 읽지 못했습니다.');
+            return;
+        }
+        const gb = (mb: number) => mb >= 1024 ? `${(mb / 1024).toFixed(1)}GB` : `${mb}MB`;
+        await this.quickInput.showQuickPick(r.items.map(it => ({
+            label: it.label, description: gb(it.mb), detail: it.count > 1 ? `프로세스 ${it.count}개` : undefined,
+        })), { placeholder: `합계 ${gb(r.totalMb ?? 0)}${r.systemMb ? ` / PC 메모리 ${gb(r.systemMb)}` : ''} — 큰 것부터` });
     }
 
     /** 인스턴스 관리 메뉴(카드의 … 버튼·오른쪽 클릭) */

@@ -12,4 +12,5 @@ export namespace ServerHostCommands {
     export const EULA: Command = { id: 'studio.serverHost.eula' };
     export const OPEN_LAN: Command = { id: 'studio.serverHost.openLan' };
     export const HOST_INSTANCE: Command = { id: 'studio.serverHost.hostInstance' };
+    export const MEMORY: Command = { id: 'studio.serverHost.memory' };
 }
