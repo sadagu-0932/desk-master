@@ -116,6 +116,19 @@ def test_auto_sync_links_updates_and_forgets(tmp_path, monkeypatch):
     assert ps.sync()["removed"] == 1 and all(x["id"] != m["id"] for x in store.list())
 
 
+def test_rmtree_force_removes_readonly_files(tmp_path):
+    import os
+    import stat
+    d = tmp_path / ".git" / "objects" / "00"
+    d.mkdir(parents=True)
+    f = d / "abc"
+    f.write_bytes(b"x")
+    os.chmod(f, stat.S_IREAD)                 # Windows 의 git 객체처럼 읽기 전용
+    os.chmod(d, stat.S_IREAD | stat.S_IEXEC)
+    prism_sync._rmtree_force(tmp_path / ".git")
+    assert not (tmp_path / ".git").exists()
+
+
 def test_migrate_old_instances_into_prism(tmp_path, monkeypatch):
     root = tmp_path / "PrismLauncher"
     store = InstanceStore(tmp_path / "data")       # 예전: Prism 연동 없이 앱 폴더에 만든 인스턴스

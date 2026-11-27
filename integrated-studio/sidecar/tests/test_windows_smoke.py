@@ -92,7 +92,8 @@ def test_windows_link_run_delete(tmp_path):
         time.sleep(1)
         sc.call("delete_instance", id=iid)
         assert all(i["id"] != iid for i in sc.call("list_instances"))
-        assert inst.is_dir() and (game / "saves" / "w" / "level.dat").is_file()   # 원래 폴더는 그대로
+        # Prism 인스턴스 지우기 = Prism 쪽 폴더도 휴지통(목록이 Prism 과 자동 연동이라, 2026-11-27)
+        assert not inst.exists()
     finally:
         sc.close()
 

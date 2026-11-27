@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import re
+import sys
 import threading
 from pathlib import Path
 from typing import Any, Callable
@@ -124,6 +125,20 @@ MIGRATE_SKIP = {"instance.json", "instance.deleted.json", "instance.import-faile
 CARRY_KEYS = ("ccEnabled", "workMode", "group", "icon", "e4mcDisabledOnce", "e4mcAutoDisabled")
 
 
+def _rmtree_force(path: Path) -> None:
+    """방금 만든 폴더를 지운다. Windows 에서 git 객체 파일은 읽기 전용이라 그냥 지우면 '액세스 거부'(WinError 5) → 쓰기 가능으로 바꾸고 다시."""
+    import shutil
+    import stat
+
+    def again(func: Callable[..., Any], p: str, _exc: Any) -> None:
+        os.chmod(p, stat.S_IWRITE)
+        func(p)
+    if sys.version_info >= (3, 12):
+        shutil.rmtree(path, onexc=again)
+    else:
+        shutil.rmtree(path, onerror=again)
+
+
 def migrate_candidates(store: InstanceStore) -> list[dict[str, Any]]:
     """Prism 으로 옮겨야 실행할 수 있는 인스턴스: 앱 폴더 안의 것, 공식 런처·CurseForge·Modrinth 등에서 연결한 것."""
     out = []
@@ -167,7 +182,7 @@ def migrate(store: InstanceStore, local: LocalImporter, ids: list[str],
                     continue
                 target = safe_join(dst, item.name)
                 if item.name == ".git" and target.is_dir():
-                    shutil.rmtree(target)          # 방금 만든 빈 저장소 대신 예전 기록을 쓴다
+                    _rmtree_force(target)          # 방금 만든 빈 저장소 대신 예전 기록을 쓴다
                 if item.is_dir():
                     shutil.copytree(item, target, dirs_exist_ok=True, ignore=skip)
                 else:
