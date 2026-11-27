@@ -20,6 +20,8 @@ export interface RunState {
 
 const TARGET_KEY = 'integrated-studio.runTarget';
 const MAX_LOG_LINES = 5000;
+/** 마지막으로 확인한 런처(Prism) 사용 여부. studio-mode 가 켤 때 읽는다 */
+export const LAUNCHER_KEY = 'studio.launcherEnabled';
 
 /** 브라우저 쪽에서 백엔드 알림을 받아 InstanceManager로 넘긴다 */
 @injectable()
@@ -100,6 +102,7 @@ export class InstanceManager {
         try {
             const before = this._prism?.found;
             this._prism = await this.service.call('prism_status');
+            try { window.localStorage.setItem(LAUNCHER_KEY, this.launcherEnabled ? '1' : '0'); } catch { /* 저장소를 못 쓰면 매번 런처로 시작 */ }
             if (before !== this._prism?.found) {
                 document.body.classList.toggle('studio-no-launcher', !this.launcherEnabled);
                 this.fire();

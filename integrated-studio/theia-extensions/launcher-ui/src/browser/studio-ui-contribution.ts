@@ -22,7 +22,7 @@ import { GameLogWidget } from './game-log-widget.js';
 import { CommandConsoleWidget } from './command-console-widget.js';
 import { RunTargetBar } from './run-target-bar.js';
 import { HomeWidget } from './home-widget.js';
-import { workFolderInUrl } from './studio-mode.js';
+import { launcherOff, workFolderInUrl } from './studio-mode.js';
 
 const CATEGORY = '통합 작업실';
 const CC_ADDRESS_PREF = 'CommandCrafter.MinecraftAddress';
@@ -81,8 +81,20 @@ export class StudioUiContribution implements FrontendApplicationContribution, Co
         this.shell.topPanel.show();
         this.overrideDebugKeys();
         await this.manager.ready;
-        if (workFolderInUrl()) {
-            // 작업실 모드: 파일 트리를 바로 보여 준다(파일을 누르면 코드 편집기)
+        // Prism 을 설치하지 않았으면 런처 창(홈·실행 막대·서버 패널)을 아예 띄우지 않고 작업실(코드 편집기)만(사용자 결정 2026-11-27)
+        const applyLauncher = () => {
+            const on = this.manager.launcherEnabled;
+            bar.setHidden(!on);
+            if (!on) {
+                this.widgets.tryGetWidget(HomeWidget.ID)?.close();
+                this.widgets.tryGetWidget('studio-server-host')?.close();
+                this.widgets.tryGetWidget(GameLogWidget.ID)?.close();   // 게임 실행은 런처 쪽 기능
+            }
+        };
+        applyLauncher();
+        this.manager.onDidChange(applyLauncher);
+        if (!this.manager.launcherEnabled || workFolderInUrl()) {
+            // 작업실: 파일 트리를 바로 보여 준다(파일을 누르면 코드 편집기)
             await this.shell.revealWidget('explorer-view-container');
         } else if (!this.manager.workspaceInstance) {
             this.openHome();
@@ -91,7 +103,9 @@ export class StudioUiContribution implements FrontendApplicationContribution, Co
     }
 
     async initializeLayout(): Promise<void> {
-        await this.openGameLog(false);
+        if (!launcherOff()) {
+            await this.openGameLog(false);
+        }
         await this.shell.revealWidget('explorer-view-container');
     }
 
@@ -107,6 +121,9 @@ export class StudioUiContribution implements FrontendApplicationContribution, Co
     }
 
     protected async openHome(): Promise<void> {
+        if (!this.manager.launcherEnabled) {
+            return;   // 런처가 꺼져 있으면(Prism 없음) 홈을 띄우지 않는다
+        }
         const home = await this.widgets.getOrCreateWidget<HomeWidget>(HomeWidget.ID);
         if (!home.isAttached) {
             await this.shell.addWidget(home, { area: 'main' });

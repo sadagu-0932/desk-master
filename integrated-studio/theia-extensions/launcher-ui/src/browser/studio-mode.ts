@@ -2,6 +2,7 @@ import { injectable, interfaces } from '@theia/core/shared/inversify';
 import { DEFAULT_WINDOW_HASH } from '@theia/core/lib/common/window';
 import { WorkspaceService } from '@theia/workspace/lib/browser/workspace-service';
 import { HostedPluginSupport } from '@theia/plugin-ext/lib/hosted/browser/hosted-plugin';
+import { LAUNCHER_KEY } from 'integrated-studio-launcher-core/lib/browser';
 
 /**
  * 앱 두 개처럼(사용자 결정 2026-11-27): 런처 모드 ↔ 작업실 모드.
@@ -17,11 +18,16 @@ export function workFolderInUrl(): boolean {
     return h.length > 1 && h !== `#${DEFAULT_WINDOW_HASH}`;
 }
 
-/** 앱을 새로 켜면 지난번 작업실을 자동으로 열지 않는다(런처 모드로 시작) */
+/** Prism 이 없어 런처를 끈 상태였으면 true(지난번 확인 결과) */
+export function launcherOff(): boolean {
+    try { return window.localStorage.getItem(LAUNCHER_KEY) === '0'; } catch { return false; }
+}
+
+/** 앱을 새로 켜면 지난번 작업실을 자동으로 열지 않는다(런처 모드로 시작). 런처가 꺼져 있으면(Prism 없음) 보통 편집기처럼 지난 폴더를 연다 */
 @injectable()
 export class StudioWorkspaceService extends WorkspaceService {
     protected override async doGetDefaultWorkspaceUri(): Promise<string | undefined> {
-        if (!workFolderInUrl()) {
+        if (!workFolderInUrl() && !launcherOff()) {
             return undefined;
         }
         return super.doGetDefaultWorkspaceUri();
@@ -32,7 +38,7 @@ export class StudioWorkspaceService extends WorkspaceService {
 @injectable()
 export class StudioHostedPluginSupport extends HostedPluginSupport {
     override onStart(container: interfaces.Container): void {
-        if (workFolderInUrl()) {
+        if (workFolderInUrl() || launcherOff()) {   // 런처가 꺼져 있으면 언제나 작업실이라 바로 켠다
             super.onStart(container);
         }
     }

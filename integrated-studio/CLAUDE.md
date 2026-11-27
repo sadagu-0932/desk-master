@@ -225,8 +225,10 @@ Theia 확장은 TypeScript로 작성한다. Python 쪽은 `sidecar/` 아래에�
     `prism_migrate`(확인 창 뒤, 켤 때 하루 한 번 물음): 새 Prism 인스턴스로 복사(월드·모드·git·전용 서버 설정·메모리), 예전 앱 폴더는 휴지통, 연결 원본은 그대로.
   - 게임 내용(데이터팩·리소스팩·모드·로컬 서버)은 `store.game_dir`(예전엔 앱 폴더 `dir_of` 를 써서 연결 인스턴스에서 엉뚱한 곳에 썼음). 전용 서버 설정은 앱 폴더 그대로.
   - 설정 동기화는 통합 작업실이 만든(`managed`) 인스턴스끼리만, 공식 런처 부분 없앰. e4mc: 바닐라는 넣지 않고 UPnP·playit 으로(호스트용 공식 런처 항목 없앰).
-  - **Prism 이 없으면 런처 부분을 숨긴다**(사용자 요청): `InstanceManager.launcherEnabled` → 홈 인스턴스·목록·작업 뷰·실행 막대·상태 표시줄 숨김, 홈에 [Prism Launcher 설치]
-    (`prism_install`: 확인 뒤 winget `PrismLauncher.PrismLauncher`). Prism 이 필요한 작업에서 `[prism-missing]` 오류면 설치를 권한다.
+  - **Prism 을 설치하지 않으면 런처 창은 아예 안 뜨고 작업실만**(사용자 결정 2026-11-27 "설치를 안 하면 런처창이 안 뜨도록 작업실만"):
+    `InstanceManager.launcherEnabled` 가 false 면 홈·실행 막대·서버 패널 탭·게임 로그·인스턴스/작업 뷰·상태 표시줄 인스턴스를 띄우지 않고 파일 탐색기만.
+    결과를 localStorage `studio.launcherEnabled` 에 기억해, 다음에 켤 때는 보통 편집기처럼 지난 작업 폴더를 다시 열고 확장 실행기도 바로 켠다(`launcherOff`).
+    Prism 을 나중에 설치하면 명령 팔레트 `Prism Launcher 설치`/`인스턴스 목록 새로고침` 으로 런처가 돌아온다. Prism 이 필요한 작업의 `[prism-missing]` 오류면 설치를 권한다.
   - 설치 파일(`applications/electron/resources/installer.nsh`) "함께 설치할 프로그램" 화면: Python 3.11+ 은 있으면 체크 해제·없으면 체크 고정(해제 불가),
     Prism 은 있으면 체크 해제·없으면 체크(해제 가능). winget 으로 사용자 범위 설치, 실패하면 내려받기 페이지. 조용한 설치(/S)는 없는 것만. `makensis -WX` 로 문법 확인.
     앱은 PATH 에 아직 없는 새 Python 도 표준 위치(%LOCALAPPDATA%\Programs\Python\Python3xx 등)에서 찾는다(`findSystemPython`, WindowsApps 별칭 제외).
