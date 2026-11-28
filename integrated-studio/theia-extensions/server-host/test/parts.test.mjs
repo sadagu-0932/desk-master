@@ -209,7 +209,7 @@ test('playit: 받기(sha256 검증)·계정 연결·서버별 고정 터널·에
     assert.equal(fp.state.tunnels.length, 2);
     const created = fp.state.calls.find(c => c[0] === '/tunnels/create')[1];
     assert.equal(created.tunnel_type, 'minecraft-java');
-    assert.deepEqual(created.origin, { type: 'default', data: { local_ip: '127.0.0.1', local_port: 25565 } });
+    assert.deepEqual(created.origin, { type: 'agent', data: { agent_id: fp.state.agentId, local_ip: '127.0.0.1', local_port: 25565 } });   // 자기 에이전트에
     pm.acquire('a');
     pm.acquire('b');
     assert.equal(spawned.length, 1);                                       // 이미 켜져 있으면 그대로
@@ -242,10 +242,14 @@ test('playit: 검증값이 다르면 버림, 거절·한도 초과는 한국어 
     await assert.rejects(pm.claim(), /거절/);
     fp.state.approve = true;
     await pm.claim();
+    const ids = [];
     for (let i = 0; i < 4; i++) {
-        await pm.ensureTunnel('s' + i, 1000 + i);
+        ids.push((await pm.ensureTunnel('s' + i, 1000 + i)).id);
     }
-    await assert.rejects(pm.ensureTunnel('s5', 2000), /무료 요금제 한도/);
+    await assert.rejects(pm.ensureTunnel('s5', 2000, undefined, ids), /한도/);          // 4개 모두 다른 서버가 씀
+    const spare = await pm.ensureTunnel('s5', 2000, undefined, ids.slice(1));          // 안 쓰는 터널이 있으면 그걸 다시 씀
+    assert.equal(spare.id, ids[0]);
+    assert.equal(spare.reused, true);
     fs.writeFileSync(path.join(d, 's.toml'), `secret_key = "${'cd'.repeat(32)}"\n`);
     await assert.rejects(pm.tunnels(), /연결이 풀렸습니다/);
     assert.match(assetName(), /^playit(d-windows-x86(_64)?-signed\.exe|-linux-|-macos-)/);   // Windows 는 데몬 playitd
@@ -278,6 +282,41 @@ test('playit: 연결이 풀리면 키를 옆으로 옮겨 "연결 안 됨"이 �
     await pm.claim(true);                              // 연결돼 있어도 force 면 새로
     assert.equal(pm.status().linked, true);
     pm.stopAgent();
+    await fp.close();
+});
+
+test('playit 무료 플랜: 앱이 터널을 못 만들면 웹사이트에서 만든 터널을 찾아 쓰고, 키는 건드리지 않음', async () => {
+    const fp = await fakePlayit();
+    const d = tmp();
+    const secretPath = path.join(d, 's.toml');
+    const pm = new PlayitManager({ dir: path.join(d, 'agent'), apiBase: fp.base, releaseApi: fp.base + '/release', secretPath,
+        claimPollMs: 5, spawnAgent: () => fakeAgent() });
+    await pm.claim();
+    fp.state.freePlan = true;
+    // 웹사이트에서 만든 터널이 없으면: 무엇을 해야 하는지 안내(키는 그대로)
+    await assert.rejects(pm.ensureTunnel('서버', 25565), e => /PLAYIT-CREATE/.test(e.message) && /Add Tunnel/.test(e.message) && e.code === 'RequiresPlayitPremium');
+    assert.equal(pm.status().linked, true);
+    // 다른 에이전트의 터널은 쓰지 않음
+    fp.state.addTunnel('남의 것', 25565, 'minecraft-java', '99999999-0000-0000-0000-000000000000');
+    await assert.rejects(pm.ensureTunnel('서버', 25565), /PLAYIT-CREATE/);
+    // 사용자가 웹사이트에서 이 에이전트에 Minecraft Java 터널을 만듦(로컬 포트 25565) → 찾아 쓰고 포트를 서버에 맞춤
+    const webId = fp.state.addTunnel('내 마크 서버', 25565);
+    const t = await pm.ensureTunnel('서버', 30001);
+    assert.equal(t.id, webId);
+    assert.equal(t.reused, true);
+    assert.equal(fp.state.tunnels.find(x => x.id === webId).origin.data.local_port, 30001);
+    // 다른 서버가 이미 쓰는 터널은 빼고 찾음
+    await assert.rejects(pm.ensureTunnel('두 번째 서버', 30002, undefined, [webId]), /PLAYIT-CREATE/);
+    // 포트를 못 바꾸면 경고로 알려 줌(주소는 줌)
+    fp.state.updateBlocked = true;
+    const t2 = await pm.ensureTunnel('서버', 30005, webId);
+    assert.equal(t2.address, t.address);
+    assert.match(t2.warning, /Local Port 를 30005/);
+    // 자기 관리 에이전트 권한 오류(auth 종류)도 키 무효가 아니므로 연결을 풀지 않음
+    fp.state.agentId = '00000000-0000-0000-0000-000000000001';    // 서버 쪽 id 가 바뀐 상황 흉내 → 우리 요청이 남의 에이전트로 감
+    fp.state.freePlan = false;
+    await assert.rejects(pm.ensureTunnel('세 번째', 30003, undefined, [webId]), /PLAYIT/);
+    assert.equal(pm.status().linked, true);
     await fp.close();
 });
 

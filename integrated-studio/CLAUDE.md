@@ -280,6 +280,15 @@ Theia 확장은 TypeScript로 작성한다. Python 쪽은 `sidecar/` 아래에�
     "failed to start playit agent" = PLAYIT-CONNECT. 모든 단계(받기·계정 연결 상태·키 교환·시작 인자·데몬 출력·종료 코드·API 실패)는
     `<앱 데이터>/server-host/playit/agent.log` 와 서버 콘솔에, 패널 [기록 보기]. 예전 `playit.exe` 만 있으면 "새로 받아야 함" → [playit 준비].
   - 실제 데몬 실행은 이 개발 환경에서 막혀 시험하지 못함(가짜 데몬 출력으로 시험). Windows 에서 확인 필요.
+- **playit "거부" 고침**(사용자 2026-11-28 "플레이잇이 거부한다 · 무료 플랜이라 터널 만드는 게 막힘", 공식 api_client 2.0.2 로 확인):
+  - 앱이 터널을 origin `default`(계정의 기본 에이전트)로 만들어, 앱이 연결한 자기 관리(self-managed) 에이전트 키로는
+    `SelfManagedAgentCanOnlyAffectSelf`/`DefaultAgentNotSupported` 로 거부됨 → `/agents/rundata` 로 이 에이전트 id 를 얻어
+    origin `{type:"agent", data:{agent_id, local_ip, local_port}}` 로 만들고, 업데이트에도 agent_id.
+  - 거부를 '키 무효'로 잘못 봐서 키를 떼던 것: 오류 형식 `{type:"auth", message:<AuthError>}` 를 읽어 공식 데몬과 같게
+    `InvalidAgentKey`·`NoLongerValid` 만 연결 해제. JSON 아닌 401·403 은 망 차단으로 안내(PLAYIT-HTTP403). 오류 이름은 한국어 표(`PLAYIT_ERRORS`).
+  - 무료 플랜 등으로 앱이 못 만들면(`RequiresPlayitPremium`·`RequiresVerifiedAccount`·한도·권한) 사용자가 playit.gg 웹사이트에서 이 에이전트에
+    만든 Minecraft Java 터널(다른 서버가 안 쓰는 것)을 찾아 쓰고 로컬 포트를 서버에 맞춤(못 바꾸면 "Local Port 를 N 으로" 안내).
+    없으면 [PLAYIT-CREATE] 로 웹사이트에서 만드는 방법 안내. 시험: `parts.test.mjs` "playit 무료 플랜"(가짜 API 가 실제처럼 자기 에이전트 터널만 허용).
   - 시험: `tests/test_server_tools.py`, server-host `npm test` 20개(연결 풀림·다른 방식·오류 코드 추가), Windows 스모크(방화벽 PowerShell·자바 찾기).
 ### M9. 패키징 (내 PC용)
 - electron-builder로 Windows 설치 파일 또는 압축 실행판을 만든다. **배포하지 않는다** — 개인 사용 전용.

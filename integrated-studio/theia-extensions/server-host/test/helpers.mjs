@@ -86,7 +86,10 @@ export class FakeIgd {
 
 /** 가짜 playit API + GitHub 릴리스 + 다운로드. */
 export async function fakePlayit({ agentBytes = Buffer.from('fake-playit-agent'), badDigest = false } = {}) {
-    const state = { claims: new Map(), tunnels: [], secret: 'ab'.repeat(32), calls: [], approve: true };
+    // 실제 API 흉내(공식 api_client 2.0.2): 자기 관리 에이전트는 자기 에이전트 터널만(origin.type=agent, 자기 agent_id) 만들 수 있다.
+    // freePlan 이면 앱의 터널 만들기를 RequiresPlayitPremium 으로 거부(웹사이트에서 만든 터널은 state.tunnels 에 직접 넣는다).
+    const state = { claims: new Map(), tunnels: [], secret: 'ab'.repeat(32), calls: [], approve: true,
+        agentId: '11111111-2222-3333-4444-555555555555', freePlan: false, updateBlocked: false };
     const digest = crypto.createHash('sha256').update(badDigest ? Buffer.from('other') : agentBytes).digest('hex');
     let base = '';
     const srv = http.createServer((req, res) => {
@@ -116,16 +119,18 @@ export async function fakePlayit({ agentBytes = Buffer.from('fake-playit-agent')
             if (req.headers.authorization !== `Agent-Key ${state.secret}`) {
                 return send(200, { status: 'error', data: { type: 'auth', message: 'InvalidAgentKey' } });
             }
+            if (req.url === '/agents/rundata') { return ok({ agent_id: state.agentId, agent_type: 'self-managed', tunnels: [], pending: [] }); }
             if (req.url === '/tunnels/list') { return ok({ tunnels: state.tunnels, tcp_alloc: {}, udp_alloc: {} }); }
             if (req.url === '/tunnels/create') {
+                if (json.origin?.type !== 'agent' || json.origin.data.agent_id !== state.agentId) {
+                    return send(200, { status: 'error', data: { type: 'auth', message: 'SelfManagedAgentCanOnlyAffectSelf' } });
+                }
+                if (state.freePlan) { return send(200, { status: 'fail', data: 'RequiresPlayitPremium' }); }
                 if (state.tunnels.length >= 4) { return send(200, { status: 'fail', data: 'TunnelLimitReached' }); }
-                const id = crypto.randomUUID();
-                const n = state.tunnels.length + 1;
-                state.tunnels.push({ id, name: json.name, tunnel_type: json.tunnel_type, origin: { type: 'default', data: { local_ip: json.origin.data.local_ip, local_port: json.origin.data.local_port } },
-                    alloc: { status: 'allocated', data: { assigned_domain: `play${n}.gl.joinmc.link`, assigned_srv: `play${n}.gl.joinmc.link`, port_start: 40000 + n, ip_hostname: 'x' } } });
-                return ok(id);
+                return ok(state.addTunnel(json.name, json.origin.data.local_port));
             }
             if (req.url === '/tunnels/update') {
+                if (state.updateBlocked) { return send(200, { status: 'fail', data: 'CannotUpdateLocalAddressForUnassignedTunnel' }); }
                 const t = state.tunnels.find(x => x.id === json.tunnel_id);
                 t.origin.data.local_port = json.local_port;
                 return ok(null);
@@ -133,6 +138,24 @@ export async function fakePlayit({ agentBytes = Buffer.from('fake-playit-agent')
             send(404, { status: 'error', data: 'path-not-found' });
         });
     });
+    /** 터널 추가(앱이 만들거나, 사용자가 웹사이트에서 만든 것 흉내) */
+    state.addTunnel = (name, localPort, type = 'minecraft-java', agentId = state.agentId) => {
+        const id = crypto.randomUUID();
+        const n = state.tunnels.length + 1;
+        state.tunnels.push({ id, name, tunnel_type: type,
+            origin: { type: 'agent', data: { agent_id: agentId, agent_name: 'agent', local_ip: '127.0.0.1', local_port: localPort } },
+            alloc: { status: 'allocated', data: { assigned_domain: `play${n}.gl.joinmc.link`, assigned_srv: `play${n}.gl.joinmc.link`, port_start: 40000 + n, ip_hostname: 'x' } } });
+        return id;
+    };
+    /** 터널 추가(앱이 만들거나, 사용자가 웹사이트에서 만든 것 흉내) */
+    state.addTunnel = (name, localPort, type = 'minecraft-java', agentId = state.agentId) => {
+        const id = crypto.randomUUID();
+        const n = state.tunnels.length + 1;
+        state.tunnels.push({ id, name, tunnel_type: type,
+            origin: { type: 'agent', data: { agent_id: agentId, agent_name: 'agent', local_ip: '127.0.0.1', local_port: localPort } },
+            alloc: { status: 'allocated', data: { assigned_domain: `play${n}.gl.joinmc.link`, assigned_srv: `play${n}.gl.joinmc.link`, port_start: 40000 + n, ip_hostname: 'x' } } });
+        return id;
+    };
     await new Promise(r => srv.listen(0, '127.0.0.1', r));
     base = `http://127.0.0.1:${srv.address().port}`;
     return { base, state, close: () => new Promise(r => srv.close(r)) };

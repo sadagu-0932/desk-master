@@ -50,7 +50,43 @@ export interface PlayitOptions {
     openUrl?: (url: string) => void;
 }
 
-export class PlayitError extends Error {}
+/** code = playit API 가 준 오류 이름(InvalidAgentKey, RequiresPlayitPremium 등) */
+export class PlayitError extends Error {
+    constructor(message: string, readonly code?: string) {
+        super(message);
+    }
+}
+
+/** playit API 오류 이름 → 한국어(공식 api_client/src/api.rs 의 AuthError·TunnelCreateError·UpdateError) */
+const PLAYIT_ERRORS: Record<string, string> = {
+    InvalidAgentKey: '에이전트 키가 유효하지 않습니다(대시보드에서 에이전트를 지웠거나 키가 바뀜)',
+    NoLongerValid: '에이전트 키가 더 이상 유효하지 않습니다',
+    RequiresPlayitPremium: '무료 플랜에서는 앱이 이런 터널을 만들 수 없습니다(프리미엄 필요)',
+    RequiresVerifiedAccount: 'playit.gg 계정의 이메일 인증이 필요합니다',
+    EmailMustBeVerified: 'playit.gg 계정의 이메일 인증이 필요합니다',
+    GuestAccountNotAllowed: '게스트 계정으로는 안 됩니다 — playit.gg 에 가입·로그인한 뒤 [playit 다시 연결]',
+    DefaultAgentNotSupported: '기본 에이전트용 터널은 만들 수 없습니다',
+    SelfManagedAgentCanOnlyAffectSelf: '이 에이전트는 자기 터널만 만들 수 있습니다',
+    AgentNotSelfManaged: '이 에이전트 키로는 앱이 터널을 만들 수 없습니다(다른 방식으로 연결한 에이전트) — [playit 다시 연결]',
+    AgentVersionTooOld: '에이전트 버전이 너무 낮습니다 — [playit 준비]로 새로 받아 주세요',
+    AgentNotFound: '에이전트를 찾지 못했습니다',
+    InvalidOrigin: '터널 연결 대상이 잘못됐습니다',
+    ScopeNotAllowed: '이 키로는 허용되지 않는 작업입니다',
+    AccountNotAuthorized: '계정 권한이 없습니다',
+    TunnelLimitReached: '무료 플랜의 터널 수 한도에 걸렸습니다 — 대시보드에서 안 쓰는 터널을 지워 주세요',
+    InvalidPortCount: '포트 수가 잘못됐습니다',
+    PortAllocNotFound: '배정할 포트를 찾지 못했습니다',
+    'requires-premium': '무료 플랜에서는 이 터널을 쓸 수 없습니다(프리미엄 지역·기능)',
+    'over-port-limit': '무료 플랜의 포트 한도를 넘었습니다',
+    'public-port-not-available': '공개 포트를 받을 수 없습니다',
+};
+
+/** 앱이 터널을 직접 못 만드는 이유(이때는 사용자가 대시보드에서 만든 터널을 찾아 쓴다) */
+const CREATE_BLOCKED = /Premium|Verified|Guest|Limit|DefaultAgentNotSupported|SelfManagedAgentCanOnlyAffectSelf|AgentNotSelfManaged|InvalidOrigin|ScopeNotAllowed|AccountNotAuthorized|over-port|requires-premium/i;
+
+export function playitErrorText(code: string): string {
+    return PLAYIT_ERRORS[code] ?? code;
+}
 
 export function defaultSecretPath(): string {
     if (process.platform === 'win32') {
@@ -79,7 +115,12 @@ export function readSecret(file: string): string | undefined {
     }
 }
 
-interface TunnelInfo { id: string; name?: string; address?: string; localPort?: number; pending: boolean; disabled?: string }
+interface TunnelInfo {
+    id: string; name?: string; address?: string; localPort?: number; pending: boolean; disabled?: string;
+    /** 이 터널이 연결된 에이전트(origin.type=agent) */
+    agentId?: string;
+    tunnelType?: string;
+}
 
 /** 이벤트: 'status'(PlayitStatus) */
 export class PlayitManager extends EventEmitter {
@@ -233,33 +274,42 @@ export class PlayitManager extends EventEmitter {
             this.log(`API ${route} 요청 실패(네트워크): ${(e as Error).message}`, 'error');
             throw new PlayitError(`playit 서버에 연결하지 못했습니다(일부 통신사·회사망에서 막힐 수 있음): ${(e as Error).message}`);
         }
-        if (auth && (res.status === 401 || res.status === 403)) {
-            this.log(`API ${route} 인증 거부(${res.status})`, 'error');
-            this.unlink('playit 계정 연결이 풀렸습니다(playit.gg 에서 에이전트를 지웠거나 키가 바뀜). [playit 다시 연결]을 눌러 주세요.');
-            throw new PlayitError('[PLAYIT-401] playit 계정 연결이 풀렸습니다. 서버 패널의 [playit 다시 연결]을 눌러 주세요.');
-        }
         if (res.status === 429) {
-            throw new PlayitError('playit 요청이 너무 많습니다. 잠시 뒤 다시 해 주세요.');
+            throw new PlayitError('playit 요청이 너무 많습니다. 잠시 뒤 다시 해 주세요.', 'RateLimited');
         }
         let json: { status?: string; data?: unknown };
         try {
             json = await res.json() as typeof json;
         } catch {
-            throw new PlayitError(`playit 응답을 읽지 못했습니다(${res.status}).`);
+            // JSON 이 아닌 401·403 은 키 문제가 아니라 회사망·보안 프로그램·CDN 차단일 수 있다 — 키는 건드리지 않는다
+            this.log(`API ${route} 응답을 읽지 못함(HTTP ${res.status})`, 'error');
+            throw new PlayitError(res.status === 401 || res.status === 403
+                ? `[PLAYIT-HTTP${res.status}] playit 서버가 요청을 막았습니다(HTTP ${res.status}). 회사·학교 망이나 보안 프로그램 차단일 수 있습니다.`
+                : `playit 응답을 읽지 못했습니다(HTTP ${res.status}).`, `HTTP${res.status}`);
         }
         if (json.status === 'success') {
             return json.data as T;
         }
-        const detail = typeof json.data === 'string' ? json.data : JSON.stringify(json.data);
-        this.log(`API ${route} 응답 ${res.status} ${json.status}: ${detail}`, 'warn');
-        if (auth && /Auth|Unauthorized|InvalidAgentKey|InvalidSignature|AgentNotFound/i.test(detail)) {
-            this.unlink('playit 계정 연결이 풀렸습니다(playit.gg 에서 에이전트를 지웠거나 키가 바뀜). [playit 다시 연결]을 눌러 주세요.');
-            throw new PlayitError('[PLAYIT-401] playit 계정 연결이 풀렸습니다. 서버 패널의 [playit 다시 연결]을 눌러 주세요.');
+        // 공식 형식: error = {type:"auth"|"validation"|"path-not-found"|"internal", message}, fail = 오류 이름(문자열) 또는 객체
+        const data = json.data as { type?: string; message?: unknown } | string | undefined;
+        const code = typeof data === 'string' ? data
+            : typeof data?.message === 'string' ? data.message
+                : JSON.stringify(data ?? null);
+        const kind = typeof data === 'object' && data ? data.type : undefined;
+        this.log(`API ${route} 응답 HTTP ${res.status} ${json.status}${kind ? `/${kind}` : ''}: ${code}`, 'warn');
+        if (auth && /^(InvalidAgentKey|NoLongerValid)$/.test(code)) {
+            // 공식 데몬과 같은 기준(is_invalid_agent_secret_error): 이 두 가지만 키가 무효인 것
+            this.unlink(`playit 계정 연결이 풀렸습니다(${playitErrorText(code)}). [playit 다시 연결]을 눌러 주세요.`);
+            throw new PlayitError('[PLAYIT-401] playit 계정 연결이 풀렸습니다. 서버 패널의 [playit 다시 연결]을 눌러 주세요.', code);
         }
-        if (/Limit|Quota|Premium|Tunnel.*Exceed|RequiresPlayitPremium/i.test(detail)) {
-            throw new PlayitError(`playit 무료 요금제 한도에 걸렸습니다(${detail}). playit.gg 계정에서 쓰지 않는 터널을 지워 주세요.`);
+        const text = PLAYIT_ERRORS[code];
+        if (text) {
+            throw new PlayitError(`[PLAYIT] ${text} (${code})`, code);
         }
-        throw new PlayitError(`playit 이 요청을 거부했습니다: ${detail}`);
+        if (/Limit|Quota|Exceed/i.test(code)) {
+            throw new PlayitError(`[PLAYIT] 무료 플랜 한도에 걸렸습니다(${code}). playit.gg 에서 안 쓰는 터널을 지워 주세요.`, code);
+        }
+        throw new PlayitError(`[PLAYIT] playit 이 요청을 거부했습니다: ${code}`, code);
     }
 
     // ---------------------------------------------------------------- 계정 연결
@@ -355,14 +405,34 @@ export class PlayitManager extends EventEmitter {
     // ---------------------------------------------------------------- 터널
     protected toInfo(t: Record<string, unknown>): TunnelInfo {
         const alloc = t.alloc as { status?: string; data?: Record<string, unknown> } | undefined;
-        const origin = t.origin as { data?: { local_port?: number } } | undefined;
+        const origin = t.origin as { type?: string; data?: { local_port?: number; agent_id?: string } } | undefined;
         let address: string | undefined;
         if (alloc?.status === 'allocated' && alloc.data) {
             const d = alloc.data;
             address = (d.assigned_srv as string) || (d.port_start === 25565 ? d.assigned_domain as string : `${d.assigned_domain}:${d.port_start}`);
         }
+        let disabled: string | undefined;
+        if (alloc?.status === 'disabled') {
+            const reason = String((alloc.data as { reason?: string } | undefined)?.reason ?? '');
+            disabled = reason ? `${playitErrorText(reason)} (${reason})` : JSON.stringify(alloc.data ?? {});
+        }
         return { id: String(t.id), name: t.name as string | undefined, address, localPort: origin?.data?.local_port,
-            pending: alloc?.status === 'pending', disabled: alloc?.status === 'disabled' ? JSON.stringify(alloc.data ?? {}) : undefined };
+            pending: alloc?.status === 'pending', disabled,
+            agentId: origin?.type === 'agent' ? origin.data?.agent_id : undefined, tunnelType: t.tunnel_type as string | undefined };
+    }
+
+    protected agentIdCache: { secret: string; id: string } | undefined;
+
+    /** 이 키의 에이전트 id(/agents/rundata). 터널은 이 에이전트에 연결해야 한다 — 자기 관리 에이전트는 자기 터널만 만들 수 있다. */
+    async agentId(): Promise<string> {
+        const secret = readSecret(this.secretPath) ?? '';
+        if (this.agentIdCache?.secret === secret) {
+            return this.agentIdCache.id;
+        }
+        const r = await this.api<{ agent_id: string; agent_type?: string }>('/agents/rundata', {});
+        this.log(`에이전트 id: ${r.agent_id} (${r.agent_type ?? '?'})`);
+        this.agentIdCache = { secret, id: r.agent_id };
+        return r.agent_id;
     }
 
     async tunnels(): Promise<TunnelInfo[]> {
@@ -370,33 +440,71 @@ export class PlayitManager extends EventEmitter {
         return (r.tunnels ?? []).map(t => this.toInfo(t));
     }
 
-    /** 서버 이름의 터널을 찾아(없으면 만들어) 로컬 포트를 맞추고 공개 주소를 돌려준다. */
-    async ensureTunnel(name: string, localPort: number, knownId?: string): Promise<{ id: string; address: string }> {
+    /**
+     * 서버 이름의 터널을 찾아(없으면 이 에이전트에 만들어) 로컬 포트를 맞추고 공개 주소를 돌려준다.
+     * 무료 플랜 등으로 앱이 터널을 못 만들면(사용자 요청 2026-11-28 "무료 플랜이라 터널 만드는 게 막힘") 사용자가 playit.gg 대시보드에서
+     * 이 에이전트에 만든 Minecraft Java 터널을 찾아 쓴다(usedIds = 다른 서버가 쓰는 터널은 빼고). 포트를 못 바꾸면 warning 으로 알린다.
+     */
+    async ensureTunnel(name: string, localPort: number, knownId?: string, usedIds: string[] = []):
+        Promise<{ id: string; address: string; warning?: string; reused?: boolean }> {
         const label = (TUNNEL_PREFIX + name).slice(0, 60);
+        const agentId = await this.agentId();
         let list = await this.tunnels();
-        let t = list.find(x => x.id === knownId) ?? list.find(x => x.name === label);
+        const mine = (x: TunnelInfo): boolean => !x.agentId || x.agentId === agentId;
+        let t = list.find(x => x.id === knownId && mine(x)) ?? list.find(x => x.name === label && mine(x));
+        let reused = false;
         if (!t) {
-            const id = await this.api<string>('/tunnels/create', {
-                name: label, tunnel_type: 'minecraft-java', port_type: 'tcp', port_count: 1,
-                origin: { type: 'default', data: { local_ip: '127.0.0.1', local_port: localPort } },
-                enabled: true, alloc: null, firewall_id: null, proxy_protocol: null,
-            });
-            list = await this.tunnels();
-            t = list.find(x => x.id === String(id)) ?? { id: String(id), pending: true };
-        } else if (t.localPort !== localPort) {
-            await this.api('/tunnels/update', { tunnel_id: t.id, local_ip: '127.0.0.1', local_port: localPort, agent_id: null, enabled: true });
+            try {
+                this.log(`터널 만들기: ${label} → 127.0.0.1:${localPort} (에이전트 ${agentId})`);
+                const id = await this.api<string>('/tunnels/create', {
+                    name: label, tunnel_type: 'minecraft-java', port_type: 'tcp', port_count: 1,
+                    origin: { type: 'agent', data: { agent_id: agentId, local_ip: '127.0.0.1', local_port: localPort } },
+                    enabled: true, alloc: null, firewall_id: null, proxy_protocol: null,
+                });
+                list = await this.tunnels();
+                t = list.find(x => x.id === String(id)) ?? { id: String(id), pending: true };
+            } catch (e) {
+                const code = e instanceof PlayitError ? e.code ?? '' : '';
+                if (!CREATE_BLOCKED.test(code) && !CREATE_BLOCKED.test((e as Error).message)) {
+                    throw e;
+                }
+                // 대시보드에서 만든 터널 찾기: 이 에이전트의 Minecraft Java(또는 TCP) 터널 중 다른 서버가 안 쓰는 것
+                const cands = list.filter(x => x.agentId === agentId && !usedIds.includes(x.id) && !x.disabled
+                    && (!x.tunnelType || /minecraft-java|tcp/i.test(x.tunnelType)));
+                cands.sort((a, b) => Number(/minecraft-java/i.test(b.tunnelType ?? '')) - Number(/minecraft-java/i.test(a.tunnelType ?? '')));
+                t = cands[0];
+                if (!t) {
+                    this.log(`터널을 만들 수 없음(${code}), 대시보드에서 만든 터널도 없음`, 'error');
+                    throw new PlayitError(`[PLAYIT-CREATE] 앱이 playit 터널을 만들 수 없습니다(${playitErrorText(code)}). `
+                        + 'playit.gg 웹사이트 → Tunnels → Add Tunnel → "Minecraft Java" 를 고르고, 에이전트는 이 PC 의 에이전트(통합 작업실)로 만든 뒤 '
+                        + '[주소 다시 열기]를 눌러 주세요. 무료 플랜에서도 웹사이트에서 만드는 건 됩니다.', code);
+                }
+                reused = true;
+                this.log(`앱이 터널을 못 만들어(${code}) 대시보드에서 만든 터널을 씀: ${t.name ?? t.id}`);
+            }
+        }
+        let warning: string | undefined;
+        if (t.localPort !== localPort) {
+            try {
+                await this.api('/tunnels/update', { tunnel_id: t.id, local_ip: '127.0.0.1', local_port: localPort, agent_id: agentId, enabled: true });
+                this.log(`터널 로컬 포트 변경: ${t.localPort ?? '?'} → ${localPort}`);
+            } catch (e) {
+                this.log(`터널 로컬 포트를 바꾸지 못함: ${(e as Error).message}`, 'warn');
+                warning = `playit 터널(${t.name ?? t.id})이 이 PC 의 포트 ${t.localPort ?? '?'} 로 연결돼 있는데 서버는 ${localPort} 입니다. `
+                    + `playit.gg 에서 그 터널의 Local Port 를 ${localPort} 로 바꿔 주세요.`;
+            }
         }
         for (let i = 0; i < 15 && !t.address; i++) {       // 주소 배정은 몇 초 걸릴 수 있다
             await new Promise(r => setTimeout(r, i === 0 ? 0 : 1000));
             t = (await this.tunnels()).find(x => x.id === t!.id) ?? t;
             if (t.disabled) {
-                throw new PlayitError(`playit 이 이 터널을 꺼 두었습니다: ${t.disabled}`);
+                throw new PlayitError(`[PLAYIT-DISABLED] playit 이 이 터널을 꺼 두었습니다: ${t.disabled}`);
             }
         }
         if (!t.address) {
             throw new PlayitError('playit 이 주소를 아직 배정하지 않았습니다. 잠시 뒤 다시 열어 주세요.');
         }
-        return { id: t.id, address: t.address };
+        return { id: t.id, address: t.address, warning, reused };
     }
 
     // ---------------------------------------------------------------- 에이전트 실행

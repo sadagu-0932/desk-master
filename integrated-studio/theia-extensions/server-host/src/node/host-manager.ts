@@ -615,13 +615,18 @@ export class HostManager extends EventEmitter {
         if (!st.linked) {
             throw new Error('playit 계정이 연결돼 있지 않습니다(처음이거나 연결이 풀림). 패널의 [playit 다시 연결]을 눌러 주세요.');
         }
-        const t = await pl.ensureTunnel(s.name, port, s.playitTunnelId);
+        const used = [...this.servers.values()].filter(x => x.id !== s.id && x.playitTunnelId).map(x => x.playitTunnelId!);
+        const t = await pl.ensureTunnel(s.name, port, s.playitTunnelId, used);
         if (s.playitTunnelId !== t.id) {
             s.playitTunnelId = t.id;
             this.save();
         }
         pl.acquire(s.id);
-        return { address: t.address, fixed: true, notes: [NOTE.fixed, NOTE.relay, NOTE.carrier, ...lanNote] };
+        const extra = [
+            ...(t.reused ? ['playit.gg 웹사이트에서 만든 터널을 씁니다(무료 플랜에서 앱이 직접 만들 수 없어서).'] : []),
+            ...(t.warning ? [t.warning] : []),
+        ];
+        return { address: t.address, fixed: true, notes: [...extra, NOTE.fixed, NOTE.relay, NOTE.carrier, ...lanNote] };
     }
 
     protected waitDomain(r: Runtime, timeout: number): Promise<string | undefined> {
