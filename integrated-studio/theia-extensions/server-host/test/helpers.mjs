@@ -121,6 +121,10 @@ export async function fakePlayit({ agentBytes = Buffer.from('fake-playit-agent')
             }
             if (req.url === '/agents/rundata') { return ok({ agent_id: state.agentId, agent_type: 'self-managed', tunnels: [], pending: [] }); }
             if (req.url === '/tunnels/list') { return ok({ tunnels: state.tunnels, tcp_alloc: {}, udp_alloc: {} }); }
+            if (req.url === '/tunnels/create' && /[^\x00-\x7F]/.test(json.name ?? '')) {
+                // 실제 응답(사용자 로그 2026-11-28): HTTP 400 error/validation "Tunnel name can only contain ASCII characters"
+                return send(400, { status: 'error', data: { type: 'validation', message: 'Tunnel name can only contain ASCII characters' } });
+            }
             if (req.url === '/tunnels/create') {
                 if (json.origin?.type !== 'agent' || json.origin.data.agent_id !== state.agentId) {
                     return send(200, { status: 'error', data: { type: 'auth', message: 'SelfManagedAgentCanOnlyAffectSelf' } });

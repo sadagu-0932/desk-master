@@ -19,7 +19,7 @@
  *   origin:{type:"default", data:{local_ip, local_port}}, enabled, alloc, firewall_id, proxy_protocol} ·
  *   /tunnels/update {tunnel_id, local_ip, local_port, agent_id, enabled}
  *   주소: alloc {status:"allocated", data:{assigned_domain, assigned_srv, port_start, …}}
- * - 서버마다 터널 하나(이름 "통합 작업실 · <서버 이름>")를 만들어 두고 다시 쓰므로 주소가 고정된다(포트가 바뀌면 local_port 만 갱신).
+ * - 서버마다 터널 하나(이름 "studio <서버 이름의 ASCII 부분> <서버 id 끝 8자>", tunnelName)를 만들어 두고 다시 쓰므로 주소가 고정된다(포트가 바뀌면 local_port 만 갱신).
  * - 에이전트는 계정이 연결돼 있으면 앱이 켜져 있는 동안 계속 켜 둔다(대시보드 Online 유지). 예기치 않게 꺼지면 점점 길게 기다리며 다시 켠다.
  *   모든 단계(계정 연결·키 교환·에이전트 시작·연결·오류)는 'log' 이벤트와 <에이전트 폴더>/agent.log 에 남긴다.
  * 무료 요금제의 터널 수·지역 제한은 playit.gg 계정 화면 기준(바뀔 수 있음) — 넘으면 API 오류를 그대로 한국어로 안내한다.
@@ -33,7 +33,25 @@ import { EventEmitter } from 'events';
 import { PlayitStatus } from '../common/index.js';
 
 export const RELEASE_API = 'https://api.github.com/repos/playit-cloud/playit-agent/releases/latest';
-export const TUNNEL_PREFIX = '통합 작업실 · ';
+/** 터널 이름 앞부분. playit API 는 터널 이름에 ASCII 만 받는다(HTTP 400 validation "Tunnel name can only contain ASCII characters") */
+export const TUNNEL_PREFIX = 'studio ';
+export const TUNNEL_FALLBACK = 'game-server';
+const TUNNEL_NAME_MAX = 60;
+
+/**
+ * playit 터널 이름(ASCII 만). 서버 이름은 사용자가 한글로 지을 수 있어서 보내기 직전에 바꾼다(사용자 보고 2026-11-28).
+ * - 악센트 글자는 기본 글자로(é → e), 그 밖의 비 ASCII·제어 문자는 뺀다. 공백은 하나로.
+ * - 남는 게 없으면 'game-server'. key(서버 id)를 붙여 한글 이름 서버 여러 개가 같은 이름이 되지 않게 한다.
+ * 결과는 늘 같아서(같은 입력 → 같은 이름) 다음에 열 때 이름으로 같은 터널을 다시 찾는다.
+ */
+export function tunnelName(name: string, key?: string): string {
+    const clean = (name ?? '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^\x20-\x7E]/g, ' ').replace(/\s+/g, ' ').trim();
+    const tag = (key ?? '').replace(/[^A-Za-z0-9]/g, '').slice(-8);
+    const suffix = tag ? ` ${tag}` : '';
+    const body = (TUNNEL_PREFIX + (clean || TUNNEL_FALLBACK)).slice(0, TUNNEL_NAME_MAX - suffix.length).trim();
+    return body + suffix;
+}
 
 export interface PlayitOptions {
     /** 에이전트 둘 폴더(앱 데이터 폴더 안) */
@@ -445,9 +463,9 @@ export class PlayitManager extends EventEmitter {
      * 무료 플랜 등으로 앱이 터널을 못 만들면(사용자 요청 2026-11-28 "무료 플랜이라 터널 만드는 게 막힘") 사용자가 playit.gg 대시보드에서
      * 이 에이전트에 만든 Minecraft Java 터널을 찾아 쓴다(usedIds = 다른 서버가 쓰는 터널은 빼고). 포트를 못 바꾸면 warning 으로 알린다.
      */
-    async ensureTunnel(name: string, localPort: number, knownId?: string, usedIds: string[] = []):
+    async ensureTunnel(name: string, localPort: number, knownId?: string, usedIds: string[] = [], key?: string):
         Promise<{ id: string; address: string; warning?: string; reused?: boolean }> {
-        const label = (TUNNEL_PREFIX + name).slice(0, 60);
+        const label = tunnelName(name, key);           // ASCII 만(playit API 규칙)
         const agentId = await this.agentId();
         let list = await this.tunnels();
         const mine = (x: TunnelInfo): boolean => !x.agentId || x.agentId === agentId;

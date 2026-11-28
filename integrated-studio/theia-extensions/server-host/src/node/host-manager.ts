@@ -616,7 +616,7 @@ export class HostManager extends EventEmitter {
             throw new Error('playit 계정이 연결돼 있지 않습니다(처음이거나 연결이 풀림). 패널의 [playit 다시 연결]을 눌러 주세요.');
         }
         const used = [...this.servers.values()].filter(x => x.id !== s.id && x.playitTunnelId).map(x => x.playitTunnelId!);
-        const t = await pl.ensureTunnel(s.name, port, s.playitTunnelId, used);
+        const t = await pl.ensureTunnel(s.name, port, s.playitTunnelId, used, s.id);   // s.id: 한글 이름이어도 서버마다 다른 터널 이름
         if (s.playitTunnelId !== t.id) {
             s.playitTunnelId = t.id;
             this.save();

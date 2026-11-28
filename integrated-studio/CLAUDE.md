@@ -288,7 +288,10 @@ Theia 확장은 TypeScript로 작성한다. Python 쪽은 `sidecar/` 아래에�
     `InvalidAgentKey`·`NoLongerValid` 만 연결 해제. JSON 아닌 401·403 은 망 차단으로 안내(PLAYIT-HTTP403). 오류 이름은 한국어 표(`PLAYIT_ERRORS`).
   - 무료 플랜 등으로 앱이 못 만들면(`RequiresPlayitPremium`·`RequiresVerifiedAccount`·한도·권한) 사용자가 playit.gg 웹사이트에서 이 에이전트에
     만든 Minecraft Java 터널(다른 서버가 안 쓰는 것)을 찾아 쓰고 로컬 포트를 서버에 맞춤(못 바꾸면 "Local Port 를 N 으로" 안내).
-    없으면 [PLAYIT-CREATE] 로 웹사이트에서 만드는 방법 안내. 시험: `parts.test.mjs` "playit 무료 플랜"(가짜 API 가 실제처럼 자기 에이전트 터널만 허용).
+    없으면 [PLAYIT-CREATE] 로 웹사이트에서 만드는 방법 안내.
+  - 터널 이름은 ASCII 만(사용자 로그 2026-11-28: `/tunnels/create` HTTP 400 validation "Tunnel name can only contain ASCII characters" —
+    예전 이름 "통합 작업실 · <한글 서버 이름>"). `tunnelName(name, 서버 id)` = "studio <서버 이름의 ASCII 부분 | game-server> <서버 id 끝 8자>"(최대 60자,
+    악센트는 기본 글자로, 그 밖의 비 ASCII 는 뺌). 가짜 API 도 실제처럼 비 ASCII 이름을 400 으로 거부. 시험: `parts.test.mjs` "playit 무료 플랜"(가짜 API 가 실제처럼 자기 에이전트 터널만 허용).
   - 시험: `tests/test_server_tools.py`, server-host `npm test` 20개(연결 풀림·다른 방식·오류 코드 추가), Windows 스모크(방화벽 PowerShell·자바 찾기).
 ### M9. 패키징 (내 PC용)
 - electron-builder로 Windows 설치 파일 또는 압축 실행판을 만든다. **배포하지 않는다** — 개인 사용 전용.

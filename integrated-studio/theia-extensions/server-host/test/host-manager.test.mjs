@@ -76,6 +76,9 @@ test('B: e4mc 없음 → UPnP, CGNAT 면 → playit 고정 주소, 이유가 남
     assert.equal(v.address.provider, 'playit');
     assert.equal(v.address.address, 'play1.gl.joinmc.link');
     assert.equal(v.address.fixed, true);
+    // 서버 이름 '친구들'(한글) → playit 에는 ASCII 이름으로(서버 id 끝 8자로 구분)
+    const createdName = fp.state.calls.find(c => c[0] === '/tunnels/create')[1].name;
+    assert.equal(createdName, `studio game-server ${s.id.replace(/[^A-Za-z0-9]/g, '').slice(-8)}`);
     assert.deepEqual(v.address.attempts.map(a => [a.provider, a.ok]), [['e4mc', false], ['upnp', false], ['playit', true]]);
     assert.match(v.address.attempts[0].reason, /e4mc 가 들어 있지 않습니다/);
     assert.match(v.address.attempts[1].reason, /CGNAT/);

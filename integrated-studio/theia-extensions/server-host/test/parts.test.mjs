@@ -10,7 +10,7 @@ import { parseLanLine, currentLanState, LanWatcher } from '../lib/node/lan-watch
 import { parseLanPing, encodeLanPing, LanDiscovery } from '../lib/node/lan-discovery.js';
 import { ping, flattenMotd } from '../lib/node/slp.js';
 import { UpnpManager, nonPublicReason } from '../lib/node/upnp.js';
-import { PlayitManager, readSecret, assetName } from '../lib/node/playit.js';
+import { PlayitManager, readSecret, assetName, tunnelName } from '../lib/node/playit.js';
 import { FakeIgd, fakeMcServer, fakePlayit, fakeAgent, wait } from './helpers.mjs';
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'sh-'));
@@ -208,6 +208,8 @@ test('playit: 받기(sha256 검증)·계정 연결·서버별 고정 터널·에
     assert.equal(fp.state.tunnels[0].origin.data.local_port, 26000);
     assert.equal(fp.state.tunnels.length, 2);
     const created = fp.state.calls.find(c => c[0] === '/tunnels/create')[1];
+    assert.match(created.name, /^[\x20-\x7E]+$/);                         // 한글 서버 이름('서버 A')이어도 ASCII 만 보냄
+    assert.equal(created.name, 'studio A');
     assert.equal(created.tunnel_type, 'minecraft-java');
     assert.deepEqual(created.origin, { type: 'agent', data: { agent_id: fp.state.agentId, local_ip: '127.0.0.1', local_port: 25565 } });   // 자기 에이전트에
     pm.acquire('a');
@@ -318,6 +320,24 @@ test('playit 무료 플랜: 앱이 터널을 못 만들면 웹사이트에서 �
     await assert.rejects(pm.ensureTunnel('세 번째', 30003, undefined, [webId]), /PLAYIT/);
     assert.equal(pm.status().linked, true);
     await fp.close();
+});
+
+test('playit 터널 이름: ASCII 만, 비면 game-server, 서버 id 로 구분, 길이 60', () => {
+    const ascii = /^[\x20-\x7E]+$/;
+    assert.equal(tunnelName('My Server'), 'studio My Server');
+    assert.equal(tunnelName('서버 A'), 'studio A');                           // 한글만 빠짐
+    assert.equal(tunnelName('내 월드 서버'), 'studio game-server');           // 다 빠지면 기본 이름
+    assert.equal(tunnelName('Café Crème'), 'studio Cafe Creme');               // 악센트는 기본 글자로
+    assert.equal(tunnelName('🎮  야생\t생존  1.0'), 'studio 1.0');           // 이모지·제어 문자 빼고 공백 정리
+    assert.equal(tunnelName(''), 'studio game-server');
+    assert.equal(tunnelName('내 월드', 'srv-1a2b3c4d'), 'studio game-server 1a2b3c4d');
+    assert.notEqual(tunnelName('월드 하나', 'srv-aaaa1111'), tunnelName('월드 둘', 'srv-bbbb2222'));   // 한글 이름 서버끼리도 다름
+    assert.equal(tunnelName('서버', 'srv-1a2b3c4d'), tunnelName('서버', 'srv-1a2b3c4d'));              // 늘 같은 이름(다시 찾기)
+    const long = tunnelName('x'.repeat(200), 'srv-1a2b3c4d');
+    assert.ok(long.length <= 60 && long.endsWith(' 1a2b3c4d'));
+    for (const n of ['서버', 'Ünïcödé ★', '\u0000\u001f', 'a·b', '서버'.repeat(50)]) {
+        assert.match(tunnelName(n, 'srv-12345678'), ascii, n);
+    }
 });
 
 test('readLines: 1MB 넘는 로그를 조각으로 읽어도 줄·한글이 깨지지 않음', async () => {
