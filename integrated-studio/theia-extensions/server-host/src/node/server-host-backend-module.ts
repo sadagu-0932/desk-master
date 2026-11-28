@@ -1,15 +1,13 @@
-import * as path from 'path';
 import { ContainerModule, inject, injectable } from '@theia/core/shared/inversify';
 import { ConnectionHandler, RpcConnectionHandler } from '@theia/core/lib/common/messaging';
 import { BackendApplicationContribution } from '@theia/core/lib/node/backend-application';
 import { SidecarProcess } from 'integrated-studio-launcher-core/lib/node/sidecar-process.js';
 import {
     CreateServerOptions, DetectedInstance, E4mcPrepare, FirewallStatus, HostSnapshot, ImportPreview, ImportResult, ModCheck, ModIssue,
-    PingResult, PlayitStatus, ProviderId, SERVER_HOST_PATH, ServerHostClient, ServerHostService, ServerView, UpnpSettings,
+    PingResult, ProviderId, SERVER_HOST_PATH, ServerHostClient, ServerHostService, ServerView, UpnpSettings,
 } from '../common/index.js';
 import { HostManager } from './host-manager.js';
 import { LanDiscovery } from './lan-discovery.js';
-import { PlayitManager } from './playit.js';
 import { UpnpManager, natUpnpClient } from './upnp.js';
 
 export const HostManagerToken = Symbol('HostManager');
@@ -18,8 +16,7 @@ function makeManager(sidecar: SidecarProcess): HostManager {
     const factory = natUpnpClient();
     let manager: HostManager | undefined;
     const upnp = new UpnpManager(factory, { ddns: () => manager?.ddns() });
-    const playit = new PlayitManager({ dir: path.join(sidecar.dataDir, 'server-host', 'playit') });
-    manager = new HostManager(sidecar, { upnp, playit, lan: new LanDiscovery() });
+    manager = new HostManager(sidecar, { upnp, lan: new LanDiscovery() });
     return manager;
 }
 
@@ -64,12 +61,6 @@ class ServerHostServiceImpl implements ServerHostService {
     async setServerMemory(id: string, memoryMb: number | null): Promise<ServerView> { return (await this.m()).setServerMemory(id, memoryMb); }
     async ping(port: number): Promise<PingResult> { return (await this.m()).ping(port); }
     async prepareE4mc(id: string, choice: string): Promise<E4mcPrepare> { return (await this.m()).prepareE4mc(id, choice); }
-    async playitStatus(): Promise<PlayitStatus> {
-        return (await this.m()).playit!.status();
-    }
-    async playitInstall(): Promise<PlayitStatus> { return (await this.m()).playit!.install(); }
-    async playitClaim(force?: boolean): Promise<PlayitStatus> { return (await this.m()).playit!.claim(!!force); }
-    async playitVerify(): Promise<PlayitStatus> { return (await this.m()).playit!.verify(); }
     async nextProvider(id: string): Promise<ServerView> { return (await this.m()).nextProvider(id); }
     async modCheck(id: string): Promise<ModCheck> { return (await this.m()).modCheck(id); }
     async modFix(id: string, items: ModIssue[]): Promise<{ done: number; failed: Array<ModIssue & { error: string }>; check: ModCheck }> {
@@ -93,7 +84,7 @@ class ServerHostServiceImpl implements ServerHostService {
 class ServerHostLifecycle implements BackendApplicationContribution {
     @inject(HostManagerToken) protected readonly manager: HostManager;
     async onStop(): Promise<void> {
-        await this.manager.dispose();   // 공유기 UPnP 매핑 지우기·playit 에이전트 끄기
+        await this.manager.dispose();   // 공유기 UPnP 매핑 지우기
     }
 }
 

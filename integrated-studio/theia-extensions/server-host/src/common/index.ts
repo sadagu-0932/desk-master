@@ -6,7 +6,8 @@ export const ServerHostService = Symbol('ServerHostService');
 
 /** A 전용 서버 / B 싱글 LAN 공개 / C 외부 서버(다른 런처로 연 월드·서버) */
 export type ServerKind = 'dedicated' | 'lan' | 'external';
-export type ProviderId = 'e4mc' | 'upnp' | 'playit';
+/** e4mc = e4mc 중계(싱글 LAN·모드 서버), minekube = Minekube Connect(Paper), upnp = 공유기 포트 열기. playit 은 뺐다(사용자 결정 2026-11-28) */
+export type ProviderId = 'e4mc' | 'upnp' | 'minekube';
 
 export type ServerState =
     | 'stopped' | 'needs-eula' | 'preparing' | 'starting' | 'waiting-lan' | 'running' | 'error';
@@ -25,9 +26,9 @@ export interface AddressView {
     provider?: ProviderId;
     /** 친구가 멀티플레이에 넣을 주소 */
     address?: string;
-    /** 고정 주소(UPnP+DDNS, playit) / 매번 바뀜(e4mc, DDNS 없는 UPnP) */
+    /** 고정 주소(UPnP+DDNS, Minekube) / 매번 바뀜(e4mc, DDNS 없는 UPnP) */
     fixed?: boolean;
-    /** 직접(UPnP) / 중계(e4mc·playit) */
+    /** 직접(UPnP) / 중계(e4mc·Minekube) */
     relay?: boolean;
     attempts: AddressAttempt[];
     notes: string[];
@@ -135,21 +136,6 @@ export interface LanGame {
     lastSeen: number;
 }
 
-export interface PlayitStatus {
-    agentInstalled: boolean;
-    agentRunning: boolean;
-    /** 계정 연결(비밀키) 됨 */
-    linked: boolean;
-    /** 에이전트가 playit.gg 에 연결됨(대시보드 Online) — 데몬 로그 "playit connected" 로 안다 */
-    agentOnline?: boolean;
-    /** 예전 앱이 받은 playit.exe(CLI)만 있어 데몬(playitd)으로 바꿔 받아야 함 */
-    outdated?: boolean;
-    /** 단계별 기록 파일 */
-    logPath?: string;
-    claimUrl?: string;
-    message?: string;
-}
-
 export interface UpnpSettings {
     /** 무료 DDNS 갱신 주소. {ip} {token} {domain} 를 바꿔 넣는다. 예: https://www.duckdns.org/update?domains={domain}&token={token}&ip={ip} */
     ddnsUrl?: string;
@@ -161,7 +147,6 @@ export interface UpnpSettings {
 export interface HostSnapshot {
     servers: ServerView[];
     lanGames: LanGame[];
-    playit: PlayitStatus;
     upnp: UpnpSettings & { publicIp?: string };
 }
 
@@ -259,14 +244,7 @@ export interface ServerHostService {
     ping(port: number): Promise<PingResult>;
     /** e4mc 준비(설치·충돌 선택). choice: ask | disable_once | proceed | skip */
     prepareE4mc(id: string, choice: string): Promise<E4mcPrepare>;
-    playitStatus(): Promise<PlayitStatus>;
-    /** 사용자가 확인한 뒤에만: 공식 배포처에서 에이전트 받기 */
-    playitInstall(): Promise<PlayitStatus>;
-    /** 계정 연결 링크 만들기(브라우저로 열기) → 연결될 때까지 기다림. force = 지금 연결이 있어도 새로(풀렸을 때·계정 바꿀 때) */
-    playitClaim(force?: boolean): Promise<PlayitStatus>;
-    /** 지금 playit 키가 아직 유효한지 확인(풀렸으면 '연결 안 됨'으로 바뀜) */
-    playitVerify(): Promise<PlayitStatus>;
-    /** 친구가 못 들어올 때: 지금 방식을 닫고 다음 방식(UPnP → playit 등)으로 다시 열기 */
+    /** 친구가 못 들어올 때: 지금 방식을 닫고 다음 방식(e4mc·Minekube ↔ UPnP)으로 다시 열기 */
     nextProvider(id: string): Promise<ServerView>;
     /** 전용 서버: 인스턴스(참가자 쪽)와 서버 모드 비교 */
     modCheck(id: string): Promise<ModCheck>;
@@ -299,4 +277,4 @@ export function formatBytes(n: number): string {
     return `${v.toFixed(v < 10 ? 1 : 0)} ${units[i]}`;
 }
 
-export const PROVIDER_LABEL: Record<ProviderId, string> = { e4mc: 'e4mc 중계', upnp: '직접 UPnP', playit: 'playit 중계' };
+export const PROVIDER_LABEL: Record<ProviderId, string> = { e4mc: 'e4mc 중계', upnp: '직접 UPnP', minekube: 'Minekube Connect' };

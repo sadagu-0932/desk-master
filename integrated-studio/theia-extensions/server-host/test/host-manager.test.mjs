@@ -1,4 +1,4 @@
-// HostManager 통합 시험: 방식 A·B·C, 주소 자동 선택(e4mc → UPnP → playit), 실패 이유, 동시 2개, 정리.
+// HostManager 통합 시험: 방식 A·B·C, 주소 자동 선택(e4mc·Minekube → UPnP), 실패 이유, 동시 2개, 정리.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'fs';
@@ -6,10 +6,9 @@ import * as os from 'os';
 import * as path from 'path';
 import { HostManager } from '../lib/node/host-manager.js';
 import { UpnpManager } from '../lib/node/upnp.js';
-import { PlayitManager } from '../lib/node/playit.js';
-import { FakeIgd, FakeSidecar, fakeAgent, fakeMcServer, fakePlayit, wait } from './helpers.mjs';
+import { FakeIgd, FakeSidecar, fakeMcServer, wait } from './helpers.mjs';
 
-function setup({ ip = '8.8.4.4', playit } = {}) {
+function setup({ ip = '8.8.4.4' } = {}) {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'shm-'));
     const instDir = path.join(dir, 'inst');
     fs.mkdirSync(path.join(instDir, 'logs'), { recursive: true });
@@ -22,7 +21,7 @@ function setup({ ip = '8.8.4.4', playit } = {}) {
     const upnp = new UpnpManager(() => igd.client());
     const pings = new Map();         // port → 결과(없으면 응답 없음)
     const ping = async (_h, port) => pings.get(port) ?? { ok: false, error: '응답이 없습니다' };
-    const m = new HostManager(sidecar, { upnp, playit, ping, lanInterval: 20, e4mcTimeoutMs: 400, pollMs: 60_000 });
+    const m = new HostManager(sidecar, { upnp, ping, lanInterval: 20, e4mcTimeoutMs: 400, pollMs: 60_000 });
     const log = line => fs.appendFileSync(path.join(instDir, 'logs', 'latest.log'), line + '\n');
     return { dir, sidecar, igd, upnp, m, pings, log };
 }
@@ -59,37 +58,20 @@ test('B 싱글 LAN: e4mc 도메인으로 열림 → LAN 닫으면 주소 닫힘 
     await m.dispose();
 });
 
-test('B: e4mc 없음 → UPnP, CGNAT 면 → playit 고정 주소, 이유가 남음', async () => {
-    const fp = await fakePlayit();
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'shp-'));
-    const playit = new PlayitManager({ dir: path.join(dir, 'agent'), apiBase: fp.base, releaseApi: fp.base + '/release',
-        secretPath: path.join(dir, 'playit.toml'), claimPollMs: 5, spawnAgent: () => fakeAgent() });
-    await playit.install();
-    await playit.claim();
-    const { m, log, pings, igd } = setup({ ip: '100.80.1.1', playit });
+test('B: e4mc 없음 → UPnP, CGNAT 면 실패 이유가 남음', async () => {
+    const { m, log, pings, igd } = setup({ ip: '100.80.1.1' });
     const s = await m.createServer({ kind: 'lan', instanceId: 'inst_aaaaaaaa', name: '친구들' });
     await m.startServer(s.id);
     pings.set(40000, okPing());
     log('[1] [Server thread/INFO]: Published LAN server on port 40000');
-    assert.ok(await wait(() => m.snapshot().servers[0].address.state === 'open', 8000));
+    assert.ok(await wait(() => m.snapshot().servers[0].address.state === 'failed', 8000));
     const v = m.snapshot().servers[0];
-    assert.equal(v.address.provider, 'playit');
-    assert.equal(v.address.address, 'play1.gl.joinmc.link');
-    assert.equal(v.address.fixed, true);
-    // 서버 이름 '친구들'(한글) → playit 에는 ASCII 이름으로(서버 id 끝 8자로 구분)
-    const createdName = fp.state.calls.find(c => c[0] === '/tunnels/create')[1].name;
-    assert.equal(createdName, `studio game-server ${s.id.replace(/[^A-Za-z0-9]/g, '').slice(-8)}`);
-    assert.deepEqual(v.address.attempts.map(a => [a.provider, a.ok]), [['e4mc', false], ['upnp', false], ['playit', true]]);
+    assert.deepEqual(v.address.attempts.map(a => [a.provider, a.ok]), [['e4mc', false], ['upnp', false]]);
     assert.match(v.address.attempts[0].reason, /e4mc 가 들어 있지 않습니다/);
     assert.match(v.address.attempts[1].reason, /CGNAT/);
-    assert.ok(v.address.notes.some(n => n.includes('통신사')));
     assert.equal(igd.mappings.size, 0);
-    assert.equal(playit.status().agentRunning, true);
     await m.stopServer(s.id);
-    assert.equal(playit.status().agentRunning, true);                 // 서버를 닫아도 에이전트는 켜 둔다(대시보드 Online 유지)
     await m.dispose();
-    assert.equal(playit.status().agentRunning, false);                // 앱을 끄면 끈다
-    await fp.close();
 });
 
 test('A 전용 서버: Done 뒤 UPnP 로 열림, 접속자 표시, 중지하면 매핑 삭제', async () => {
@@ -164,15 +146,19 @@ test('동시 2개: 서로 다른 포트·주소, 앱 끌 때 매핑 모두 삭�
     assert.equal(igd.mappings.size, 0);
 });
 
-test('선호 방식·저장: playit 먼저 고르면 순서가 바뀌고, 다시 만들면 목록이 남아 있음', async () => {
+test('선호 방식·저장: UPnP 먼저 고르면 저장되고, 예전 playit 설정은 자동으로', async () => {
     const { m, dir, sidecar } = setup({ ip: '8.8.4.4' });
     const s = await m.createServer({ kind: 'external', port: 30010 });
-    await m.setPreference(s.id, 'playit');
-    await assert.rejects(m.setPreference(s.id, 'e4mc'), /싱글 LAN/);
+    await m.setPreference(s.id, 'upnp');
+    await assert.rejects(m.setPreference(s.id, 'e4mc'), /외부 서버/);
     await m.dispose();
+    const file = path.join(dir, 'server-host', 'servers.json');
+    const saved = JSON.parse(fs.readFileSync(file, 'utf8'));
+    assert.equal(saved[0].preference, 'upnp');
+    saved.push({ ...saved[0], id: 'srv-old', preference: 'playit', playitTunnelId: 'x' });   // 예전 앱이 저장한 것
+    fs.writeFileSync(file, JSON.stringify(saved));
     const m2 = new HostManager(sidecar, { ping: async () => ({ ok: false }) });
-    assert.equal(m2.snapshot().servers[0].preference, 'playit');
-    assert.ok(fs.existsSync(path.join(dir, 'server-host', 'servers.json')));
+    assert.deepEqual(m2.snapshot().servers.map(x => x.preference), ['upnp', 'auto']);
     await m2.dispose();
 });
 
@@ -217,32 +203,64 @@ test('전용 서버 오류 코드: 로그 오류(ds_error)·종료 코드가 카
     await m.dispose();
 });
 
-test('친구가 못 들어와요: UPnP 로 열린 주소를 닫고 playit 으로 다시 열기, 방화벽 확인', async () => {
-    const fp = await fakePlayit();
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'shn-'));
-    const playit = new PlayitManager({ dir: path.join(dir, 'agent'), apiBase: fp.base, releaseApi: fp.base + '/release',
-        secretPath: path.join(dir, 'playit.toml'), claimPollMs: 5, spawnAgent: () => fakeAgent() });
-    await playit.install();
-    await playit.claim();
-    const { m, sidecar, pings, igd } = setup({ playit });
+test('전용 서버: 서버에 넣은 e4mc 주소로 열림, 친구가 못 들어오면 UPnP(방화벽 확인) ↔ e4mc', async () => {
+    const { m, sidecar, pings, igd } = setup();
     const fw = { ok: false, block: 1, message: '[NET-201] 막고 있습니다', path: 'C:/java.exe' };
     const orig = sidecar.call.bind(sidecar);
     sidecar.call = async (method, params) => method === 'firewall_check' ? fw : orig(method, params);
-    const s = await m.createServer({ kind: 'dedicated', instanceId: 'inst_aaaaaaaa', name: '전용2' });
+    const s = await m.createServer({ kind: 'dedicated', instanceId: 'inst_aaaaaaaa', name: '모드 서버' });
     sidecar.nextPort = 25580;
     await m.startServer(s.id);
     const sid = m.snapshot().servers[0].serverId;
     pings.set(25580, okPing());
     sidecar.notify('ds_state', { id: sid, state: 'ready', port: 25580 });
+    sidecar.notify('ds_address', { id: sid, provider: 'e4mc', address: 'brave-cat.sg.e4mc.link' });   // Done 뒤 몇 초
     assert.ok(await wait(() => m.snapshot().servers[0].address.state === 'open'));
-    assert.equal(m.snapshot().servers[0].address.provider, 'upnp');
+    let v = m.snapshot().servers[0];
+    assert.equal(v.address.provider, 'e4mc');
+    assert.equal(v.address.address, 'brave-cat.sg.e4mc.link');
+    assert.equal(v.address.fixed, false);
+    assert.equal(igd.mappings.size, 0);                                             // 공유기는 건드리지 않음
+    await m.nextProvider(s.id);                                                     // 친구가 못 들어와요 → UPnP
+    v = m.snapshot().servers[0];
+    assert.equal(v.address.provider, 'upnp');
+    assert.ok(igd.mappings.has(25580));
     assert.ok(await wait(() => m.snapshot().servers[0].firewall?.block === 1));       // UPnP 면 방화벽도 확인
-    await m.nextProvider(s.id);
-    const v = m.snapshot().servers[0];
-    assert.equal(v.address.provider, 'playit');
-    assert.equal(igd.mappings.size, 0);                                             // UPnP 매핑은 닫음
-    assert.ok(v.address.attempts.some(a => a.provider === 'upnp' && !a.ok && /건너뜀/.test(a.reason)));
+    await m.nextProvider(s.id);                                                     // 다시 누르면 e4mc 로
+    assert.equal(m.snapshot().servers[0].address.provider, 'e4mc');
+    assert.equal(igd.mappings.size, 0);
     await m.stopServer(s.id);
     await m.dispose();
-    await fp.close();
+});
+
+test('Paper 전용 서버: Minekube Connect 고정 주소, 늦게 오면 UPnP 에서 바꿈', async () => {
+    const { m, sidecar, pings, igd } = setup();
+    const s = await m.createServer({ kind: 'dedicated', instanceId: 'inst_aaaaaaaa', name: '플러그인', software: 'paper' });
+    sidecar.nextPort = 25590;
+    await m.startServer(s.id);
+    const sid = m.snapshot().servers[0].serverId;
+    pings.set(25590, okPing());
+    // 주소가 안 오면(시험은 0.4초) UPnP 로
+    sidecar.notify('ds_state', { id: sid, state: 'ready', port: 25590 });
+    assert.ok(await wait(() => m.snapshot().servers[0].address.state === 'open'));
+    let v = m.snapshot().servers[0];
+    assert.equal(v.address.provider, 'upnp');
+    assert.match(v.address.attempts[0].reason, /Minekube Connect 가 주소를 알려 주지 않았습니다/);
+    // Connect 가 늦게 주소를 알리면 그 주소로 바꾸고 UPnP 매핑은 닫음
+    sidecar.notify('ds_address', { id: sid, provider: 'minekube', address: 'quick-fox.play.minekube.net' });
+    assert.ok(await wait(() => m.snapshot().servers[0].address.provider === 'minekube' && m.snapshot().servers[0].address.state === 'open'));
+    v = m.snapshot().servers[0];
+    assert.equal(v.address.address, 'quick-fox.play.minekube.net');
+    assert.equal(v.address.fixed, true);
+    assert.equal(igd.mappings.size, 0);
+    // 다시 켤 때 이번엔 Done 전에 주소가 오면 바로 그 주소
+    await m.stopServer(s.id);
+    await m.startServer(s.id);
+    sidecar.notify('ds_address', { id: sid, provider: 'minekube', address: 'quick-fox.play.minekube.net' });
+    sidecar.notify('ds_state', { id: sid, state: 'ready', port: 25590 });
+    assert.ok(await wait(() => m.snapshot().servers[0].address.state === 'open'));
+    assert.equal(m.snapshot().servers[0].address.provider, 'minekube');
+    assert.deepEqual(m.snapshot().servers[0].address.attempts.map(a => [a.provider, a.ok]), [['minekube', true]]);
+    await m.stopServer(s.id);
+    await m.dispose();
 });

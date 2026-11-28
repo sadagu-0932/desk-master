@@ -38,10 +38,9 @@ export class ServerHostContribution extends AbstractViewContribution<ServerHostW
         });
     }
 
-    /** 왼쪽 막대에 패널 탭이 늘 있게(이전 화면 배치에 없어도). playit 연결 링크는 브라우저로 연다. */
+    /** 왼쪽 막대에 패널 탭이 늘 있게(이전 화면 배치에 없어도). */
     async onDidInitializeLayout(): Promise<void> {
         await this.openView({ activate: false, reveal: false });
-        this.store.onClaimUrl(url => this.windows.openNewWindow(url, { external: true }));
     }
 
     override registerCommands(registry: CommandRegistry): void {
@@ -53,23 +52,10 @@ export class ServerHostContribution extends AbstractViewContribution<ServerHostW
         registry.registerCommand(ServerHostCommands.IMPORT, { execute: () => this.guard(() => this.openImport()) });
         registry.registerCommand(ServerHostCommands.START, { execute: (id: string) => this.guard(() => this.start(id)) });
         registry.registerCommand(ServerHostCommands.EULA, { execute: (id: string) => this.guard(() => this.eula(id)) });
-        registry.registerCommand(ServerHostCommands.PLAYIT_SETUP, { execute: () => this.guard(() => this.playitSetup()) });
         registry.registerCommand(ServerHostCommands.DDNS, { execute: () => this.guard(() => this.ddns()) });
         registry.registerCommand(ServerHostCommands.MEMORY, { execute: (id: string) => this.guard(() => this.serverMemory(id)) });
         registry.registerCommand(ServerHostCommands.MOD_CHECK, { execute: (id: string) => this.guard(() => this.modCheck(id)) });
         registry.registerCommand(ServerHostCommands.FIREWALL, { execute: (id: string) => this.guard(() => this.firewall(id)) });
-        registry.registerCommand(ServerHostCommands.PLAYIT_RELINK, { execute: () => this.guard(() => this.playitRelink()) });
-        registry.registerCommand(ServerHostCommands.PLAYIT_VERIFY, { execute: () => this.guard(async () => {
-            const st = await this.store.service.playitVerify();
-            this.messages.info(st.message ?? (st.linked ? 'playit 계정이 연결돼 있습니다.' : 'playit 계정이 연결돼 있지 않습니다.'));
-        }) });
-        registry.registerCommand(ServerHostCommands.PLAYIT_LOG, { execute: () => this.guard(async () => {
-            const st = await this.store.service.playitStatus();
-            if (!st.logPath) {
-                return;
-            }
-            await open(this.openers, FileUri.create(st.logPath));
-        }) });
         registry.registerCommand(ServerHostCommands.JAVA_INSTALL, { execute: () => this.guard(() => this.javaInstall()) });
     }
 
@@ -98,18 +84,6 @@ export class ServerHostContribution extends AbstractViewContribution<ServerHostW
             this.messages.info('Windows 방화벽에서 서버를 허용했습니다. 친구에게 다시 들어와 보라고 해 주세요.');
         } else if (st.message) {
             this.messages.warn(st.message);
-        }
-    }
-
-    protected async playitRelink(): Promise<void> {
-        let st = await this.store.service.playitStatus();
-        if (!st.agentInstalled) {
-            return this.playitSetup();
-        }
-        this.messages.info('브라우저에서 playit.gg 에 로그인하고 연결을 승인해 주세요(예전 연결 키는 옆에 보관해 둡니다).');
-        st = await this.store.service.playitClaim(true);
-        if (st.linked) {
-            this.messages.info('playit 계정을 다시 연결했습니다. 주소가 닫혀 있던 서버는 [주소 다시 열기]를 눌러 주세요.');
         }
     }
 
@@ -189,7 +163,7 @@ export class ServerHostContribution extends AbstractViewContribution<ServerHostW
         const inst = this.instances.find(instanceId);
         if (inst?.loader === 'vanilla') {
             // 실행이 Prism 이라(2026-11-27) 바닐라 인스턴스엔 e4mc(Fabric 모드)를 넣지 않는다 → UPnP·playit
-            this.messages.info('바닐라 인스턴스라 e4mc 없이 UPnP → playit 순서로 엽니다. e4mc 를 쓰려면 같은 버전의 Fabric 인스턴스로 여세요.');
+            this.messages.info('바닐라 인스턴스라 e4mc 없이 UPnP 로 엽니다. e4mc 를 쓰려면 같은 버전의 Fabric 인스턴스로 여세요.');
             await this.store.service.prepareE4mc(id, 'skip');
             return;
         }
@@ -200,14 +174,14 @@ export class ServerHostContribution extends AbstractViewContribution<ServerHostW
                     <ul>{(res.conflicts ?? []).map(c => <li key={c.file}><b>{c.name}</b> — {c.why} <span className='sh-muted'>({c.file})</span></li>)}</ul></div>,
                 [{ id: 'disable_once', label: '이번만 끄기', description: '게임을 끄면 되살립니다(.disabled 로 이름만 바꿈)', primary: true },
                     { id: 'proceed', label: '그대로 진행', description: '둘 다 켠 채로' },
-                    { id: 'skip', label: 'e4mc 대신 UPnP·playit', description: '모드를 건드리지 않음' }]).open();
+                    { id: 'skip', label: 'e4mc 대신 UPnP', description: '모드를 건드리지 않음' }]).open();
             if (!choice) {
                 return;
             }
             res = await this.store.service.prepareE4mc(id, choice);
         }
         if (res.ambiguous) {
-            this.messages.warn(`${res.reason} — e4mc 대신 UPnP·playit 으로 엽니다.`);
+            this.messages.warn(`${res.reason} — e4mc 대신 UPnP 로 엽니다.`);
             await this.store.service.prepareE4mc(id, 'skip');
             return;
         }
@@ -244,32 +218,6 @@ export class ServerHostContribution extends AbstractViewContribution<ServerHostW
         const ok = await new EulaDialog(url, u => this.windows.openNewWindow(u, { external: true })).open();
         if (ok) {
             await this.store.service.acceptEula(id);
-        }
-    }
-
-    // ---------- playit ----------
-    protected async playitSetup(): Promise<void> {
-        let st = await this.store.service.playitStatus();
-        if (!st.agentInstalled) {
-            const ok = await new ChoiceDialog(st.outdated ? 'playit 에이전트 바꾸기' : 'playit 준비',
-                <div><p>playit 은 공유기 설정 없이 고정 주소를 주는 중계 서비스입니다(무료 요금제 있음, 조건은 playit.gg 에서 확인).</p>
-                    <p>공식 배포처(GitHub playit-cloud/playit-agent 최신 릴리스)에서 에이전트를 받아 앱 데이터 폴더에 둡니다.
-                        받은 파일은 GitHub 이 준 sha256 으로 검증합니다. 계정을 연결하면 앱이 켜져 있는 동안 에이전트를 켜 둡니다
-                        (playit.gg 대시보드에서 Online).</p>
-                    <p className='sh-muted'>중계라 핑이 조금 오를 수 있고, 일부 통신사에서 막힐 수 있습니다.</p></div>,
-                [{ id: 'ok', label: '받기', primary: true }]).open();
-            if (!ok) {
-                return;
-            }
-            st = await this.store.service.playitInstall();
-        }
-        if (!st.linked) {
-            this.messages.info('브라우저에서 playit.gg 에 로그인하고 연결을 승인해 주세요. 처음 한 번만 하면 됩니다.');
-            st = await this.store.service.playitClaim();
-        }
-        if (st.linked && st.agentInstalled) {
-            this.messages.info('playit 준비가 끝났습니다. 에이전트가 playit.gg 에 연결되면 패널에 "에이전트 온라인"이 뜹니다. '
-                + '이제 UPnP 가 안 되면 자동으로 playit 주소를 엽니다.');
         }
     }
 

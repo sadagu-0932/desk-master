@@ -6,7 +6,6 @@ export namespace ServerHostCommands {
     export const TOGGLE: Command = { id: 'studio.serverHost.toggle', category: CATEGORY, label: '서버 패널 열기' };
     export const OPEN_SERVER: Command = { id: 'studio.serverHost.open', category: CATEGORY, label: '서버 열기' };
     export const IMPORT: Command = { id: 'studio.serverHost.import', category: CATEGORY, label: '다른 런처 인스턴스 불러오기' };
-    export const PLAYIT_SETUP: Command = { id: 'studio.serverHost.playit', category: CATEGORY, label: 'playit 준비·계정 연결' };
     export const DDNS: Command = { id: 'studio.serverHost.ddns', category: CATEGORY, label: 'UPnP 고정 주소(DDNS) 설정' };
     export const START: Command = { id: 'studio.serverHost.start' };
     export const EULA: Command = { id: 'studio.serverHost.eula' };
@@ -15,8 +14,5 @@ export namespace ServerHostCommands {
     export const MEMORY: Command = { id: 'studio.serverHost.memory' };
     export const MOD_CHECK: Command = { id: 'studio.serverHost.modCheck' };
     export const FIREWALL: Command = { id: 'studio.serverHost.firewall' };
-    export const PLAYIT_RELINK: Command = { id: 'studio.serverHost.playitRelink', category: CATEGORY, label: 'playit 계정 다시 연결' };
-    export const PLAYIT_VERIFY: Command = { id: 'studio.serverHost.playitVerify', category: CATEGORY, label: 'playit 연결 확인' };
-    export const PLAYIT_LOG: Command = { id: 'studio.serverHost.playitLog', category: CATEGORY, label: 'playit 에이전트 기록 보기' };
     export const JAVA_INSTALL: Command = { id: 'studio.java.install', category: CATEGORY, label: 'Java 25 JDK 설치' };
 }

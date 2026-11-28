@@ -136,3 +136,95 @@ def test_java_find_reads_release_and_picks_versions(tmp_path, monkeypatch):
     env, j = java_find.build_env(25)
     assert j["home"].endswith("jdk-26") and env["JAVA_HOME"] == j["home"]
     assert java_find._major("1.8.0_402") == 8 and java_find._major("25.0.5") == 25
+
+
+# ---------------------------------------------------------------- 주소 열기 모드·플러그인(2026-11-28: playit 대신)
+
+@pytest.fixture
+def addr(tmp_path, monkeypatch):
+    import modrinth
+    calls = []
+
+    def fake_install(project, version, loader, target, **kw):
+        if project == "boom":
+            raise modrinth.NoMatch("없음")
+        calls.append((project, version, loader, Path(target).name))
+        Path(target).mkdir(parents=True, exist_ok=True)
+        name = {"e4mc": "e4mc-fabric-6.2.3-modern.jar", "minekube-connect": "connect-spigot.jar"}[project]
+        (Path(target) / name).write_bytes(b"jar")
+        r = modrinth.InstallResult()
+        r.installed.append({"filename": name})
+        return r
+    monkeypatch.setattr(modrinth, "install", fake_install)
+    store = InstanceStore(tmp_path)
+    events = []
+    runner = sr.ServerRunner(tmp_path, store, lambda v: ["java"], emit=lambda m, p: events.append((m, p)))
+    monkeypatch.setattr(runner, "_vanilla_jar", lambda v: _touch(tmp_path / "jars" / "server.jar"))
+    monkeypatch.setattr(runner, "_fabric_launcher", lambda v, lv: _touch(tmp_path / "jars" / "fabric-launch.jar"))
+    monkeypatch.setattr(runner, "_paper_jar", lambda v: _touch(tmp_path / "jars" / "paper.jar"))
+    return store, runner, calls, events
+
+
+def _touch(p: Path) -> Path:
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_bytes(b"x")
+    return p
+
+
+@pytest.mark.address_mod
+def test_address_mod_per_server_type(addr):
+    store, runner, calls, _ = addr
+    # Fabric 서버 → e4mc(fabric) 를 서버 mods/ 에
+    fab = store.create("패브릭", "26.3", "fabric")["id"]
+    s = runner.create(fab, "f")["id"]
+    assert runner.prepare_launch(fab, s) == ["-jar", "fabric-server-launch.jar", "nogui"]
+    assert calls[-1] == ("e4mc", "26.3", "fabric", "mods")
+    assert (runner._sdir(fab, s) / "mods" / "e4mc-fabric-6.2.3-modern.jar").is_file()
+    # Paper 서버 → Minekube Connect(paper) 를 plugins/ 에
+    sp = runner.create(fab, "p", software="paper")["id"]
+    assert runner.prepare_launch(fab, sp) == ["-jar", "paper.jar", "nogui"]
+    assert calls[-1] == ("minekube-connect", "26.3", "paper", "plugins")
+    # 바닐라 → Fabric 서버로 켜고 e4mc(참가자는 그냥 바닐라)
+    van = store.create("바닐라", "26.3", "vanilla")["id"]
+    sv = runner.create(van, "v")["id"]
+    assert runner.prepare_launch(van, sv) == ["-jar", "fabric-server-launch.jar", "nogui"]
+    assert calls[-1] == ("e4mc", "26.3", "fabric", "mods")
+    # 끄면 아무것도 안 넣고 바닐라는 그냥 server.jar
+    runner.update(van, sv, address_mod=False)
+    n = len(calls)
+    assert runner.prepare_launch(van, sv) == ["-jar", "server.jar", "nogui"]
+    assert len(calls) == n
+    assert sr.ServerRunner.address_provider({"loader": "paper"}) == "minekube"
+    assert sr.ServerRunner.address_provider({"loader": "neoforge"}) == "e4mc"
+
+
+@pytest.mark.address_mod
+def test_address_mod_failure_falls_back(addr, monkeypatch):
+    store, runner, calls, events = addr
+    monkeypatch.setitem(sr.ADDRESS_MODS, "e4mc", "boom")       # Modrinth 에 그 버전 파일이 없음
+    van = store.create("바닐라", "26.3", "vanilla")["id"]
+    sv = runner.create(van, "v")["id"]
+    assert runner.prepare_launch(van, sv) == ["-jar", "server.jar", "nogui"]      # 그냥 바닐라로 켬
+    assert any("UPnP" in p.get("line", "") for m, p in events if m == "ds_log")
+
+
+def test_address_lines_detected(tmp_path):
+    """e4mc·Minekube Connect 의 실제 로그 문구(소스로 확인)에서 주소를 읽어 ds_address 로 알린다."""
+    store = InstanceStore(tmp_path)
+    iid = store.create("x", "26.3", "fabric")["id"]
+    events = []
+    runner = sr.ServerRunner(tmp_path, store, lambda v: ["java"], emit=lambda m, p: events.append((m, p)))
+    sid = runner.create(iid, "s")["id"]
+
+    class Proc:
+        stdout = iter([
+            "[12:00:00] [Server thread/INFO] [e4mc/]: Domain assigned: brave-cat.sg.e4mc.link\n",
+            "[12:00:01] [Server thread/INFO]: [connect] Your public address: quick-fox.play.minekube.net\n",
+            "[12:00:02] [Server thread/INFO]: Done (3.2s)! For help, type \"help\"\n",
+        ])
+
+        def wait(self):
+            return 0
+    runner._pump(iid, sid, Proc(), 25565)
+    got = [(p["provider"], p["address"]) for m, p in events if m == "ds_address"]
+    assert got == [("e4mc", "brave-cat.sg.e4mc.link"), ("minekube", "quick-fox.play.minekube.net")]

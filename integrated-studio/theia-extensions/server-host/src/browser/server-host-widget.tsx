@@ -17,7 +17,7 @@ const STATE_LABEL: Record<string, string> = {
 const KIND_LABEL: Record<string, string> = { dedicated: '전용 서버', lan: '싱글 LAN 공개', external: '외부 서버' };
 const ADDR_LABEL: Record<string, string> = { closed: '주소 닫힘', opening: '주소 여는 중', open: '주소 열림', failed: '주소 열기 실패' };
 
-/** 서버 패널: 서버 목록(상태·접속자·주소), 이 PC 의 LAN 월드, playit·DDNS 설정. */
+/** 서버 패널: 서버 목록(상태·접속자·주소), 이 PC 의 LAN 월드, UPnP·DDNS 설정. */
 @injectable()
 export class ServerHostWidget extends ReactWidget {
     static readonly ID = 'studio-server-host';
@@ -57,7 +57,7 @@ export class ServerHostWidget extends ReactWidget {
     }
 
     protected render(): React.ReactNode {
-        const { servers, lanGames, playit, upnp } = this.store.snapshot;
+        const { servers, lanGames, upnp } = this.store.snapshot;
         const localLan = lanGames.filter(g => g.local);
         const hosted = new Set(servers.filter(s => s.kind === 'external').map(s => s.gamePort));
         return <div className='sh-root'>
@@ -83,20 +83,9 @@ export class ServerHostWidget extends ReactWidget {
             </div>)}
 
             <h3>주소 방식 설정</h3>
-            <div className='sh-small sh-setting'>
-                <b>playit 중계</b> — {playit.linked ? '계정 연결됨' : '계정 연결 안 됨'} · {playit.outdated ? '에이전트 새로 받아야 함'
-                    : !playit.agentInstalled ? '에이전트 없음'
-                        : playit.agentOnline ? '에이전트 온라인' : playit.agentRunning ? '에이전트 연결 중…' : '에이전트 꺼짐'}
-                {playit.agentInstalled && <button className='theia-button secondary sh-mini' title='계정 연결·에이전트 시작·연결 오류 기록'
-                    onClick={() => this.commands.executeCommand(ServerHostCommands.PLAYIT_LOG.id)}>기록 보기</button>}
-                {!playit.agentInstalled &&
-                    <button className='theia-button sh-mini' onClick={() => this.commands.executeCommand(ServerHostCommands.PLAYIT_SETUP.id)}>playit 준비</button>}
-                {playit.agentInstalled && !playit.claimUrl &&
-                    <button className={'theia-button sh-mini' + (playit.linked ? ' secondary' : '')} title='연결이 풀렸거나 다른 계정으로 바꿀 때'
-                        onClick={() => this.commands.executeCommand(ServerHostCommands.PLAYIT_RELINK.id)}>{playit.linked ? '다시 연결' : 'playit 다시 연결'}</button>}
-                {playit.linked && <button className='theia-button secondary sh-mini' onClick={() => this.commands.executeCommand(ServerHostCommands.PLAYIT_VERIFY.id)}>연결 확인</button>}
-                {playit.claimUrl && <div className='sh-note'>브라우저에서 승인을 기다리는 중: <a href={playit.claimUrl} target='_blank' rel='noreferrer'>{playit.claimUrl}</a></div>}
-                {playit.message && <div className='sh-muted'>{playit.message}</div>}
+            <div className='sh-small sh-setting sh-muted'>
+                전용 서버는 서버에 주소 모드를 넣어 엽니다 — 바닐라·Fabric·NeoForge·Forge 는 <b>e4mc</b>(주소가 매번 바뀜),
+                Paper 는 <b>Minekube Connect</b>(고정 주소). 안 되면 UPnP 로 엽니다.
             </div>
             <div className='sh-small sh-setting'>
                 <b>UPnP</b> — {upnp.publicIp ? `공인 IP ${upnp.publicIp}` : '아직 열지 않음'} · {upnp.ddnsUrl ? `DDNS ${upnp.ddnsDomain ?? ''} (고정 주소)` : 'DDNS 없음(IP 가 바뀌면 주소도 바뀜)'}
@@ -136,7 +125,7 @@ export class ServerHostWidget extends ReactWidget {
                     <button className='theia-button' onClick={() => this.copy(a.address!, '주소')}>복사</button>
                     {a.provider && <span className='sh-chip via'>{PROVIDER_LABEL[a.provider]}</span>}
                     <span className={'sh-chip ' + (a.fixed ? 'fixed' : 'changing')}>{a.fixed ? '고정 주소' : '매번 바뀜'}</span>
-                    <button className='theia-button secondary sh-mini' title='지금 방식을 닫고 다음 방식(UPnP → playit 등)으로 다시 엽니다'
+                    <button className='theia-button secondary sh-mini' title='지금 방식을 닫고 다음 방식(e4mc·Minekube ↔ UPnP)으로 다시 엽니다'
                         onClick={() => this.run(() => this.store.service.nextProvider(s.id))}>친구가 못 들어와요</button>
                 </>}
             </div>
@@ -180,9 +169,8 @@ export class ServerHostWidget extends ReactWidget {
                 <select className='theia-select sh-pref' value={s.preference} title='주소 여는 방식'
                     onChange={e => this.run(() => this.store.service.setPreference(s.id, e.target.value as 'auto' | ProviderId))}>
                     <option value='auto'>자동</option>
-                    {s.kind === 'lan' && <option value='e4mc'>e4mc 먼저</option>}
+                    {s.kind !== 'external' && <option value='e4mc'>{s.kind === 'dedicated' ? '주소 모드(e4mc·Minekube) 먼저' : 'e4mc 먼저'}</option>}
                     <option value='upnp'>UPnP 먼저</option>
-                    <option value='playit'>playit 먼저</option>
                 </select>
                 {s.kind === 'dedicated' && <button className='theia-button secondary' title='서버 최대 메모리(다음 시작부터)'
                     onClick={() => this.commands.executeCommand(ServerHostCommands.MEMORY.id, s.id)}>

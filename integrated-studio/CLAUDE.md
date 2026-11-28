@@ -293,6 +293,19 @@ Theia 확장은 TypeScript로 작성한다. Python 쪽은 `sidecar/` 아래에�
     예전 이름 "통합 작업실 · <한글 서버 이름>"). `tunnelName(name, 서버 id)` = "studio <서버 이름의 ASCII 부분 | game-server> <서버 id 끝 8자>"(최대 60자,
     악센트는 기본 글자로, 그 밖의 비 ASCII 는 뺌). 가짜 API 도 실제처럼 비 ASCII 이름을 400 으로 거부. 시험: `parts.test.mjs` "playit 무료 플랜"(가짜 API 가 실제처럼 자기 에이전트 터널만 허용).
   - 시험: `tests/test_server_tools.py`, server-host `npm test` 20개(연결 풀림·다른 방식·오류 코드 추가), Windows 스모크(방화벽 PowerShell·자바 찾기).
+- **playit 뺌 → 전용 서버는 주소 모드로**(사용자 결정 2026-11-28 "playit 은 너무 안 됨 · 모드 서버는 모드를 추가해서, Minekube Connect, playit 빼기"):
+  - playit 코드·시험·UI·명령을 모두 지움(예전 저장 설정 `preference: "playit"` 은 자동으로). 위의 playit 관련 결정 기록은 지난 이력이다.
+  - 전용 서버를 켤 때 `ServerRunner._ensure_address_mod` 가 Modrinth 에서 그 버전에 정확히 맞는 파일을 넣는다(실패해도 서버는 켜고 UPnP 로):
+    바닐라·Fabric·NeoForge·Forge = **e4mc**(서버 mods/, Fabric 은 Fabric API 의존 자동) — 소스(vgskye/e4mc-minecraft-architectury 93ce8a8)로
+    전용 서버에서도 `startTcpServerListener` 에 붙어 동작함을 확인, 로그 "Domain assigned: <주소>"(매번 바뀜), 참가자는 e4mc 필요 없음.
+    바닐라 전용 서버는 Fabric 서버(+Fabric API+e4mc)로 켠다(서버 쪽 모드뿐이라 참가자는 바닐라). Paper = **Minekube Connect**
+    (Modrinth "minekube-connect", 26.3 = connect-spigot.jar, plugins/) — 소스(minekube/connect-java 01970af)로 로그 "Your public address: <이름>.play.minekube.net",
+    이름은 plugins/connect/config.yml endpoint 라 고정 주소. 서버 설정 `addressMod: false`(ds_update address_mod)면 넣지 않음.
+  - 사이드카가 로그에서 주소를 읽어 `ds_address {id, provider: e4mc|minekube, address}` 알림 → host-manager 가 그 주소로 연다.
+    순서: 전용 = 주소 모드(최대 45초 기다림) → UPnP, 싱글 LAN = e4mc → UPnP, 외부 = UPnP. 주소가 늦게 오면 UPnP 에서 바꾸고 매핑은 닫음.
+    [친구가 못 들어와요] = 주소 모드 ↔ UPnP 전환.
+  - 시험: 사이드카 `tests/test_server_tools.py`(서버 종류별 모드·플러그인, 실패 시 바닐라로, 로그 문구), `tests/conftest.py`(다른 시험이 인터넷에서 모드를 받지 않게),
+    server-host `npm test` 18개(e4mc 주소·UPnP 전환·Minekube 고정 주소·늦게 온 주소).
 ### M9. 패키징 (내 PC용)
 - electron-builder로 Windows 설치 파일 또는 압축 실행판을 만든다. **배포하지 않는다** — 개인 사용 전용.
 - 서명이 없어서 SmartScreen 경고가 뜨는 건 그대로 둔다.

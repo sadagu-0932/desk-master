@@ -1,8 +1,6 @@
-// 시험용 가짜들: 마인크래프트 상태 응답 서버, 공유기(UPnP) 클라이언트, playit API·GitHub 릴리스, 사이드카.
+// 시험용 가짜들: 마인크래프트 상태 응답 서버, 공유기(UPnP) 클라이언트, 사이드카.
 import * as net from 'net';
-import * as http from 'http';
 import * as crypto from 'crypto';
-import { EventEmitter } from 'events';
 
 function varint(n) {
     const out = [];
@@ -82,102 +80,6 @@ export class FakeIgd {
             close() { igd.calls.push(['close']); },
         };
     }
-}
-
-/** 가짜 playit API + GitHub 릴리스 + 다운로드. */
-export async function fakePlayit({ agentBytes = Buffer.from('fake-playit-agent'), badDigest = false } = {}) {
-    // 실제 API 흉내(공식 api_client 2.0.2): 자기 관리 에이전트는 자기 에이전트 터널만(origin.type=agent, 자기 agent_id) 만들 수 있다.
-    // freePlan 이면 앱의 터널 만들기를 RequiresPlayitPremium 으로 거부(웹사이트에서 만든 터널은 state.tunnels 에 직접 넣는다).
-    const state = { claims: new Map(), tunnels: [], secret: 'ab'.repeat(32), calls: [], approve: true,
-        agentId: '11111111-2222-3333-4444-555555555555', freePlan: false, updateBlocked: false };
-    const digest = crypto.createHash('sha256').update(badDigest ? Buffer.from('other') : agentBytes).digest('hex');
-    let base = '';
-    const srv = http.createServer((req, res) => {
-        let body = '';
-        req.on('data', c => { body += c; });
-        req.on('end', () => {
-            const send = (code, obj, raw) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(raw ?? JSON.stringify(obj)); };
-            const ok = data => send(200, { status: 'success', data });
-            const json = body ? JSON.parse(body) : {};
-            state.calls.push([req.url, json, req.headers.authorization]);
-            if (req.url === '/release') {
-                return send(200, { tag_name: 'v2.0.2', assets: [
-                    { name: 'playit-windows-x86_64-signed.exe', browser_download_url: `${base}/dl`, digest: `sha256:${digest}` },
-                    { name: 'playitd-windows-x86_64-signed.exe', browser_download_url: `${base}/dl`, digest: `sha256:${digest}` },
-                    { name: 'playit-linux-amd64', browser_download_url: `${base}/dl`, digest: `sha256:${digest}` },
-                    { name: 'playit-linux-aarch64', browser_download_url: `${base}/dl`, digest: `sha256:${digest}` },
-                    { name: 'playit-macos-universal.tar.gz', browser_download_url: `${base}/dl`, digest: `sha256:${digest}` },
-                ] });
-            }
-            if (req.url === '/dl') { res.writeHead(200); return res.end(agentBytes); }
-            if (req.url === '/claim/setup') {
-                const n = (state.claims.get(json.code) ?? 0) + 1;
-                state.claims.set(json.code, n);
-                return ok(n < 2 ? 'WaitingForUserVisit' : n < 3 ? 'WaitingForUser' : state.approve ? 'UserAccepted' : 'UserRejected');
-            }
-            if (req.url === '/claim/exchange') { return ok({ secret_key: state.secret }); }
-            if (req.headers.authorization !== `Agent-Key ${state.secret}`) {
-                return send(200, { status: 'error', data: { type: 'auth', message: 'InvalidAgentKey' } });
-            }
-            if (req.url === '/agents/rundata') { return ok({ agent_id: state.agentId, agent_type: 'self-managed', tunnels: [], pending: [] }); }
-            if (req.url === '/tunnels/list') { return ok({ tunnels: state.tunnels, tcp_alloc: {}, udp_alloc: {} }); }
-            if (req.url === '/tunnels/create' && /[^\x00-\x7F]/.test(json.name ?? '')) {
-                // 실제 응답(사용자 로그 2026-11-28): HTTP 400 error/validation "Tunnel name can only contain ASCII characters"
-                return send(400, { status: 'error', data: { type: 'validation', message: 'Tunnel name can only contain ASCII characters' } });
-            }
-            if (req.url === '/tunnels/create') {
-                if (json.origin?.type !== 'agent' || json.origin.data.agent_id !== state.agentId) {
-                    return send(200, { status: 'error', data: { type: 'auth', message: 'SelfManagedAgentCanOnlyAffectSelf' } });
-                }
-                if (state.freePlan) { return send(200, { status: 'fail', data: 'RequiresPlayitPremium' }); }
-                if (state.tunnels.length >= 4) { return send(200, { status: 'fail', data: 'TunnelLimitReached' }); }
-                return ok(state.addTunnel(json.name, json.origin.data.local_port));
-            }
-            if (req.url === '/tunnels/update') {
-                if (state.updateBlocked) { return send(200, { status: 'fail', data: 'CannotUpdateLocalAddressForUnassignedTunnel' }); }
-                const t = state.tunnels.find(x => x.id === json.tunnel_id);
-                t.origin.data.local_port = json.local_port;
-                return ok(null);
-            }
-            send(404, { status: 'error', data: 'path-not-found' });
-        });
-    });
-    /** 터널 추가(앱이 만들거나, 사용자가 웹사이트에서 만든 것 흉내) */
-    state.addTunnel = (name, localPort, type = 'minecraft-java', agentId = state.agentId) => {
-        const id = crypto.randomUUID();
-        const n = state.tunnels.length + 1;
-        state.tunnels.push({ id, name, tunnel_type: type,
-            origin: { type: 'agent', data: { agent_id: agentId, agent_name: 'agent', local_ip: '127.0.0.1', local_port: localPort } },
-            alloc: { status: 'allocated', data: { assigned_domain: `play${n}.gl.joinmc.link`, assigned_srv: `play${n}.gl.joinmc.link`, port_start: 40000 + n, ip_hostname: 'x' } } });
-        return id;
-    };
-    /** 터널 추가(앱이 만들거나, 사용자가 웹사이트에서 만든 것 흉내) */
-    state.addTunnel = (name, localPort, type = 'minecraft-java', agentId = state.agentId) => {
-        const id = crypto.randomUUID();
-        const n = state.tunnels.length + 1;
-        state.tunnels.push({ id, name, tunnel_type: type,
-            origin: { type: 'agent', data: { agent_id: agentId, agent_name: 'agent', local_ip: '127.0.0.1', local_port: localPort } },
-            alloc: { status: 'allocated', data: { assigned_domain: `play${n}.gl.joinmc.link`, assigned_srv: `play${n}.gl.joinmc.link`, port_start: 40000 + n, ip_hostname: 'x' } } });
-        return id;
-    };
-    await new Promise(r => srv.listen(0, '127.0.0.1', r));
-    base = `http://127.0.0.1:${srv.address().port}`;
-    return { base, state, close: () => new Promise(r => srv.close(r)) };
-}
-
-/** 가짜 에이전트 프로세스 */
-export function fakeAgent() {
-    const p = new EventEmitter();
-    p.exitCode = null;
-    p.stdout = new EventEmitter();
-    p.stderr = new EventEmitter();
-    p.stdout.setEncoding = () => p.stdout;
-    p.stderr.setEncoding = () => p.stderr;
-    /** 데몬 표준 출력 흉내(조각으로 나눠 보내도 줄 단위로 읽는지) */
-    p.say = text => { p.stdout.emit('data', text); };
-    p.kill = () => { p.exitCode = 0; p.emit('exit', 0); };
-    p.crash = code => { p.exitCode = code; p.emit('exit', code); };
-    return p;
 }
 
 /** 가짜 사이드카(사이드카 RPC 흉내) */

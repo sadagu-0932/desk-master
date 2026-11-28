@@ -49,6 +49,16 @@ LOADER_NAMES = {"neoforge": "NeoForge", "forge": "Forge", "fabric": "Fabric", "v
 # 빌드마다 channel(STABLE 등), downloads["server:default"] = {name, checksums.sha256, url(fill-data.papermc.io)}
 PAPER_API = "https://fill.papermc.io/v3/projects/paper"
 PAPER_DOWNLOAD_HOSTS = ("fill-data.papermc.io", "fill.papermc.io")
+# 주소 열기 모드·플러그인(사용자 결정 2026-11-28: playit 빼고 "모드 서버는 모드로, Paper 는 Minekube Connect").
+# - e4mc(Modrinth "e4mc", Fabric·Forge·NeoForge): 서버 시작 때 ServerConnectionListener.startTcpServerListener 를 가로채 중계에 붙는다 —
+#   LAN 공개와 전용 서버 모두(소스 vgskye/e4mc-minecraft-architectury 93ce8a8 확인, 전용 서버면 "works, but isn't recommended" 경고).
+#   로그 "Domain assigned: <주소>", 주소는 시작할 때마다 바뀜. 참가자는 e4mc 필요 없음. Fabric 판은 Fabric API 필요(Modrinth required 의존).
+# - Minekube Connect(Modrinth "minekube-connect", paper 로더, 26.3 = connect-spigot.jar): 로그 "Your public address: <이름>.play.minekube.net"
+#   (소스 minekube/connect-java 01970af ConnectPlatform 확인), 이름은 plugins/connect/config.yml 의 endpoint 라 다음에도 같은 주소.
+# - 바닐라 전용 서버는 Fabric 서버(+Fabric API+e4mc)로 켠다 — 서버 쪽 모드뿐이라 참가자는 그냥 바닐라.
+ADDRESS_MODS = {"e4mc": "e4mc", "minekube": "minekube-connect"}
+ADDRESS_RE = [("e4mc", re.compile(r"Domain assigned: (\S+)")),
+              ("minekube", re.compile(r"Your public address: (\S+\.play\.minekube\.net)"))]
 
 
 def free_port() -> int:
@@ -154,6 +164,7 @@ class ServerRunner:
         self.lock = threading.Lock()
         self._current = ""
         self.diag: dict[str, server_errors.Diagnoser] = {}
+        self.addresses: dict[str, dict[str, str]] = {}      # 서버 id → {provider, address}(이번 실행에서 로그로 안 것)
 
     # ---------- 폴더·설정 ----------
     def _sdir(self, inst_id: str, sid: str) -> Path:
@@ -197,7 +208,8 @@ class ServerRunner:
         return {"running": running, "ready": running and self.ready.get(sid, False),
                 "players": sorted(self.players.get(sid, set())), "needsEula": not self._eula_ok(d),
                 "port": int(read_properties(d / "server.properties").get("server-port", "0") or 0),
-                "maxPlayers": int(read_properties(d / "server.properties").get("max-players", "10") or 10)}
+                "maxPlayers": int(read_properties(d / "server.properties").get("max-players", "10") or 10),
+                "address": self.addresses.get(sid) if running else None}
 
     @staticmethod
     def _eula_ok(d: Path) -> bool:
@@ -254,10 +266,12 @@ class ServerRunner:
         return {"world": world, "path": str(dst)}
 
     def update(self, id: str, sid: str, name: str | None = None, online_mode: bool | None = None,
-               memory_mb: int | None = None) -> dict[str, Any]:
+               memory_mb: int | None = None, address_mod: bool | None = None) -> dict[str, Any]:
         meta = self._meta(id, sid)
         d = self._sdir(id, sid)
         props: dict[str, Any] = {}
+        if address_mod is not None:
+            meta["addressMod"] = bool(address_mod)      # 다음 시작부터(끄면 e4mc·Connect 를 넣지 않고 UPnP 만)
         if name:
             meta["name"] = name.strip()[:60]
             props["motd"] = meta["name"][:59]
@@ -664,18 +678,46 @@ class ServerRunner:
             "rem 통합 작업실이 만든 실행 파일. 앱 밖에서 켜면 주소 열기·상태 표시는 되지 않습니다(앱의 [시작]을 권장).\r\n"
             f'cd /d "%~dp0"\r\n{args} %*\r\npause\r\n', "utf-8")
 
+    @staticmethod
+    def address_provider(meta: dict[str, Any]) -> str | None:
+        """이 서버가 주소를 여는 모드·플러그인: Paper = minekube, 그 밖 = e4mc. addressMod 가 꺼져 있으면 None."""
+        if meta.get("addressMod") is False:
+            return None
+        return "minekube" if meta.get("loader") == "paper" else "e4mc"
+
+    def _ensure_address_mod(self, id: str, sid: str, meta: dict[str, Any], d: Path, loader: str) -> str | None:
+        """주소 열기 모드·플러그인을 Modrinth 에서 그 버전에 정확히 맞는 파일로 넣는다(sha512 확인). 실패해도 서버는 켠다(UPnP 로)."""
+        provider = self.address_provider(meta)
+        if not provider:
+            return None
+        import modrinth
+        target = d / ("plugins" if provider == "minekube" else "mods")
+        target.mkdir(exist_ok=True)
+        name = "Minekube Connect" if provider == "minekube" else "e4mc"
+        try:
+            res = modrinth.install(ADDRESS_MODS[provider], meta["version"], "paper" if provider == "minekube" else loader, target)
+        except Exception as e:  # noqa: BLE001 - 인터넷·버전 없음: UPnP 로
+            self.emit("ds_log", {"id": sid, "line": f"[통합 작업실] {name} 을(를) 넣지 못했습니다({e}). 주소는 UPnP 로 엽니다."})
+            return None
+        if res.installed:
+            self.emit("ds_log", {"id": sid, "line": f"[통합 작업실] 주소 열기용 {name} 설치: "
+                                                   + ", ".join(i["filename"] for i in res.installed)})
+        return provider
+
     def prepare_launch(self, id: str, sid: str) -> list[str]:
         """java 뒤에 붙일 인자(메모리 제외). 바닐라·Fabric = -jar <jar> nogui, Forge 계열 = @인자파일 nogui."""
         self._current = sid
         meta = self._meta(id, sid)
         d = self._sdir(id, sid)
         loader = meta["loader"]
+        self.addresses.pop(sid, None)
         if loader == "paper":
             jar = self._paper_jar(meta["version"])
             target = d / "paper.jar"
             if not target.is_file() or target.stat().st_size != jar.stat().st_size:
                 shutil.copy2(jar, target)
             (d / "plugins").mkdir(exist_ok=True)
+            self._ensure_address_mod(id, sid, meta, d, "paper")
             return ["-jar", "paper.jar", "nogui"]
         if loader in ("neoforge", "forge"):
             full = self._forge_version(loader, meta["version"], meta.get("loaderVersion"))
@@ -684,6 +726,7 @@ class ServerRunner:
             copied = self._sync_server_mods(id, d)
             if copied:
                 self.emit("ds_log", {"id": sid, "line": f"[통합 작업실] 서버 모드 {len(copied)}개: {', '.join(copied[:8])}"})
+            self._ensure_address_mod(id, sid, meta, d, loader)
             return ["@user_jvm_args.txt", "@" + self.forge_args_file(d, loader, full), "nogui"]
         return ["-jar", self._prepare_plain(id, sid, meta, d), "nogui"]
 
@@ -691,13 +734,18 @@ class ServerRunner:
         vanilla = self._vanilla_jar(meta["version"])
         if not (d / "server.jar").is_file() or (d / "server.jar").stat().st_size != vanilla.stat().st_size:
             shutil.copy2(vanilla, d / "server.jar")
-        if meta["loader"] == "fabric":
-            launcher = self._fabric_launcher(meta["version"], meta.get("loaderVersion"))
+        # 바닐라도 주소 열기(e4mc)를 쓰면 Fabric 서버로 켠다 — 서버 쪽 모드(Fabric API·e4mc)뿐이라 참가자는 그냥 바닐라 클라이언트
+        as_fabric = meta["loader"] == "fabric" or (meta["loader"] == "vanilla" and self.address_provider(meta) == "e4mc")
+        if as_fabric:
+            launcher = self._fabric_launcher(meta["version"], meta.get("loaderVersion") if meta["loader"] == "fabric" else None)
             shutil.copy2(launcher, d / "fabric-server-launch.jar")
             (d / "fabric-server-launcher.properties").write_text("serverJar=server.jar\n", "utf-8")
-            copied = self._sync_server_mods(id, d)
-            if copied:
-                self.emit("ds_log", {"id": sid, "line": f"[통합 작업실] 서버 모드 {len(copied)}개: {', '.join(copied[:8])}"})
+            if meta["loader"] == "fabric":
+                copied = self._sync_server_mods(id, d)
+                if copied:
+                    self.emit("ds_log", {"id": sid, "line": f"[통합 작업실] 서버 모드 {len(copied)}개: {', '.join(copied[:8])}"})
+            if not self._ensure_address_mod(id, sid, meta, d, "fabric") and meta["loader"] == "vanilla":
+                return "server.jar"            # e4mc 를 못 넣었으면 그냥 바닐라로
             return "fabric-server-launch.jar"
         return "server.jar"
 
@@ -740,6 +788,11 @@ class ServerRunner:
             if not line:
                 continue
             self.emit("ds_log", {"id": sid, "instanceId": id, "line": line})
+            for provider, rx in ADDRESS_RE:
+                m = rx.search(line)
+                if m:
+                    self.addresses[sid] = {"provider": provider, "address": m.group(1)}
+                    self.emit("ds_address", {"id": sid, "instanceId": id, "provider": provider, "address": m.group(1)})
             hit = self.diag.setdefault(sid, server_errors.Diagnoser()).feed(line)
             if hit:
                 self.emit("ds_error", {"id": sid, "instanceId": id, "error": hit})

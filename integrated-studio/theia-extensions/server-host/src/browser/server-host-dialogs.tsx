@@ -87,9 +87,9 @@ export class OpenServerDialog extends ReactDialog<CreateServerOptions> {
     protected render(): React.ReactNode {
         const inst = this.deps.instances.find(i => i.id === this.instanceId);
         const kinds: Array<[ServerKind, string, string]> = [
-            ['lan', '싱글 LAN 공개', '지금 하는 싱글 월드를 그대로 엽니다. 게임에서 [LAN에 공개]를 누르면 자동으로 주소가 열립니다(e4mc → UPnP → playit).'],
-            ['dedicated', '전용 서버', '이 PC 에서 마인크래프트 서버를 따로 켭니다. 호스트가 게임을 꺼도 계속 돌아가고 콘솔이 있습니다(UPnP → playit).'],
-            ['external', '외부 서버 연결', '다른 런처로 연 LAN 월드나 이 PC 에서 켠 서버에 주소만 열어 줍니다(UPnP → playit).'],
+            ['lan', '싱글 LAN 공개', '지금 하는 싱글 월드를 그대로 엽니다. 게임에서 [LAN에 공개]를 누르면 자동으로 주소가 열립니다(e4mc → UPnP).'],
+            ['dedicated', '전용 서버', '이 PC 에서 마인크래프트 서버를 따로 켭니다. 호스트가 게임을 꺼도 계속 돌아가고 콘솔이 있습니다(서버에 e4mc · Paper 는 Minekube Connect → UPnP).'],
+            ['external', '외부 서버 연결', '다른 런처로 연 LAN 월드나 이 PC 에서 켠 서버에 주소만 열어 줍니다(UPnP).'],
         ];
         const lan = this.deps.lanGames().filter(g => g.local);
         return <div className='sh-dialog'>

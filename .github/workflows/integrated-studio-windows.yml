@@ -59,7 +59,7 @@ jobs:
       - name: 앱 빌드
         run: npm run build
 
-      - name: 서버 열기 시험 (가짜 공유기·playit·LAN 신호·상태 조회)
+      - name: 서버 열기 시험 (가짜 공유기·LAN 신호·상태 조회·주소 모드)
         run: npm test -w integrated-studio-server-host
 
       - name: native 모듈을 Electron용으로 재빌드

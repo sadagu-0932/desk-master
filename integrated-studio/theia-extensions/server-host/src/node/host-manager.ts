@@ -1,9 +1,11 @@
 /**
  * M10 백엔드: 서버(방식 A 전용 서버 / B 싱글 LAN 공개 / C 외부 서버)와 "주소 열기"를 관리한다. 여러 개를 동시에.
  *
- * 주소 자동 선택(실패하면 이유를 남기고 다음 방식으로):
- *   B 싱글 LAN : e4mc → UPnP → playit
- *   A 전용·C 외부: UPnP → playit
+ * 주소 자동 선택(실패하면 이유를 남기고 다음 방식으로). playit 은 뺐다(사용자 결정 2026-11-28 "playit 은 너무 안 됨"):
+ *   B 싱글 LAN : e4mc → UPnP
+ *   A 전용     : 서버에 넣은 주소 모드(e4mc — 바닐라·Fabric·NeoForge·Forge / Minekube Connect — Paper) → UPnP
+ *                사이드카가 서버 로그의 주소("Domain assigned:" / "Your public address:")를 ds_address 로 알려 준다.
+ *   C 외부     : UPnP
  * - A: 사이드카(server_runner.py)가 서버를 켜고 "Done" 을 알리면 그 포트로 주소를 연다.
  * - B: 인스턴스 latest.log 에서 LAN 공개 포트를 감지하면 열고, 월드에서 나가거나 게임을 끄면 닫는다.
  *      e4mc 가 들어 있으면 e4mc 가 로그에 찍은 도메인을 쓴다.
@@ -23,7 +25,6 @@ import { LanWatcher } from './lan-watcher.js';
 import { LanDiscovery } from './lan-discovery.js';
 import { ping as slpPing } from './slp.js';
 import { UpnpFailure, UpnpManager } from './upnp.js';
-import { PlayitManager } from './playit.js';
 
 export interface SidecarLike {
     readonly dataDir: string;
@@ -43,7 +44,8 @@ interface StoredServer {
     onlineMode?: boolean;
     world?: string | null;
     preference: 'auto' | ProviderId;
-    playitTunnelId?: string;
+    /** 전용 서버 종류(Paper 면 Minekube Connect) */
+    software?: 'paper';
     /** 전용 서버 최대 메모리(MB). 없으면 사이드카 기본값(보통 2GB) */
     memoryMb?: number;
 }
@@ -65,6 +67,8 @@ interface Runtime {
     opening?: Promise<void>;
     errors: ServerError[];
     firewall?: FirewallStatus;
+    /** 전용 서버의 주소 모드가 로그로 알려 준 주소(이번 실행) */
+    modAddress?: { provider: ProviderId; address: string };
 }
 
 /** 같은 공유기 안에서 쓸 이 PC 의 사설 IPv4(와이파이·유선). 가상 어댑터(VirtualBox·WSL 등 흔한 이름)는 뒤로. */
@@ -86,7 +90,8 @@ function errorText(e: ServerError): string {
 }
 
 const CONSOLE_MAX = 500;
-const CHAINS: Record<ServerKind, ProviderId[]> = { lan: ['e4mc', 'upnp', 'playit'], dedicated: ['upnp', 'playit'], external: ['upnp', 'playit'] };
+/** 전용 서버의 'e4mc' 자리는 "서버에 넣은 주소 모드"(Paper 면 Minekube Connect)다 */
+const CHAINS: Record<ServerKind, ProviderId[]> = { lan: ['e4mc', 'upnp'], dedicated: ['e4mc', 'upnp'], external: ['upnp'] };
 const NOTE = {
     relay: '중계라 핑이 조금 오를 수 있습니다.',
     carrier: '일부 통신사·학교·회사 망에서는 막힐 수 있습니다.',
@@ -94,11 +99,14 @@ const NOTE = {
     changing: '주소가 매번 바뀝니다 — 열 때마다 새 주소를 보내 주세요.',
     upnpNoDdns: '공인 IP 가 바뀌면 주소도 바뀝니다(DDNS 를 설정하면 고정).',
     fixed: '고정 주소입니다 — 한 번 알려 주면 계속 같은 주소로 들어옵니다.',
+    modServer: '서버에 넣은 e4mc 가 연 주소입니다. 참가자는 e4mc 가 필요 없습니다(서버와 같은 콘텐츠 모드만).',
+    minekube: 'Minekube Connect 주소입니다(무료). 서버를 다시 켜도 같은 주소입니다.',
 };
+/** 주소 모드가 주소를 알려 주기를 기다리는 시간(e4mc 는 Done 뒤 몇 초) */
+const MOD_ADDRESS_TIMEOUT = 45_000;
 
 export interface ManagerOptions {
     upnp?: UpnpManager;
-    playit?: PlayitManager;
     lan?: LanDiscovery;
     ping?: (host: string, port: number) => Promise<PingResult>;
     lanInterval?: number;
@@ -116,7 +124,6 @@ export class HostManager extends EventEmitter {
     protected sub: { dispose(): void };
     protected poller: NodeJS.Timeout | undefined;
     readonly upnp: UpnpManager | undefined;
-    readonly playit: PlayitManager | undefined;
     readonly lan: LanDiscovery | undefined;
     protected pinger: (host: string, port: number) => Promise<PingResult>;
 
@@ -124,7 +131,6 @@ export class HostManager extends EventEmitter {
         super();
         this.dir = path.join(sidecar.dataDir, 'server-host');
         this.upnp = opts.upnp;
-        this.playit = opts.playit;
         this.lan = opts.lan;
         this.pinger = opts.ping ?? ((h, p) => slpPing(h, p));
         this.load();
@@ -132,22 +138,18 @@ export class HostManager extends EventEmitter {
         this.upnp?.on('ip', (ip: string, prev?: string) => this.onIpChange(ip, prev));
         this.upnp?.on('ddns', (_ok: boolean, msg: string) => this.logAll('upnp', msg));
         this.upnp?.on('renew-failed', (port: number, why: string) => this.logAll('upnp', `UPnP 갱신 실패(포트 ${port}): ${why}`));
-        this.playit?.on('status', () => this.changed());
         this.lan?.on('change', () => this.changed());
         this.lan?.start();
         this.poller = setInterval(() => this.poll().catch(() => undefined), opts.pollMs ?? 10_000);
-        this.playit?.on('log', (line: string) => this.logAll('playit', `playit: ${line}`));
-        if (this.playit?.status().linked) {
-            // 앱을 켜면 에이전트도 켠다(대시보드 Online 유지). 연결이 풀렸으면 verify 가 '다시 연결'로 바꾼다
-            this.playit.verify().then(st => st.linked && this.playit!.ensureRunning()).catch(() => undefined);
-        }
     }
 
     // ---------------------------------------------------------------- 저장
     protected load(): void {
         try {
             for (const s of JSON.parse(fs.readFileSync(path.join(this.dir, 'servers.json'), 'utf8')) as StoredServer[]) {
-                this.servers.set(s.id, { ...s, preference: s.preference ?? 'auto' });
+                const pref = ['auto', 'e4mc', 'upnp', 'minekube'].includes(s.preference) ? s.preference : 'auto';   // 예전 'playit' → 자동
+                delete (s as { playitTunnelId?: string }).playitTunnelId;
+                this.servers.set(s.id, { ...s, preference: pref });
                 this.rt.set(s.id, this.freshRuntime());
             }
         } catch {
@@ -218,7 +220,6 @@ export class HostManager extends EventEmitter {
         return {
             servers: [...this.servers.values()].map(s => this.view(s)),
             lanGames: this.lan?.list() ?? [],
-            playit: this.playit?.status() ?? { agentInstalled: false, agentRunning: false, linked: false },
             upnp: { ...this.upnpSettings(), publicIp: this.upnp?.publicIp },
         };
     }
@@ -289,6 +290,9 @@ export class HostManager extends EventEmitter {
                     software: o.software ?? null,
                 });
                 s.serverId = d.id;
+                if (o.software === 'paper') {
+                    s.software = 'paper';
+                }
                 s.onlineMode = o.onlineMode ?? true;
                 s.world = o.world || null;
             }
@@ -315,8 +319,8 @@ export class HostManager extends EventEmitter {
 
     async setPreference(id: string, pref: 'auto' | ProviderId): Promise<ServerView> {
         const s = this.get(id);
-        if (pref === 'e4mc' && s.kind !== 'lan') {
-            throw new Error('e4mc 는 싱글 LAN 공개에서만 씁니다.');
+        if ((pref === 'e4mc' || pref === 'minekube') && s.kind === 'external') {
+            throw new Error('외부 서버는 UPnP 로만 엽니다(이 앱이 켠 서버가 아니라 모드를 넣을 수 없음).');
         }
         s.preference = pref;
         this.save();
@@ -352,6 +356,7 @@ export class HostManager extends EventEmitter {
         if (s.kind === 'dedicated') {
             r.state = 'preparing';
             r.errors = [];
+            r.modAddress = undefined;
             this.changed();
             try {
                 const res = await this.sidecar.call<{ needsEula?: boolean; eulaUrl?: string; port?: number }>(
@@ -488,7 +493,7 @@ export class HostManager extends EventEmitter {
         }
         if (choice === 'skip') {
             await this.setPreference(id, 'upnp');
-            return { ok: false, fallback: true, reason: '사용자가 e4mc 대신 UPnP·playit 을 골랐습니다.' };
+            return { ok: false, fallback: true, reason: '사용자가 e4mc 대신 UPnP 를 골랐습니다.' };
         }
         const res = await this.sidecar.call<E4mcPrepare>('e4mc_install', { id: s.instanceId, conflict_choice: choice });
         const r = this.rt.get(id)!;
@@ -544,7 +549,9 @@ export class HostManager extends EventEmitter {
             r.state = 'running';
             r.message = undefined;
         }
-        const chain = s.preference === 'auto' ? CHAINS[s.kind] : [s.preference, ...CHAINS[s.kind].filter(x => x !== s.preference && x !== 'e4mc')];
+        const base = CHAINS[s.kind];
+        const pref = s.preference === 'minekube' ? 'e4mc' : s.preference;      // 전용 서버의 'e4mc' 자리 = 주소 모드
+        const chain = pref === 'auto' || !base.includes(pref) ? base : [pref, ...base.filter(x => x !== pref)];
         for (const provider of chain) {
             if (provider === 'e4mc' && keepE4mc.length) {
                 continue;   // 준비 단계에서 이미 실패(이유는 남겨 둠)
@@ -557,11 +564,12 @@ export class HostManager extends EventEmitter {
             this.changed();
             try {
                 const res = await this.tryProvider(s, r, provider, port);
-                r.address = { state: 'open', provider, address: res.address, fixed: res.fixed, relay: provider !== 'upnp',
-                    attempts: [...r.address.attempts, { provider, ok: true }], notes: res.notes };
-                this.log(id, `[통합 작업실] 주소 열림(${provider}): ${res.address}`);
+                const used = res.provider ?? provider;
+                r.address = { state: 'open', provider: used, address: res.address, fixed: res.fixed, relay: used !== 'upnp',
+                    attempts: [...r.address.attempts, { provider: used, ok: true }], notes: res.notes };
+                this.log(id, `[통합 작업실] 주소 열림(${used}): ${res.address}`);
                 this.changed();
-                if (provider === 'upnp') {
+                if (used === 'upnp') {
                     this.checkFirewall(id).catch(() => undefined);   // 직접 들어오는 방식은 방화벽이 막으면 소용없다
                 }
                 return;
@@ -579,9 +587,21 @@ export class HostManager extends EventEmitter {
     }
 
     protected async tryProvider(s: StoredServer, r: Runtime, provider: ProviderId, port: number):
-        Promise<{ address: string; fixed: boolean; notes: string[] }> {
+        Promise<{ address: string; fixed: boolean; notes: string[]; provider?: ProviderId }> {
         const lanNote = s.kind === 'lan' ? [NOTE.lan] : [];
-        if (provider === 'e4mc') {
+        if (provider !== 'upnp' && s.kind === 'dedicated') {
+            // 전용 서버: 사이드카가 서버에 넣은 e4mc(Paper 면 Minekube Connect)가 로그로 알려 준 주소
+            const got = await this.waitModAddress(r, this.opts.e4mcTimeoutMs ?? MOD_ADDRESS_TIMEOUT);
+            if (!got) {
+                const what = s.software === 'paper' ? 'Minekube Connect' : 'e4mc';
+                throw new Error(`${what} 가 주소를 알려 주지 않았습니다(${Math.round((this.opts.e4mcTimeoutMs ?? MOD_ADDRESS_TIMEOUT) / 1000)}초). `
+                    + '서버 콘솔에서 오류를 확인하세요 — 인터넷이 막혔거나 그 게임 버전용 파일이 없을 수 있습니다.');
+            }
+            return got.provider === 'minekube'
+                ? { address: got.address, fixed: true, notes: [NOTE.minekube, NOTE.relay], provider: 'minekube' }
+                : { address: got.address, fixed: false, notes: [NOTE.modServer, NOTE.relay, NOTE.changing], provider: 'e4mc' };
+        }
+        if (provider === 'e4mc' || provider === 'minekube') {
             if (!r.e4mcEnabled) {
                 throw new Error('이 실행에는 e4mc 가 들어 있지 않습니다(설치한 뒤 게임을 다시 켜야 적용).');
             }
@@ -603,30 +623,16 @@ export class HostManager extends EventEmitter {
                 throw new Error(e instanceof UpnpFailure ? e.message : `UPnP 실패: ${(e as Error).message}`);
             }
         }
-        // playit
-        const pl = this.playit;
-        if (!pl) {
-            throw new Error('playit 을 쓸 수 없습니다.');
+        throw new Error(`알 수 없는 방식: ${provider}`);
+    }
+
+    /** 전용 서버의 주소 모드가 주소를 알려 줄 때까지 기다린다(이미 알면 바로). 서버가 꺼지면 그만. */
+    protected async waitModAddress(r: Runtime, timeout: number): Promise<{ provider: ProviderId; address: string } | undefined> {
+        const end = Date.now() + timeout;
+        while (!r.modAddress && Date.now() < end && !['stopped', 'error'].includes(r.state)) {
+            await new Promise(res => setTimeout(res, 200));
         }
-        const st = pl.status();
-        if (!st.agentInstalled) {
-            throw new Error('playit 에이전트가 아직 없습니다. 패널의 [playit 준비]로 받으면 다음부터 자동으로 씁니다.');
-        }
-        if (!st.linked) {
-            throw new Error('playit 계정이 연결돼 있지 않습니다(처음이거나 연결이 풀림). 패널의 [playit 다시 연결]을 눌러 주세요.');
-        }
-        const used = [...this.servers.values()].filter(x => x.id !== s.id && x.playitTunnelId).map(x => x.playitTunnelId!);
-        const t = await pl.ensureTunnel(s.name, port, s.playitTunnelId, used, s.id);   // s.id: 한글 이름이어도 서버마다 다른 터널 이름
-        if (s.playitTunnelId !== t.id) {
-            s.playitTunnelId = t.id;
-            this.save();
-        }
-        pl.acquire(s.id);
-        const extra = [
-            ...(t.reused ? ['playit.gg 웹사이트에서 만든 터널을 씁니다(무료 플랜에서 앱이 직접 만들 수 없어서).'] : []),
-            ...(t.warning ? [t.warning] : []),
-        ];
-        return { address: t.address, fixed: true, notes: [...extra, NOTE.fixed, NOTE.relay, NOTE.carrier, ...lanNote] };
+        return r.modAddress;
     }
 
     protected waitDomain(r: Runtime, timeout: number): Promise<string | undefined> {
@@ -659,10 +665,10 @@ export class HostManager extends EventEmitter {
         if (a.state === 'open') {
             if (a.provider === 'upnp' && port) {
                 await this.upnp?.close(port);
-            } else if (a.provider === 'playit') {
-                this.playit?.release(s.id);
-            } else if (a.provider === 'e4mc') {
-                this.log(id, '[통합 작업실] e4mc 주소는 LAN 공개를 끝내거나 게임을 끄면 닫힙니다.');
+            } else if (a.provider === 'e4mc' || a.provider === 'minekube') {
+                this.log(id, s.kind === 'dedicated'
+                    ? '[통합 작업실] 서버에 넣은 주소 모드의 주소는 서버를 끄면 닫힙니다.'
+                    : '[통합 작업실] e4mc 주소는 LAN 공개를 끝내거나 게임을 끄면 닫힙니다.');
             }
             this.log(id, `[통합 작업실] 주소를 닫았습니다${message ? `: ${message}` : ''}`);
         }
@@ -821,6 +827,7 @@ export class HostManager extends EventEmitter {
                 r.state = 'stopped';
                 r.players = [];
                 r.ping = undefined;
+                r.modAddress = undefined;
                 const errs = (p.errors as ServerError[] | undefined) ?? [];
                 for (const e of errs) {
                     if (!r.errors.some(x => x.code === e.code)) {
@@ -832,6 +839,20 @@ export class HostManager extends EventEmitter {
                     r.message = r.errors.length
                         ? `서버가 멈췄습니다(종료 코드 ${p.exitCode}): ${errorText(r.errors[0])}`
                         : `서버가 멈췄습니다(종료 코드 ${p.exitCode}). 콘솔을 확인하세요.`;
+                }
+                this.changed();
+            }
+        } else if (method === 'ds_address') {
+            // 서버에 넣은 e4mc·Minekube Connect 가 로그로 알려 준 주소
+            const hit = this.byServerId(p.id);
+            if (hit) {
+                const [id] = hit;
+                const r = this.rt.get(id)!;
+                r.modAddress = { provider: p.provider as ProviderId, address: String(p.address) };
+                this.log(id, `[통합 작업실] ${p.provider === 'minekube' ? 'Minekube Connect' : 'e4mc'} 주소: ${p.address}`);
+                if (r.address.state === 'open' && r.address.provider === 'upnp') {
+                    // 늦게 왔으면 UPnP 대신 이 주소로(포트 열기 필요 없음)
+                    this.closeAddress(id).then(() => this.openAddress(id)).catch(e => this.fail(id, e));
                 }
                 this.changed();
             }
@@ -865,6 +886,5 @@ export class HostManager extends EventEmitter {
             r.watcher?.stop();
         }
         await this.upnp?.closeAll();   // 앱을 끌 때 공유기 매핑을 반드시 지운다
-        this.playit?.stopAgent();
     }
 }

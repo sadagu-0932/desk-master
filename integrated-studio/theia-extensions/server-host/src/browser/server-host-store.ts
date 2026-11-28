@@ -21,14 +21,10 @@ export class ServerHostStore {
     @inject(ServerHostService) readonly service: ServerHostService;
     @inject(ServerHostClientImpl) protected readonly client: ServerHostClientImpl;
 
-    snapshot: HostSnapshot = { servers: [], lanGames: [], playit: { agentInstalled: false, agentRunning: false, linked: false }, upnp: {} };
+    snapshot: HostSnapshot = { servers: [], lanGames: [], upnp: {} };
     consoles = new Map<string, string[]>();
     protected readonly changeEmitter = new Emitter<void>();
     readonly onDidChange = this.changeEmitter.event;
-    protected readonly claimEmitter = new Emitter<string>();
-    /** playit 계정 연결 링크가 새로 생김(브라우저로 연다) */
-    readonly onClaimUrl = this.claimEmitter.event;
-    protected lastClaim: string | undefined;
 
     @postConstruct()
     protected init(): void {
@@ -47,10 +43,6 @@ export class ServerHostStore {
 
     protected set(s: HostSnapshot): void {
         this.snapshot = s;
-        if (s.playit.claimUrl && s.playit.claimUrl !== this.lastClaim) {
-            this.lastClaim = s.playit.claimUrl;
-            this.claimEmitter.fire(s.playit.claimUrl);
-        }
         this.changeEmitter.fire();
     }
 
