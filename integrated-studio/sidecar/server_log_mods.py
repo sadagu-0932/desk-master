@@ -30,6 +30,12 @@ MOD_SECTION = re.compile(rf"-- MOD (?P<id>{_ID}) --")
 MIXIN_CFG = re.compile(r"Mixin \[(?P<cfg>[\w.\-]+?)\.mixins\.json")
 FROM_MOD = re.compile(rf"from mod (?P<id>{_ID})")
 STACK = re.compile(r"\bat (?P<cls>[a-zA-Z_][\w$]*(?:\.[a-zA-Z_][\w$]*){2,})\.")
+# NeoForge·Forge 스택 줄: "at TRANSFORMER/<모드id>@<버전>/com.foo.Bar.baz(...)" — 모드 id 가 바로 나온다
+STACK_MOD = re.compile(r"\bat (?:[A-Z][A-Z\-]+(?: [A-Z]+)?/)?(?P<mod>[a-z][a-z0-9_\-]{1,63})@[^/\s]+/")
+# 크래시 리포트 "Suspected Mods: Name (modid), Name2 (modid2)" / "Suspected Mod: Name (modid)"
+SUSPECTED = re.compile(r"Suspected Mods?: (?P<list>.+)$")
+SUSPECTED_ITEM = re.compile(rf"\((?P<id>{_ID})\)")
+NOT_MODS = {"minecraft", "neoforge", "forge", "fml", "fmlloader", "fabricloader", "java", "javafmllanguage", "mixin"}
 
 
 def _tail(p: Path) -> list[str]:
@@ -80,6 +86,8 @@ def analyze(server_dir: Path, server_mods: list[dict[str, Any]], client_mods: li
     cby = {m["id"]: m for m in client_mods if m.get("id")}
     issues: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
+    client_error = False
+    suspects: list[tuple[dict[str, Any], str, str]] = []
 
     def ev(src: str, line: str) -> str:
         return f"{src}: {line.strip()[:240]}"
@@ -117,19 +125,30 @@ def analyze(server_dir: Path, server_mods: list[dict[str, Any]], client_mods: li
             missing(m.group("dep"), "", m.group("id"), src, line)
             continue
         if CLIENT_CLASS.search(line):
-            # 이 줄 근처(앞 5줄·뒤 40줄)의 Mixin 설정·스택 패키지로 jar 찾기
-            for _, near in lines[max(0, i - 5): i + 40]:
+            client_error = True
+            # 이 줄 뒤(최대 200줄)의 스택: NeoForge·Forge 는 "TRANSFORMER/<모드id>@버전/" 로 모드 id 가, 그 밖은 Mixin 설정·패키지로 jar 를 찾는다
+            for _, near in lines[max(0, i - 5): i + 200]:
                 hit = None
+                km = STACK_MOD.search(near)
+                if km and km.group("mod") not in NOT_MODS:
+                    hit = idx["id"].get(km.group("mod"))
                 mm = MIXIN_CFG.search(near)
-                if mm:
+                if not hit and mm:
                     hit = idx["mixin"].get(mm.group("cfg"))
                 sm = STACK.search(near)
-                if not hit and sm:
+                if not hit and sm and not sm.group("cls").startswith(("net.minecraft.", "com.mojang.", "java.", "jdk.", "sun.", "net.neoforged.", "net.minecraftforge.", "cpw.", "org.spongepowered.")):
                     parts = sm.group("cls").split(".")
                     hit = idx["pkg"].get(".".join(parts[:3]))
                 if hit:
                     server_mod(hit, "LOG-104", "서버에서 클라이언트 전용 코드를 불러 서버가 멈춤 — 서버에서 빼기", src, line, True)
                     break
+            continue
+        sus = SUSPECTED.search(line)
+        if sus:
+            for mid in SUSPECTED_ITEM.findall(sus.group("list")):
+                hit = idx["id"].get(mid)
+                if hit and mid not in NOT_MODS:
+                    suspects.append((hit, src, line))
             continue
         for rx, key in ((MOD_FILE, "file"), (FAILURE, "id"), (MOD_SECTION, "id"), (FROM_MOD, "id"), (MIXIN_CFG, "mixin")):
             mm = rx.search(line)
@@ -138,4 +157,59 @@ def analyze(server_dir: Path, server_mods: list[dict[str, Any]], client_mods: li
                 if hit:
                     server_mod(hit, "LOG-301", "오류 기록에 이름이 나온 모드(원인일 수 있음) — 빼 보고 다시 시작", src, line, False)
                 break
+    # 크래시 리포트가 지목한 모드: 클라이언트 코드 오류와 함께면 거의 확실(기본으로 고름)
+    for hit, src, line in suspects:
+        server_mod(hit, "LOG-302", "크래시 리포트가 지목한 모드(Suspected Mods)" + (" — 클라이언트 전용 코드 오류와 함께" if client_error else ""),
+                   src, line, client_error)
     return issues
+
+
+# ---------------------------------------------------------------- Modrinth 로 클라이언트 전용 모드 찾기
+SIDES_CACHE = ".studio-modrinth-sides.json"
+
+
+def modrinth_client_only(server_dir: Path, server_mods: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """서버 mods/ 의 jar 를 해시로 Modrinth 에서 찾아, 프로젝트가 '서버: 지원 안 함'(server_side=unsupported)인 것 = MOD-108.
+    jar 정보(fabric.mod.json·mods.toml)에 클라이언트 전용 표시가 없는 모드도 잡는다. 결과는 해시별로 서버 폴더에 저장(다시 묻지 않음).
+    인터넷이 안 되면 빈 목록."""
+    import json
+
+    import modrinth
+    from net import file_hashes
+    mods_dir = server_dir / "mods"
+    cache_file = server_dir / SIDES_CACHE
+    try:
+        cache: dict[str, Any] = json.loads(cache_file.read_text("utf-8"))
+    except (OSError, ValueError):
+        cache = {}
+    hashes: dict[str, dict[str, Any]] = {}
+    for m in server_mods:
+        try:
+            hashes[file_hashes(mods_dir / m["file"], ("sha512",))["sha512"]] = m
+        except OSError:
+            continue
+    todo = [h for h in hashes if h not in cache]
+    if todo:
+        try:
+            found = modrinth.get_json("/version_files", body={"hashes": todo, "algorithm": "sha512"}) or {}
+            pids = sorted({v.get("project_id") for v in found.values() if v.get("project_id")})
+            projects = {}
+            for i in range(0, len(pids), 100):
+                for pr in modrinth.get_json("/projects", params={"ids": json.dumps(pids[i:i + 100])}) or []:
+                    projects[pr["id"]] = pr
+            for h in todo:
+                v = found.get(h)
+                pr = projects.get(v.get("project_id")) if v else None
+                cache[h] = {"title": pr.get("title"), "server_side": pr.get("server_side"), "client_side": pr.get("client_side")} if pr else {}
+            cache_file.write_text(json.dumps(cache, ensure_ascii=False), "utf-8")
+        except Exception:  # noqa: BLE001 - 인터넷이 안 되면 이 검사만 건너뜀
+            pass
+    out = []
+    for h, m in hashes.items():
+        info = cache.get(h) or {}
+        if info.get("server_side") == "unsupported":
+            out.append({"code": "MOD-108", "title": "Modrinth 에 클라이언트 전용(서버 지원 안 함)으로 등록된 모드 — 서버에서 빼기",
+                        "fix": "removeServer", "id": m.get("id"), "name": info.get("title") or m.get("name") or m["file"],
+                        "serverFile": m["file"], "version": m.get("version"), "pick": True,
+                        "evidence": f"Modrinth: {info.get('title')} — 서버: 지원 안 함(server_side=unsupported)"})
+    return out

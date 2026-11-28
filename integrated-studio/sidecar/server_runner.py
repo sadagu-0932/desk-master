@@ -633,7 +633,8 @@ class ServerRunner:
         try:
             import server_log_mods
             known = {(i.get("serverFile") or i.get("clientFile") or i.get("id")): i for i in issues}
-            for li in server_log_mods.analyze(d, server, client):
+            found = server_log_mods.modrinth_client_only(d, server) + server_log_mods.analyze(d, server, client)
+            for li in found:
                 same = known.get(li.get("serverFile") or li.get("clientFile") or li.get("id"))
                 if same:
                     same.setdefault("evidence", li["evidence"])      # 이미 찾은 것: 로그 근거만 붙임

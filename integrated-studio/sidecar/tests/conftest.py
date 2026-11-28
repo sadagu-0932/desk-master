@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 def pytest_configure(config):
     config.addinivalue_line("markers", "address_mod: 주소 열기 모드 설치를 막지 않음(가짜 modrinth 로 시험)")
+    config.addinivalue_line("markers", "modrinth_sides: 모드 확인의 Modrinth 클라이언트 전용 검사를 막지 않음(가짜 modrinth 로 시험)")
 
 
 @pytest.fixture(autouse=True)
@@ -23,3 +24,14 @@ def _no_address_mod_download(request, monkeypatch):
     except Exception:  # noqa: BLE001 - 사이드카 모듈을 안 쓰는 시험
         return
     monkeypatch.setattr(server_runner.ServerRunner, "_ensure_address_mod", lambda self, *a, **k: None)
+
+
+@pytest.fixture(autouse=True)
+def _no_modrinth_sides(request, monkeypatch):
+    if request.node.get_closest_marker("modrinth_sides"):
+        return
+    try:
+        import server_log_mods
+    except Exception:  # noqa: BLE001
+        return
+    monkeypatch.setattr(server_log_mods, "modrinth_client_only", lambda *a, **k: [])

@@ -315,3 +315,63 @@ def test_mod_check_reads_server_log(fab):
     assert all(i.get("evidence") for i in issues if i.get("fromLog"))        # 근거 로그 줄
     res = runner.mod_fix(iid, sid, [i for i in issues if i["pick"]])
     assert not res["failed"] and (sm / "fabric-api.jar").is_file() and not (sm / "fancyhud.jar").exists()
+
+
+def test_neoforge_crash_format_finds_mod(fab):
+    """사용자 로그(2026-11-28): NeoForge RuntimeDistCleaner "Attempted to load class net/minecraft/client/MouseHandler for invalid dist
+    DEDICATED_SERVER" — 스택의 "TRANSFORMER/<모드id>@버전/" 와 크래시 리포트 "Suspected Mods" 로 모드를 찾는다."""
+    store, iid, runner, sid, cm, sm = fab
+    d = runner._sdir(iid, sid)
+    for name in ("mousetweaks", "zoomify", "create"):        # (fab 은 Fabric 인스턴스라 같은 로더 jar 로 — 로그 형식만 NeoForge)
+        _fabric_jar(sm / f"{name}.jar", name)
+        _fabric_jar(cm / f"{name}.jar", name)
+    (d / "logs").mkdir(exist_ok=True)
+    (d / "logs" / "latest.log").write_text(
+        "[16:36:35] [main/ERROR] [ne.mi.fm.lo.RuntimeDistCleaner/DISTXFORM]: Attempted to load class "
+        "net/minecraft/client/MouseHandler for invalid dist DEDICATED_SERVER\n", "utf-8")
+    (d / "crash-reports").mkdir(exist_ok=True)
+    (d / "crash-reports" / "crash-2026-11-28_16.36.36-fml.txt").write_text("\n".join([
+        "---- Minecraft Crash Report ----",
+        "Description: Mod loading failures have occurred; consult the issue messages for more details.",
+        "java.lang.RuntimeException: Attempted to load class net/minecraft/client/MouseHandler for invalid dist DEDICATED_SERVER",
+        "\tat TRANSFORMER/minecraft@26.3/net.minecraft.client.MouseHandler.<clinit>(MouseHandler.java)",
+        "\tat TRANSFORMER/mousetweaks@2.26/yalter.mousetweaks.MouseTweaks.<init>(MouseTweaks.java:42)",
+        "\tSuspected Mods: Zoomify (zoomify)",
+    ]), "utf-8")
+    issues = runner.mod_check(iid, sid)["issues"]
+    got = {(i["code"], i.get("id"), i["pick"]) for i in issues if i.get("fromLog")}
+    assert ("LOG-104", "mousetweaks", True) in got                    # 스택의 모드 id
+    assert ("LOG-302", "zoomify", True) in got                        # 지목된 모드(클라이언트 코드 오류와 함께)
+    assert not any(i.get("id") in ("create", "minecraft") for i in issues if i.get("fromLog"))
+
+
+@pytest.mark.modrinth_sides
+def test_modrinth_marks_client_only(fab, monkeypatch):
+    import modrinth
+    import server_log_mods
+    store, iid, runner, sid, cm, sm = fab
+    _fabric_jar(sm / "sodium.jar", "sodium")              # jar 정보엔 클라이언트 전용 표시가 없음
+    _fabric_jar(sm / "create.jar", "create")
+    _fabric_jar(cm / "sodium.jar", "sodium")
+    _fabric_jar(cm / "create.jar", "create")
+    from net import file_hashes
+    h_sod = file_hashes(sm / "sodium.jar", ("sha512",))["sha512"]
+    calls = []
+
+    def fake_get_json(path, params=None, body=None):
+        calls.append(path)
+        if path == "/version_files":
+            return {h_sod: {"project_id": "AANobbMI"}}
+        if path == "/projects":
+            return [{"id": "AANobbMI", "title": "Sodium", "client_side": "required", "server_side": "unsupported"}]
+        raise AssertionError(path)
+    monkeypatch.setattr(modrinth, "get_json", fake_get_json)
+    issues = runner.mod_check(iid, sid)["issues"]
+    sod = [i for i in issues if i.get("id") == "sodium"]
+    assert [(i["code"], i["fix"], i["pick"]) for i in sod] == [("MOD-108", "removeServer", True)]
+    assert "unsupported" in sod[0]["evidence"]
+    assert not any(i.get("id") == "create" for i in issues)
+    n = len(calls)
+    runner.mod_check(iid, sid)
+    assert len(calls) == n                                 # 결과를 저장해 두고 다시 묻지 않음
+    assert (runner._sdir(iid, sid) / server_log_mods.SIDES_CACHE).is_file()

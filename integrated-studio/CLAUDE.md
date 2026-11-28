@@ -319,6 +319,12 @@ Theia 확장은 TypeScript로 작성한다. Python 쪽은 `sidecar/` 아래에�
     각 항목에 근거 로그 줄(evidence). jar 비교로 이미 찾은 것엔 근거만 붙임. 카드의 오류 칸에 [모드 확인(로그로 원인 찾기)].
   - 포트: 새 서버·포트가 막혔을 때 25565 먼저(`default_port`), 이 앱이 이미 켠 다른 서버의 포트는 피함(동시에 켤 때).
   - 시험: `tests/test_server_tools.py`(뺀 모드 유지·다시 넣기, e4mc 다시 안 받음, 기본 포트, 로그로 찾기).
+  - 보강(사용자 로그 2026-11-28 NeoForge "[ne.mi.fm.lo.RuntimeDistCleaner/DISTXFORM]: Attempted to load class net/minecraft/client/MouseHandler
+    for invalid dist DEDICATED_SERVER" — 어느 모드인지 안 나와 못 찾던 것): 스택 줄 "at [TRANSFORMER/]<모드id>@<버전>/…" 에서 모드 id 를 바로 읽고
+    (최대 200줄), 크래시 리포트 "Suspected Mods: Name (id)" = LOG-302(클라이언트 코드 오류와 함께면 기본으로 고름).
+    MOD-108: 서버 mods/ jar 를 sha512 로 Modrinth(/version_files → /projects)에서 찾아 server_side=unsupported(클라이언트 전용)면 빼기 —
+    jar 에 클라이언트 전용 표시가 없는 모드도 잡음. 결과는 서버 폴더 `.studio-modrinth-sides.json` 에 해시별 저장. 시험은 conftest 가 막고
+    `@pytest.mark.modrinth_sides` 로 가짜 Modrinth.
 ### M9. 패키징 (내 PC용)
 - electron-builder로 Windows 설치 파일 또는 압축 실행판을 만든다. **배포하지 않는다** — 개인 사용 전용.
 - 서명이 없어서 SmartScreen 경고가 뜨는 건 그대로 둔다.
