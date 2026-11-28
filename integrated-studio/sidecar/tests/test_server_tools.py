@@ -375,3 +375,103 @@ def test_modrinth_marks_client_only(fab, monkeypatch):
     runner.mod_check(iid, sid)
     assert len(calls) == n                                 # 결과를 저장해 두고 다시 묻지 않음
     assert (runner._sdir(iid, sid) / server_log_mods.SIDES_CACHE).is_file()
+
+
+# ---------------------------------------------------------------- 모드팩 서버 파일(2026-11-28 사용자 제안)
+
+def _mrpack(path: Path) -> Path:
+    import zipfile
+    files = [
+        {"path": "mods/create.jar", "env": {"client": "required", "server": "required"},
+         "downloads": ["https://cdn.modrinth.com/data/a/create.jar"], "hashes": {"sha1": "x"}},
+        {"path": "mods/sodium.jar", "env": {"client": "required", "server": "unsupported"},
+         "downloads": ["https://cdn.modrinth.com/data/b/sodium.jar"], "hashes": {"sha1": "y"}},
+        {"path": "mods/evil.jar", "env": {"server": "required"}, "downloads": ["https://evil.example.com/e.jar"], "hashes": {}},
+    ]
+    with zipfile.ZipFile(path, "w") as z:
+        z.writestr("modrinth.index.json", json.dumps({"formatVersion": 1, "game": "minecraft", "versionId": "1.2.0", "name": "내 팩",
+                                                      "files": files, "dependencies": {"minecraft": "26.3", "fabric-loader": "0.20.1"}}))
+        z.writestr("overrides/config/create-common.toml", "a=1")
+        z.writestr("server-overrides/config/server-only.toml", "s=1")
+        z.writestr("server-overrides/eula.txt", "eula=true")                 # EULA 는 절대 풀지 않음
+        z.writestr("client-overrides/options.txt", "fov=90")
+    return path
+
+
+def test_mrpack_server_files_used_for_server(fab, tmp_path, monkeypatch):
+    import modrinth
+    import server_pack
+    store, iid, runner, sid, cm, sm = fab
+    got = []
+
+    def fake_download(f, dest):
+        got.append(f["url"])
+        _fabric_jar(Path(dest), Path(dest).stem)
+    monkeypatch.setattr(modrinth, "download", fake_download)
+    info = server_pack.remember_mrpack(store.dir_of(iid), _mrpack(tmp_path / "p.mrpack"))
+    assert info["serverFiles"] == 2 and info["clientOnly"] == ["sodium.jar"]
+    _fabric_jar(cm / "sodium.jar", "sodium")                                 # 인스턴스(클라이언트)엔 있음
+    _fabric_jar(cm / "create.jar", "create")
+    _fabric_jar(cm / "extra-client.jar", "extraclient")                      # 팩에 없는 인스턴스 모드
+    d = runner._sdir(iid, sid)
+    mods = runner._server_mods(iid, sid, d)
+    assert sorted(mods) == ["create.jar"]                                    # 서버용만, 허용 안 된 주소는 건너뜀
+    assert got == ["https://cdn.modrinth.com/data/a/create.jar"]
+    assert (d / "config" / "create-common.toml").is_file() and (d / "config" / "server-only.toml").is_file()
+    assert not (d / "options.txt").exists() and not (d / "eula.txt").exists()   # client-overrides·EULA 는 안 풂
+    assert sorted(p.name for p in sm.iterdir()) == ["create.jar"]              # 인스턴스 모드를 추측해 복사하지 않음
+    # 다시 시작: 같은 팩이면 다시 적용하지 않음(서버에서 고친 설정 유지)
+    (d / "config" / "create-common.toml").write_text("a=2", "utf-8")
+    assert runner._server_mods(iid, sid, d) == [] and len(got) == 1
+    assert (d / "config" / "create-common.toml").read_text("utf-8") == "a=2"
+    # 모드 확인: 팩이 클라이언트 전용으로 표시한 sodium 은 권하지 않고, 팩에 없는 모드는 기본으로 안 고름
+    issues = runner.mod_check(iid, sid)["issues"]
+    assert not any(i.get("id") == "sodium" for i in issues)
+    extra = next(i for i in issues if i.get("id") == "extraclient")
+    assert extra["code"] == "MOD-101" and extra["pick"] is False
+
+
+def test_curseforge_server_pack_zip(fab, tmp_path):
+    import zipfile
+    import server_pack
+    store, iid, runner, sid, cm, sm = fab
+    assert server_pack.remember_curseforge(store.dir_of(iid), 123, 456, None) is None   # 서버 팩이 없는 모드팩
+    server_pack.remember_curseforge(store.dir_of(iid), 123, 456, 789, "팩 1.0")
+    calls = []
+
+    def fake_cf(info, dest):
+        calls.append(info["serverPackFileId"])
+        with zipfile.ZipFile(dest, "w") as z:
+            z.writestr("Pack Server 1.0/mods/create.jar", b"jar")
+            z.writestr("Pack Server 1.0/config/c.toml", "c=1")
+            z.writestr("Pack Server 1.0/startserver.bat", "@echo bad")
+            z.writestr("Pack Server 1.0/eula.txt", "eula=true")
+            z.writestr("Pack Server 1.0/server.properties", "server-port=1")
+            z.writestr("Pack Server 1.0/libraries/x.jar", b"lib")
+            z.writestr("Pack Server 1.0/forge-installer.jar", b"inst")
+            z.writestr("Pack Server 1.0/scripts/run.sh", "x")
+        return dest
+    runner.cf_pack_download = fake_cf
+    d = runner._sdir(iid, sid)
+    sr.write_properties(d / "server.properties", {"server-port": 25565})
+    assert runner._server_mods(iid, sid, d) == ["create.jar"]
+    assert calls == [789]
+    assert (d / "mods" / "create.jar").is_file() and (d / "config" / "c.toml").is_file()
+    for bad in ("startserver.bat", "eula.txt", "libraries", "forge-installer.jar", "scripts/run.sh"):
+        assert not (d / bad).exists(), bad
+    assert sr.read_properties(d / "server.properties")["server-port"] == "25565"     # 앱 설정 그대로
+    assert runner._server_mods(iid, sid, d) == [] and calls == [789]                   # 다시 받지·풀지 않음
+
+
+def test_import_mrpack_remembers_server_files(tmp_path, monkeypatch):
+    import modrinth
+    import server_pack
+    from importers import Importers
+    monkeypatch.setattr(modrinth, "download", lambda f, dest: _fabric_jar(Path(dest), Path(dest).stem))
+    store = InstanceStore(tmp_path / "data")
+    imp = Importers(store, tmp_path / "data")
+    res = imp.import_file(str(_mrpack(tmp_path / "p.mrpack")), name="팩")
+    iid = res["instance"]["id"]
+    info = server_pack.read_info(store.dir_of(iid))
+    assert info and info["kind"] == "mrpack" and info["name"] == "내 팩"
+    assert (store.dir_of(iid) / "serverpack" / "pack.mrpack").is_file()

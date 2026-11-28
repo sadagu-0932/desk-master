@@ -52,6 +52,7 @@ def main() -> None:
     imp = Importers(store, data_dir)
     # M10 서버 열기 — 방식 A 전용 서버, e4mc(방식 B 를 인터넷 주소로), 다른 런처 인스턴스 불러오기
     servers = ServerRunner(data_dir, store, lambda version: [runner._runtime_java(version)])
+    servers.cf_pack_download = imp.cf_server_pack_download     # 모드팩 공식 서버 팩(CurseForge API 키는 Importers 에)
     atexit.register(servers.shutdown)
     # 런처 부분은 Prism(사용자 결정 2026-11-27): 새 인스턴스 = Prism 인스턴스, 실행 = prismlauncher --launch
     def make_prism_instance(name: str, version: str, loader: str, loader_version: str | None) -> dict:

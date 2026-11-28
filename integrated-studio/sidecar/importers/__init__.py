@@ -334,6 +334,12 @@ class Importers:
             notify("progress", {"id": inst["id"], "stage": "import", "done": True})
             self._discard_failed(inst["id"])
             raise
+        if info["kind"] == "mrpack":
+            try:   # 모드팩 서버 파일 기억(전용 서버를 열 때 이 목록대로 꾸민다)
+                import server_pack
+                server_pack.remember_mrpack(self.store.dir_of(inst["id"]), Path(path))
+            except Exception as e:  # noqa: BLE001 - 기억 못 해도 가져오기는 성공
+                print(f"[import] 모드팩 서버 파일을 기억하지 못함: {e}", file=sys.stderr)
         notify("progress", {"id": inst["id"], "stage": "import", "text": "가져오기 완료", "done": True})
         return {"instance": self.store.get(inst["id"]), **report}
 
@@ -598,7 +604,24 @@ class Importers:
             sha1 = next((h["value"] for h in f.get("hashes", []) if h.get("algo") == 1), None)
             _download(f["downloadUrl"], dest, {"sha1": sha1})
             notify("progress", {"id": "", "stage": "import", "done": True})
-            return self.import_file(str(dest), name, group, icon)
+            res = self.import_file(str(dest), name, group, icon)
+        try:   # 제작자가 올린 공식 서버 팩이 있으면 기억(전용 서버를 열 때 받아 씀)
+            import server_pack
+            server_pack.remember_curseforge(self.store.dir_of(res["instance"]["id"]), mod_id, file_id,
+                                            f.get("serverPackFileId"), f.get("displayName"))
+        except Exception as e:  # noqa: BLE001
+            print(f"[import] CurseForge 서버 팩을 기억하지 못함: {e}", file=sys.stderr)
+        return res
+
+    def cf_server_pack_download(self, info: dict[str, Any], dest: Path) -> Path:
+        """기억해 둔 CurseForge 공식 서버 팩 zip 받기(sha1 확인)."""
+        f = self._cf_file(str(info["modId"]), str(info["serverPackFileId"]))
+        if not f.get("downloadUrl"):
+            raise RpcError("이 모드팩의 서버 팩은 제작자가 외부 다운로드를 막아 두었습니다. CurseForge 사이트에서 받아 서버 폴더에 풀어 주세요.")
+        sha1 = next((h["value"] for h in f.get("hashes", []) if h.get("algo") == 1), None)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        _download(f["downloadUrl"], dest, {"sha1": sha1})
+        return dest
 
     def cf_add_mod(self, id: str, mod_id: str, file_id: str | None = None) -> dict[str, Any]:
         meta = self.store.get(id)

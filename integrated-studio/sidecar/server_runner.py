@@ -173,6 +173,8 @@ class ServerRunner:
         self._current = ""
         self.diag: dict[str, server_errors.Diagnoser] = {}
         self.ports: dict[str, int] = {}                     # 서버 id → 이번에 켠 포트
+        # CurseForge 공식 서버 팩 받기(main.py 가 Importers.cf_server_pack_download 를 넣는다 — CurseForge API 키가 거기 있어서)
+        self.cf_pack_download: Callable[[dict[str, Any], Path], Path] | None = None
         self.addresses: dict[str, dict[str, str]] = {}      # 서버 id → {provider, address}(이번 실행에서 로그로 안 것)
 
     # ---------- 폴더·설정 ----------
@@ -543,6 +545,44 @@ class ServerRunner:
         self._sync_configs(id, d)
         return sorted(wanted)
 
+    def _server_mods(self, id: str, sid: str, d: Path) -> list[str]:
+        """서버 모드 꾸미기: 모드팩 서버 파일을 기억해 두었으면 그것으로(처음·팩이 바뀌었을 때만), 아니면 인스턴스 모드에서 고르기."""
+        import server_pack
+        info = server_pack.read_info(self.store.dir_of(id))
+        if not info:
+            return self._sync_server_mods(id, d)
+        manifest = self._read_manifest(d)
+        if manifest.get("pack") == info.get("key"):
+            return []                                  # 이미 적용함 — 서버에서 고친 것을 덮지 않는다
+        excluded = set(manifest["excluded"]["files"])
+
+        def log(line: str) -> None:
+            self.emit("ds_log", {"id": sid, "line": f"[통합 작업실] {line}"})
+        try:
+            if info["kind"] == "mrpack":
+                import modrinth
+                from importers import MRPACK_HOSTS
+                mods = server_pack.apply_mrpack(self.store.dir_of(id), info, d, excluded, modrinth.download, MRPACK_HOSTS, log)
+            elif info["kind"] == "curseforge":
+                if not self.cf_pack_download:
+                    raise RpcError("CurseForge 서버 팩을 받을 수 없습니다.")
+                cache = self.data_dir / "server-packs" / f"cf-{info['modId']}-{info['serverPackFileId']}.zip"
+                if not cache.is_file():
+                    cache.parent.mkdir(parents=True, exist_ok=True)
+                    log("CurseForge 공식 서버 팩 받는 중")
+                    self.cf_pack_download(info, cache)
+                mods = server_pack.apply_server_zip(cache, d, excluded, log)
+            else:
+                return self._sync_server_mods(id, d)
+        except Exception as e:  # noqa: BLE001 - 팩을 못 쓰면 예전처럼 인스턴스 모드에서
+            log(f"모드팩 서버 파일을 쓰지 못했습니다({e}). 인스턴스 모드에서 서버용을 골라 넣습니다.")
+            return self._sync_server_mods(id, d)
+        manifest = self._read_manifest(d)
+        manifest["pack"] = info["key"]
+        manifest["copied"] = {}
+        self._write_manifest(d, manifest)
+        return mods
+
     def _sync_configs(self, id: str, d: Path) -> int:
         game = self.store.game_dir(id)
         n = 0
@@ -593,7 +633,7 @@ class ServerRunner:
 
         def add(code: str, title: str, fix: str | None, m: dict[str, Any], **kw: Any) -> None:
             issues.append({"code": code, "title": title, "fix": fix, "id": m.get("id"), "name": m.get("name") or m.get("file"),
-                           "pick": bool(fix) and code != "MOD-107", **kw})
+                           "pick": kw.pop("pick", bool(fix) and code != "MOD-107"), **kw})
         for mid, ms in sby.items():
             if len(ms) > 1:
                 for extra in sorted(ms, key=lambda x: x["file"])[:-1]:
@@ -606,6 +646,8 @@ class ServerRunner:
                 add("MOD-106", f"{LOADER_NAMES.get(m['loader'], m['loader'])} 모드가 {LOADER_NAMES.get(loader, loader)} 서버에 있음",
                     "removeServer", m, serverFile=m["file"])
         manifest = self._read_manifest(d)
+        import server_pack
+        pack_info = server_pack.read_info(self.store.dir_of(id)) if manifest.get("pack") else None
         for mid, c in cby.items():
             if not self._server_side(c) or mid in E4MC_IDS:
                 continue
@@ -614,7 +656,12 @@ class ServerRunner:
                 add("MOD-107", "전에 서버에서 뺀 모드(다시 넣지 않음)", "unexclude", c, clientFile=c["file"], clientVersion=c.get("version"))
                 continue
             ss = sby.get(mid)
-            if not ss:
+            if not ss and pack_info and c["file"] in (pack_info.get("clientOnly") or []):
+                continue                                   # 모드팩 제작자가 클라이언트 전용으로 표시한 것
+            if not ss and manifest.get("pack"):
+                add("MOD-101", "모드팩 서버 파일에 없음(제작자가 뺀 것일 수 있음 — 서버 오류가 날 때만 넣어 보세요)", "toServer", c,
+                    clientFile=c["file"], clientVersion=c.get("version"), pick=False)
+            elif not ss:
                 add("MOD-101", "서버에 없음", "toServer", c, clientFile=c["file"], clientVersion=c.get("version"))
             elif all(s.get("version") != c.get("version") for s in ss):
                 s0 = ss[-1]
@@ -795,7 +842,7 @@ class ServerRunner:
             full = self._forge_version(loader, meta["version"], meta.get("loaderVersion"))
             installer = self._forge_installer(loader, full)
             self._run_forge_installer(id, sid, d, meta["version"], loader, installer, full)
-            copied = self._sync_server_mods(id, d)
+            copied = self._server_mods(id, sid, d)
             if copied:
                 self.emit("ds_log", {"id": sid, "line": f"[통합 작업실] 서버 모드 {len(copied)}개: {', '.join(copied[:8])}"})
             self._ensure_address_mod(id, sid, meta, d, loader)
@@ -813,7 +860,7 @@ class ServerRunner:
             shutil.copy2(launcher, d / "fabric-server-launch.jar")
             (d / "fabric-server-launcher.properties").write_text("serverJar=server.jar\n", "utf-8")
             if meta["loader"] == "fabric":
-                copied = self._sync_server_mods(id, d)
+                copied = self._server_mods(id, sid, d)
                 if copied:
                     self.emit("ds_log", {"id": sid, "line": f"[통합 작업실] 서버 모드 {len(copied)}개: {', '.join(copied[:8])}"})
             if not self._ensure_address_mod(id, sid, meta, d, "fabric") and meta["loader"] == "vanilla":

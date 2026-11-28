@@ -325,6 +325,16 @@ Theia 확장은 TypeScript로 작성한다. Python 쪽은 `sidecar/` 아래에�
     MOD-108: 서버 mods/ jar 를 sha512 로 Modrinth(/version_files → /projects)에서 찾아 server_side=unsupported(클라이언트 전용)면 빼기 —
     jar 에 클라이언트 전용 표시가 없는 모드도 잡음. 결과는 서버 폴더 `.studio-modrinth-sides.json` 에 해시별 저장. 시험은 conftest 가 막고
     `@pytest.mark.modrinth_sides` 로 가짜 Modrinth.
+- **모드팩 서버 파일**(사용자 제안 2026-11-28 "모드팩을 추가할 때 서버 여는 다운로드 파일도 기억해서 서버를 열 때 그걸 쓰자", `sidecar/server_pack.py`):
+  - 가져올 때 기억(인스턴스 앱 폴더 `serverpack.json` + `serverpack/`): .mrpack(파일·Modrinth 설치 모두) = 팩 파일 보관,
+    CurseForge 검색 설치 = 모드팩 파일 정보의 `serverPackFileId`(제작자 공식 서버 팩; zip 파일만 가져오면 id 를 몰라 없음).
+  - 전용 서버를 처음 켤 때(팩이 바뀌었을 때만, `.studio-mods.json` 의 `pack` 키로 판단) 인스턴스 모드를 추측해 복사하는 대신 그 목록으로:
+    mrpack = `env.server != "unsupported"` 파일(해시·허용 주소 확인) + overrides/ + server-overrides/(client-overrides/ 제외),
+    CurseForge = 서버 팩 zip(`data/server-packs/` 에 두고 다시 씀)에서 mods/ 가 있는 폴더 아래의 폴더만 — 실행 스크립트·실행 파일·eula.txt
+    (EULA 자동 동의 금지)·server.properties(포트·정품 설정은 앱 것)·libraries 는 풀지 않음. [모드 확인]에서 뺀 파일은 넣지 않음.
+    팩을 못 쓰면 예전처럼 인스턴스 모드에서 고름. [모드 확인]: 팩이 클라이언트 전용으로 표시한 모드는 권하지 않고, 팩에 없는 인스턴스 모드는
+    MOD-101(기본으로 안 고름).
+  - 시험: `tests/test_server_tools.py`(mrpack 서버 파일·다시 적용 안 함·EULA 안 풂, CurseForge 서버 팩 zip, 가져올 때 기억).
 ### M9. 패키징 (내 PC용)
 - electron-builder로 Windows 설치 파일 또는 압축 실행판을 만든다. **배포하지 않는다** — 개인 사용 전용.
 - 서명이 없어서 SmartScreen 경고가 뜨는 건 그대로 둔다.
