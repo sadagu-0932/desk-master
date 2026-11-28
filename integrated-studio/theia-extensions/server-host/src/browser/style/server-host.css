@@ -66,3 +66,4 @@
 .sh-modcheck .sh-issues { list-style: none; padding: 0; margin: 6px 0; max-height: 50vh; overflow: auto; }
 .sh-modcheck .sh-issues li { padding: 4px 0; border-bottom: 1px solid var(--theia-panel-border); }
 .sh-modcheck label { display: flex; gap: 6px; align-items: center; }
+.sh-evidence { white-space: pre-wrap; word-break: break-all; margin: 2px 0 0 22px; padding: 2px 6px; background: var(--theia-editor-background); }

@@ -67,6 +67,14 @@ def free_port() -> int:
         return s.getsockname()[1]
 
 
+DEFAULT_PORT = 25565     # 마인크래프트 기본 포트(사용자 요청 2026-11-28 "포트를 25565 로 고정")
+
+
+def default_port() -> int:
+    """새 서버·포트가 막혔을 때: 25565 가 비어 있으면 25565, 아니면 아무 빈 포트."""
+    return DEFAULT_PORT if port_free(DEFAULT_PORT) else free_port()
+
+
 def port_free(port: int) -> bool:
     """그 포트를 아무도 안 쓰는지. Windows 는 127.0.0.1 에 다른 프로그램이 듣고 있어도 0.0.0.0 묶기가 성공하므로
     실제로 접속해 보는 것까지 확인한다."""
@@ -164,6 +172,7 @@ class ServerRunner:
         self.lock = threading.Lock()
         self._current = ""
         self.diag: dict[str, server_errors.Diagnoser] = {}
+        self.ports: dict[str, int] = {}                     # 서버 id → 이번에 켠 포트
         self.addresses: dict[str, dict[str, str]] = {}      # 서버 id → {provider, address}(이번 실행에서 로그로 안 것)
 
     # ---------- 폴더·설정 ----------
@@ -240,7 +249,7 @@ class ServerRunner:
                 "onlineMode": bool(online_mode), "world": None, "created": time.time()}
         self._save(id, meta)
         write_properties(d / "server.properties", {
-            "server-ip": "", "server-port": free_port(), "online-mode": bool(online_mode),
+            "server-ip": "", "server-port": default_port(), "online-mode": bool(online_mode),
             "motd": name[:59], "max-players": int(max_players), "level-name": "world",
             "enable-query": False, "enable-rcon": False, "white-list": False,
         })
@@ -475,10 +484,24 @@ class ServerRunner:
         return info.get("environment") not in ("client",)
 
     def _read_manifest(self, d: Path) -> dict[str, Any]:
+        """{copied: {파일: 크기}, excluded: {ids: [...], files: [...]}} — excluded = [모드 확인]에서 서버에서 뺀 모드(다시 넣지 않음)."""
         try:
-            return json.loads((d / self.MANIFEST).read_text("utf-8"))
+            m = json.loads((d / self.MANIFEST).read_text("utf-8"))
         except (OSError, json.JSONDecodeError):
-            return {"copied": {}}
+            m = {}
+        m.setdefault("copied", {})
+        ex = m.setdefault("excluded", {})
+        ex.setdefault("ids", [])
+        ex.setdefault("files", [])
+        return m
+
+    def _write_manifest(self, d: Path, manifest: dict[str, Any]) -> None:
+        (d / self.MANIFEST).write_text(json.dumps(manifest, ensure_ascii=False, indent=1), "utf-8")
+
+    @staticmethod
+    def _is_excluded(manifest: dict[str, Any], name: str, info: dict[str, Any] | None) -> bool:
+        ex = manifest.get("excluded") or {}
+        return name in (ex.get("files") or []) or bool(info and info.get("id") and info["id"] in (ex.get("ids") or []))
 
     def _sync_server_mods(self, id: str, d: Path) -> list[str]:
         """인스턴스 mods/ 중 서버에서도 도는 모드를 서버 mods/ 로(크기·수정 시각이 다르면 다시).
@@ -496,6 +519,8 @@ class ServerRunner:
             for p in sorted(src.iterdir()):
                 if p.is_file() and p.suffix == ".jar":
                     info = read_mod_info(p)
+                    if self._is_excluded(manifest, p.name, info):
+                        continue                   # [모드 확인]에서 서버에서 뺀 모드는 다시 복사하지 않는다
                     if self._server_side(info):
                         wanted[p.name] = p
                         if info and info.get("id"):
@@ -513,8 +538,8 @@ class ServerRunner:
             st = p.stat()
             if not t.is_file() or t.stat().st_size != st.st_size or int(t.stat().st_mtime) != int(st.st_mtime):
                 shutil.copy2(p, t)
-        (d / self.MANIFEST).write_text(json.dumps({"copied": {n: wanted[n].stat().st_size for n in wanted}},
-                                                    ensure_ascii=False, indent=1), "utf-8")
+        manifest["copied"] = {n: wanted[n].stat().st_size for n in wanted}
+        self._write_manifest(d, manifest)
         self._sync_configs(id, d)
         return sorted(wanted)
 
@@ -568,7 +593,7 @@ class ServerRunner:
 
         def add(code: str, title: str, fix: str | None, m: dict[str, Any], **kw: Any) -> None:
             issues.append({"code": code, "title": title, "fix": fix, "id": m.get("id"), "name": m.get("name") or m.get("file"),
-                           **kw})
+                           "pick": bool(fix) and code != "MOD-107", **kw})
         for mid, ms in sby.items():
             if len(ms) > 1:
                 for extra in sorted(ms, key=lambda x: x["file"])[:-1]:
@@ -580,8 +605,13 @@ class ServerRunner:
             elif m.get("loader") and loader in compatible and m["loader"] not in compatible[loader]:
                 add("MOD-106", f"{LOADER_NAMES.get(m['loader'], m['loader'])} 모드가 {LOADER_NAMES.get(loader, loader)} 서버에 있음",
                     "removeServer", m, serverFile=m["file"])
+        manifest = self._read_manifest(d)
         for mid, c in cby.items():
             if not self._server_side(c) or mid in E4MC_IDS:
+                continue
+            if self._is_excluded(manifest, c["file"], c) and not sby.get(mid):
+                # 전에 [모드 확인]에서 서버에서 뺀 모드: 기본으로 고르지 않는다(고르면 다시 넣음)
+                add("MOD-107", "전에 서버에서 뺀 모드(다시 넣지 않음)", "unexclude", c, clientFile=c["file"], clientVersion=c.get("version"))
                 continue
             ss = sby.get(mid)
             if not ss:
@@ -597,6 +627,20 @@ class ServerRunner:
                 continue
             add("MOD-102", "인스턴스(참가자 쪽)에 없음 — 들어가려면 필요", "toClient", s0, serverFile=s0["file"],
                 serverVersion=s0.get("version"))
+        for eid in sorted(set(manifest["excluded"]["ids"]) & E4MC_IDS):
+            add("MOD-107", "전에 서버에서 뺀 주소 모드(다시 받지 않음, 주소는 UPnP)", "unexclude", {"id": eid, "name": "e4mc"})
+        # 서버 로그·크래시 리포트로 찾은 것(jar 정보만으로는 모르는 실행 중 오류). 이미 위에서 같은 파일·모드를 다룬 건 빼고
+        try:
+            import server_log_mods
+            known = {(i.get("serverFile") or i.get("clientFile") or i.get("id")): i for i in issues}
+            for li in server_log_mods.analyze(d, server, client):
+                same = known.get(li.get("serverFile") or li.get("clientFile") or li.get("id"))
+                if same:
+                    same.setdefault("evidence", li["evidence"])      # 이미 찾은 것: 로그 근거만 붙임
+                else:
+                    issues.append(li)
+        except Exception as e:  # noqa: BLE001 - 로그 분석이 실패해도 모드 확인은 된다
+            issues.append({"code": "LOG-000", "title": f"서버 로그를 읽지 못했습니다: {e}", "fix": None, "pick": False})
         unknown_c = [m["file"] for m in client if m.get("unknown")]
         return {"loader": loader, "issues": issues, "client": client, "server": server, "unknownClient": unknown_c,
                 "ok": not issues}
@@ -604,7 +648,7 @@ class ServerRunner:
     def mod_fix(self, id: str, sid: str, items: list[dict[str, Any]]) -> dict[str, Any]:
         """mod_check 의 항목 고치기. fix: toServer(인스턴스 → 서버, 같은 모드 옛 파일은 휴지통) · toClient(서버 → 인스턴스) · removeServer(서버에서 휴지통).
         실행 중인 서버 mods/ 는 바꾸지 않는다(다시 시작해야 적용 — 켜져 있으면 막음)."""
-        if sid in self.procs and self.procs[sid].poll() is None and any(i.get("fix") in ("toServer", "removeServer") for i in items):
+        if sid in self.procs and self.procs[sid].poll() is None and any(i.get("fix") in ("toServer", "removeServer", "unexclude") for i in items):
             raise RpcError("서버가 켜져 있습니다. 서버 모드를 바꾸려면 먼저 중지하세요.")
         d = self._sdir(id, sid)
         game_mods = self.store.game_dir(id) / "mods"
@@ -618,23 +662,43 @@ class ServerRunner:
                 if fix == "toServer":
                     srcf = safe_join(game_mods, str(it["clientFile"]))
                     self._replace_mod(srcf, srv_mods, base_srv)
-                    manifest.setdefault("copied", {})[srcf.name] = srcf.stat().st_size
+                    manifest["copied"][srcf.name] = srcf.stat().st_size
+                    self._unexclude(manifest, srcf.name, read_mod_info(srcf))
                 elif fix == "toClient":
                     srcf = safe_join(srv_mods, str(it["serverFile"]))
                     game_mods.mkdir(parents=True, exist_ok=True)
                     self._replace_mod(srcf, game_mods, game_mods.parent)
                 elif fix == "removeServer":
                     f = safe_join(srv_mods, str(it["serverFile"]))
+                    info = read_mod_info(f) if f.is_file() else None
                     if f.is_file():
                         _trash(f, base_srv)
-                    manifest.get("copied", {}).pop(f.name, None)
+                    manifest["copied"].pop(f.name, None)
+                    # 기억해 두고 다음 시작 때 다시 복사·다운로드하지 않는다(예전엔 시작할 때마다 되살아나 같은 오류가 되풀이됨)
+                    ex = manifest["excluded"]
+                    if f.name not in ex["files"]:
+                        ex["files"].append(f.name)
+                    mid = (info or {}).get("id") or it.get("id")
+                    if mid and mid not in ex["ids"]:
+                        ex["ids"].append(mid)
+                elif fix == "unexclude":
+                    # 다시 넣기: 기억을 지우면 다음 시작 때 인스턴스에서 다시 복사(e4mc 는 다시 받음)
+                    self._unexclude(manifest, it.get("clientFile") or "", {"id": it.get("id")})
                 else:
                     raise RpcError(f"모르는 작업: {fix}")
                 done.append(it)
             except Exception as e:  # noqa: BLE001 - 하나가 실패해도 나머지는
                 failed.append({**it, "error": str(e)})
-        (d / self.MANIFEST).write_text(json.dumps(manifest, ensure_ascii=False, indent=1), "utf-8")
+        self._write_manifest(d, manifest)
         return {"done": len(done), "failed": failed, "check": self.mod_check(id, sid)}
+
+    @staticmethod
+    def _unexclude(manifest: dict[str, Any], name: str, info: dict[str, Any] | None) -> None:
+        ex = manifest["excluded"]
+        ex["files"] = [f for f in ex["files"] if f != name]
+        mid = (info or {}).get("id")
+        if mid:
+            ex["ids"] = [i for i in ex["ids"] if i != mid]
 
     @staticmethod
     def _replace_mod(src: Path, dst_dir: Path, base: Path) -> None:
@@ -689,6 +753,13 @@ class ServerRunner:
         """주소 열기 모드·플러그인을 Modrinth 에서 그 버전에 정확히 맞는 파일로 넣는다(sha512 확인). 실패해도 서버는 켠다(UPnP 로)."""
         provider = self.address_provider(meta)
         if not provider:
+            return None
+        ex_ids = set(self._read_manifest(d)["excluded"]["ids"])
+        blocked = (ex_ids & E4MC_IDS) or ({"fabric-api", "fabric"} & ex_ids if loader == "fabric" else set())
+        if provider == "e4mc" and blocked:
+            # [모드 확인]에서 뺀 e4mc(또는 e4mc 에 필요한 Fabric API)는 다시 받지 않는다(받으면 같은 오류가 되풀이됨)
+            self.emit("ds_log", {"id": sid, "line": f"[통합 작업실] 모드 확인에서 뺀 {', '.join(sorted(blocked))} 때문에 e4mc 를 넣지 않습니다. "
+                                                   "주소는 UPnP 로 엽니다(다시 쓰려면 [모드 확인] → '다시 넣기')."})
             return None
         import modrinth
         target = d / ("plugins" if provider == "minekube" else "mods")
@@ -760,8 +831,11 @@ class ServerRunner:
             meta = self._meta(id, sid)
             props = read_properties(d / "server.properties")
             port = int(props.get("server-port", "0") or 0)
-            if not port or not port_free(port):
-                port = free_port()
+            # 이 앱이 이미 켠 다른 서버의 포트(마인크래프트가 아직 포트를 열기 전이라 비어 보일 수 있음)는 쓰지 않는다
+            taken = {pt for other, pt in self.ports.items() if other != sid and other in self.procs and self.procs[other].poll() is None}
+            if not port or port in taken or not port_free(port):
+                port = DEFAULT_PORT if DEFAULT_PORT not in taken and port_free(DEFAULT_PORT) else free_port()   # 25565 먼저
+            self.ports[sid] = port
             write_properties(d / "server.properties", {"server-ip": "", "server-port": port})
             launch = self.prepare_launch(id, sid)
             java = self.java_cmd(meta["version"])

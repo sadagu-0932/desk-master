@@ -69,7 +69,14 @@ export interface FirewallStatus {
 export interface ModIssue {
     code: string;
     title: string;
-    fix: 'toServer' | 'toClient' | 'removeServer' | null;
+    /** unexclude = 전에 서버에서 뺀 모드를 다시 넣기(다음 시작 때 복사·받기) */
+    fix: 'toServer' | 'toClient' | 'removeServer' | 'unexclude' | null;
+    /** 기본으로 고를지(로그로 찾은 '원인일 수 있음'·다시 넣기는 false) */
+    pick?: boolean;
+    /** 서버 로그·크래시 리포트로 찾음 */
+    fromLog?: boolean;
+    /** 근거가 된 로그 줄 */
+    evidence?: string;
     id?: string;
     name?: string;
     clientFile?: string;

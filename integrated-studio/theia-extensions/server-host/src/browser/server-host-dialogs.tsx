@@ -267,7 +267,8 @@ export class DdnsDialog extends ReactDialog<DdnsValue> {
 
 // ================================================================ 모드 확인(서버 ↔ 인스턴스)
 const FIX_LABEL: Record<string, string> = {
-    toServer: '인스턴스 → 서버로 복사', toClient: '서버 → 인스턴스로 복사', removeServer: '서버에서 빼기(휴지통)',
+    toServer: '인스턴스 → 서버로 복사', toClient: '서버 → 인스턴스로 복사',
+    removeServer: '서버에서 빼기(휴지통, 다음 시작 때 다시 넣지 않음)', unexclude: '다시 넣기(다음 시작 때 복사·받기)',
 };
 
 /** 서버·인스턴스 모드 차이를 오류 코드와 함께 보여 주고, 고를 것을 골라 고친다. 값 = 고칠 항목 */
@@ -276,7 +277,7 @@ export class ModCheckDialog extends ReactDialog<ModIssue[]> {
 
     constructor(protected readonly check: ModCheck, protected readonly serverName: string) {
         super({ title: `모드 확인 — ${serverName}` });
-        this.picked = new Set(check.issues.map((i, n) => i.fix ? n : -1).filter(n => n >= 0));
+        this.picked = new Set(check.issues.map((i, n) => (i.pick ?? (i.fix && i.code !== 'MOD-107')) ? n : -1).filter(n => n >= 0));
         if (check.issues.length) {
             this.appendAcceptButton('고른 것 고치기');
         }
@@ -297,8 +298,8 @@ export class ModCheckDialog extends ReactDialog<ModIssue[]> {
             return <div className='sh-dialog'><p>{c.message}</p></div>;
         }
         return <div className='sh-dialog sh-modcheck'>
-            <p className='sh-small'>인스턴스(참가자가 쓰는 쪽) 모드 {c.client.length}개 · 서버 모드 {c.server.length}개를 비교했습니다.
-                {c.issues.length ? ' 맞지 않는 것:' : ''}</p>
+            <p className='sh-small'>인스턴스(참가자가 쓰는 쪽) 모드 {c.client.length}개 · 서버 모드 {c.server.length}개를 비교하고,
+                서버 로그·크래시 리포트에서 오류를 일으킨 모드를 찾았습니다.{c.issues.length ? ' 고칠 것:' : ''}</p>
             {!c.issues.length && <p><b>모두 일치합니다.</b> 그래도 못 들어오면 참가자의 모드 목록이 이 인스턴스와 같은지 확인하세요.</p>}
             <ul className='sh-issues'>
                 {c.issues.map((i, n) => <li key={n}>
@@ -312,9 +313,12 @@ export class ModCheckDialog extends ReactDialog<ModIssue[]> {
                         {i.serverFile && <>· 서버: {i.serverFile}{i.serverVersion ? ` (${i.serverVersion})` : ''}</>}
                         {i.fix && <> · 고치기: {FIX_LABEL[i.fix]}</>}
                     </div>
+                    {i.evidence && <pre className='sh-mono sh-small sh-evidence' title='서버 로그에서 찾은 근거'>{i.evidence}</pre>}
                 </li>)}
             </ul>
-            <p className='sh-muted sh-small'>서버 쪽을 바꾸면 다음 시작부터 적용됩니다. 지운 파일은 휴지통으로 갑니다.
+            <p className='sh-muted sh-small'>LOG- 로 시작하는 것은 서버 로그로 찾은 것입니다(‘원인일 수 있음’은 기본으로 고르지 않음).
+                서버에서 뺀 모드는 기억해서 다음 시작 때 다시 복사·다운로드하지 않습니다(MOD-107 에서 다시 넣기).
+                서버 쪽을 바꾸면 다음 시작부터 적용됩니다. 지운 파일은 휴지통으로 갑니다.
                 참가자도 인스턴스와 같은 모드여야 들어올 수 있습니다(클라이언트 전용 모드는 달라도 됨).</p>
         </div>;
     }

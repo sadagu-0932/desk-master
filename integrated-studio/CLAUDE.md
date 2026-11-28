@@ -306,6 +306,19 @@ Theia 확장은 TypeScript로 작성한다. Python 쪽은 `sidecar/` 아래에�
     [친구가 못 들어와요] = 주소 모드 ↔ UPnP 전환.
   - 시험: 사이드카 `tests/test_server_tools.py`(서버 종류별 모드·플러그인, 실패 시 바닐라로, 로그 문구), `tests/conftest.py`(다른 시험이 인터넷에서 모드를 받지 않게),
     server-host `npm test` 18개(e4mc 주소·UPnP 전환·Minekube 고정 주소·늦게 온 주소).
+- **고침(2026-11-28, 사용자 "모드 확인에서 고친 뒤 다시 시작해도 같은 오류 · 지워진 모드가 다시 받아짐 · 로그를 보고 고치게 · 포트 25565 기본")**:
+  - 원인: 서버를 켤 때마다 `_sync_server_mods` 가 인스턴스 모드를 다시 복사하고, `_ensure_address_mod` 가 e4mc(·Fabric API)를 다시 받았다.
+    [모드 확인]도 뺀 모드를 MOD-101 로 다시 권해 되돌리는 순환이 있었다.
+  - 지금: [모드 확인]의 "서버에서 빼기"는 `.studio-mods.json` 의 `excluded {ids, files}` 에 기억 → 복사·다운로드 안 함(e4mc 를 뺐거나
+    Fabric 서버에서 Fabric API 를 뺐으면 e4mc 를 넣지 않고 UPnP 로). 뺀 모드는 MOD-107(기본으로 안 고름) "다시 넣기"(`unexclude`)로 되돌림.
+    "인스턴스 → 서버로 복사"를 고르면 기억을 지움.
+  - 서버 로그로 원인 찾기(`sidecar/server_log_mods.py`): logs/latest.log 끝부분 + 가장 새 crash-reports 를 읽어
+    LOG-201 없는 의존 모드(Fabric "requires … which is missing!", NeoForge "Mod ID: 'y', Requested by: 'x'" → 인스턴스에 있으면 서버로 복사),
+    LOG-104 클라이언트 코드 호출("invalid dist DEDICATED_SERVER" 등 → 근처 Mixin 설정·스택 패키지로 jar 찾아 빼기),
+    LOG-301 오류에 이름이 나온 모드("Mod File:", "Failure message:", "-- MOD id --", Mixin, "from mod" → 원인일 수 있음, 기본으로 안 고름).
+    각 항목에 근거 로그 줄(evidence). jar 비교로 이미 찾은 것엔 근거만 붙임. 카드의 오류 칸에 [모드 확인(로그로 원인 찾기)].
+  - 포트: 새 서버·포트가 막혔을 때 25565 먼저(`default_port`), 이 앱이 이미 켠 다른 서버의 포트는 피함(동시에 켤 때).
+  - 시험: `tests/test_server_tools.py`(뺀 모드 유지·다시 넣기, e4mc 다시 안 받음, 기본 포트, 로그로 찾기).
 ### M9. 패키징 (내 PC용)
 - electron-builder로 Windows 설치 파일 또는 압축 실행판을 만든다. **배포하지 않는다** — 개인 사용 전용.
 - 서명이 없어서 SmartScreen 경고가 뜨는 건 그대로 둔다.

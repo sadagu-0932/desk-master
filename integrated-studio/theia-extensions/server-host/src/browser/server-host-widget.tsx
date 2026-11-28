@@ -192,7 +192,8 @@ export class ServerHostWidget extends ReactWidget {
     }
 
     protected renderErrors(s: ServerView): React.ReactNode {
-        const modErr = s.errors.some(e => e.code.startsWith('MOD-'));
+        // [모드 확인]은 서버 로그로 원인 모드도 찾으므로 모드 서버면 어떤 오류든 띄운다
+        const modErr = s.errors.some(e => !e.code.startsWith('JAVA-') && !e.code.startsWith('EULA-')) && !!s.loader && s.loader !== 'vanilla';
         const javaErr = s.errors.some(e => e.code.startsWith('JAVA-'));
         return <div className='sh-errors' role='alert'>
             {s.errors.map((e: ServerError) => <details key={e.code} className='sh-error'>
@@ -203,7 +204,7 @@ export class ServerHostWidget extends ReactWidget {
             </details>)}
             <div className='sh-card-actions'>
                 {modErr && s.kind === 'dedicated' && <button className='theia-button sh-mini'
-                    onClick={() => this.commands.executeCommand(ServerHostCommands.MOD_CHECK.id, s.id)}>모드 확인</button>}
+                    onClick={() => this.commands.executeCommand(ServerHostCommands.MOD_CHECK.id, s.id)}>모드 확인(로그로 원인 찾기)</button>}
                 {javaErr && <button className='theia-button sh-mini'
                     onClick={() => this.commands.executeCommand(ServerHostCommands.JAVA_INSTALL.id)}>Java 25 JDK 설치</button>}
                 <button className='theia-button secondary sh-mini' onClick={() => this.copy(

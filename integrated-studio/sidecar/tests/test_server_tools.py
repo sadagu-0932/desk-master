@@ -228,3 +228,90 @@ def test_address_lines_detected(tmp_path):
     runner._pump(iid, sid, Proc(), 25565)
     got = [(p["provider"], p["address"]) for m, p in events if m == "ds_address"]
     assert got == [("e4mc", "brave-cat.sg.e4mc.link"), ("minekube", "quick-fox.play.minekube.net")]
+
+
+# ---------------------------------------------------------------- 뺀 모드 기억·기본 포트·로그로 찾기(2026-11-28)
+
+def test_removed_mods_stay_removed_until_unexcluded(fab):
+    """[모드 확인]에서 서버에서 뺀 모드가 다음 시작 때 인스턴스에서 다시 복사되던 것(같은 오류 되풀이)."""
+    store, iid, runner, sid, cm, sm = fab
+    _fabric_jar(cm / "bad-client.jar", "badclient")          # 정보상 양쪽인데 실제로는 서버에서 터지는 모드
+    _fabric_jar(cm / "create.jar", "create")
+    d = runner._sdir(iid, sid)
+    runner._sync_server_mods(iid, d)
+    assert (sm / "bad-client.jar").is_file()
+    runner.mod_fix(iid, sid, [{"fix": "removeServer", "serverFile": "bad-client.jar"}])
+    runner._sync_server_mods(iid, d)                          # 다시 시작
+    assert not (sm / "bad-client.jar").exists() and (sm / "create.jar").is_file()
+    r = runner.mod_check(iid, sid)
+    assert [(i["code"], i["id"], i["pick"]) for i in r["issues"]] == [("MOD-107", "badclient", False)]   # 서버에 없음(101)으로 다시 권하지 않음
+    runner.mod_fix(iid, sid, [i for i in r["issues"] if i["code"] == "MOD-107"])                         # 다시 넣기
+    runner._sync_server_mods(iid, d)
+    assert (sm / "bad-client.jar").is_file()
+
+
+@pytest.mark.address_mod
+def test_removed_e4mc_is_not_downloaded_again(addr):
+    store, runner, calls, events = addr
+    fab_id = store.create("패브릭", "26.3", "fabric")["id"]
+    s = runner.create(fab_id, "f")["id"]
+    runner.prepare_launch(fab_id, s)
+    n = len(calls)
+    mods = runner._sdir(fab_id, s) / "mods"
+    (mods / "e4mc-fabric-6.2.3-modern.jar").unlink()
+    _fabric_jar(mods / "e4mc-fabric-6.2.3-modern.jar", "e4mc")
+    runner.mod_fix(fab_id, s, [{"fix": "removeServer", "serverFile": "e4mc-fabric-6.2.3-modern.jar"}])
+    runner.prepare_launch(fab_id, s)
+    assert len(calls) == n                                     # 다시 받지 않음
+    assert any("e4mc 를 넣지 않습니다" in p.get("line", "") for m, p in events if m == "ds_log")
+    issues = runner.mod_check(fab_id, s)["issues"]
+    assert any(i["code"] == "MOD-107" and i["id"] == "e4mc" for i in issues)
+
+
+def test_default_port_25565(tmp_path, monkeypatch):
+    store = InstanceStore(tmp_path)
+    iid = store.create("x", "26.3", "vanilla")["id"]
+    runner = sr.ServerRunner(tmp_path, store, lambda v: ["java"], emit=lambda m, p: None)
+    monkeypatch.setattr(sr, "port_free", lambda p: True)
+    s = runner.create(iid, "a")
+    assert sr.read_properties(runner._sdir(iid, s["id"]) / "server.properties")["server-port"] == "25565"
+    monkeypatch.setattr(sr, "port_free", lambda p: p != 25565)                     # 25565 를 다른 프로그램이 씀
+    s2 = runner.create(iid, "b")
+    assert sr.read_properties(runner._sdir(iid, s2["id"]) / "server.properties")["server-port"] != "25565"
+
+
+def test_mod_check_reads_server_log(fab):
+    """서버 로그·크래시 리포트로 찾기: 없는 의존 모드(LOG-201), 클라이언트 코드(LOG-104), 오류에 나온 모드(LOG-301)."""
+    import zipfile
+    store, iid, runner, sid, cm, sm = fab
+    d = runner._sdir(iid, sid)
+    _fabric_jar(cm / "fabric-api.jar", "fabric-api")                       # 인스턴스엔 있음
+    _fabric_jar(sm / "create.jar", "create")
+    _fabric_jar(cm / "create.jar", "create")
+    _fabric_jar(sm / "fancyhud.jar", "fancyhud")
+    with zipfile.ZipFile(sm / "fancyhud.jar", "a") as z:                    # 클라이언트 코드를 부르는 클래스
+        z.writestr("com/example/fancyhud/Hud.class", b"x")
+    _fabric_jar(sm / "broken.jar", "brokenmod")
+    _fabric_jar(cm / "fancyhud.jar", "fancyhud")
+    _fabric_jar(cm / "broken.jar", "brokenmod")
+    (d / "logs").mkdir(exist_ok=True)
+    (d / "logs" / "latest.log").write_text("\n".join([
+        "[main/ERROR]: Incompatible mods found!",
+        " - Mod 'Create' (create) 6.0 requires any version of 'Fabric API' (fabric-api), which is missing!",
+        " - Mod 'Create' (create) 6.0 requires version 2.0 or later of 'Flywheel' (flywheel), which is missing!",
+        "java.lang.RuntimeException: Attempted to load class net/minecraft/client/gui/Gui for invalid dist DEDICATED_SERVER",
+        "\tat com.example.fancyhud.Hud.<init>(Hud.java:10)",
+    ]), "utf-8")
+    (d / "crash-reports").mkdir(exist_ok=True)
+    (d / "crash-reports" / "crash-1.txt").write_text("-- Head --\n\tMod File: C:\\srv\\mods\\broken.jar\n", "utf-8")
+    issues = runner.mod_check(iid, sid)["issues"]
+    got = {(i["code"], i.get("id"), i["fix"], i["pick"]) for i in issues if i.get("fromLog")}
+    fapi = next(i for i in issues if i.get("id") == "fabric-api")
+    assert (fapi["code"], fapi["fix"], fapi["pick"]) == ("MOD-101", "toServer", True)   # jar 비교로도 찾음 → 로그 근거만 붙음
+    assert "Fabric API" in fapi["evidence"]
+    assert ("LOG-201", "flywheel", None, False) in got                       # 어디에도 없음 → 받으라고 안내
+    assert ("LOG-104", "fancyhud", "removeServer", True) in got              # 스택의 패키지로 jar 를 찾음
+    assert ("LOG-301", "brokenmod", "removeServer", False) in got            # 원인일 수 있음(기본으로 안 고름)
+    assert all(i.get("evidence") for i in issues if i.get("fromLog"))        # 근거 로그 줄
+    res = runner.mod_fix(iid, sid, [i for i in issues if i["pick"]])
+    assert not res["failed"] and (sm / "fabric-api.jar").is_file() and not (sm / "fancyhud.jar").exists()
