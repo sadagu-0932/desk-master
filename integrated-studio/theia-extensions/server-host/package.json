@@ -29,7 +29,7 @@
     "build": "tsc -b",
     "clean": "rimraf lib tsconfig.tsbuildinfo",
     "watch": "tsc -w",
-    "test": "node --test --test-concurrency=1 \"test/*.test.mjs\""
+    "test": "node --test --test-concurrency=1 --test-timeout=60000 --test-force-exit --test-reporter=spec \"test/*.test.mjs\""
   },
   "type": "module",
   "exports": {

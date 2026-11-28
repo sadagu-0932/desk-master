@@ -248,7 +248,7 @@ test('playit: 검증값이 다르면 버림, 거절·한도 초과는 한국어 
     await assert.rejects(pm.ensureTunnel('s5', 2000), /무료 요금제 한도/);
     fs.writeFileSync(path.join(d, 's.toml'), `secret_key = "${'cd'.repeat(32)}"\n`);
     await assert.rejects(pm.tunnels(), /연결이 풀렸습니다/);
-    assert.ok(assetName().startsWith('playit-'));
+    assert.match(assetName(), /^playit(d-windows-x86(_64)?-signed\.exe|-linux-|-macos-)/);   // Windows 는 데몬 playitd
     await fp.close();
 });
 
