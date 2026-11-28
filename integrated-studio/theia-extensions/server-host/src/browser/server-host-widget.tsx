@@ -84,9 +84,13 @@ export class ServerHostWidget extends ReactWidget {
 
             <h3>주소 방식 설정</h3>
             <div className='sh-small sh-setting'>
-                <b>playit 중계</b> — {playit.linked ? '계정 연결됨' : '계정 연결 안 됨'} · {playit.agentInstalled ? (playit.agentRunning ? '에이전트 켜짐' : '에이전트 꺼짐') : '에이전트 없음'}
+                <b>playit 중계</b> — {playit.linked ? '계정 연결됨' : '계정 연결 안 됨'} · {playit.outdated ? '에이전트 새로 받아야 함'
+                    : !playit.agentInstalled ? '에이전트 없음'
+                        : playit.agentOnline ? '에이전트 온라인' : playit.agentRunning ? '에이전트 연결 중…' : '에이전트 꺼짐'}
+                {playit.agentInstalled && <button className='theia-button secondary sh-mini' title='계정 연결·에이전트 시작·연결 오류 기록'
+                    onClick={() => this.commands.executeCommand(ServerHostCommands.PLAYIT_LOG.id)}>기록 보기</button>}
                 {!playit.agentInstalled &&
-                    <button className='theia-button secondary sh-mini' onClick={() => this.commands.executeCommand(ServerHostCommands.PLAYIT_SETUP.id)}>playit 준비</button>}
+                    <button className='theia-button sh-mini' onClick={() => this.commands.executeCommand(ServerHostCommands.PLAYIT_SETUP.id)}>playit 준비</button>}
                 {playit.agentInstalled && !playit.claimUrl &&
                     <button className={'theia-button sh-mini' + (playit.linked ? ' secondary' : '')} title='연결이 풀렸거나 다른 계정으로 바꿀 때'
                         onClick={() => this.commands.executeCommand(ServerHostCommands.PLAYIT_RELINK.id)}>{playit.linked ? '다시 연결' : 'playit 다시 연결'}</button>}

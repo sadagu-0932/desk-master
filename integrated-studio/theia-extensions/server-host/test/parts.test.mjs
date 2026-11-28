@@ -167,13 +167,35 @@ test('playit: 받기(sha256 검증)·계정 연결·서버별 고정 터널·에
     const secretPath = path.join(d, 'playit_gg', 'playit.toml');
     const spawned = [];
     const pm = new PlayitManager({ dir: path.join(d, 'agent'), apiBase: fp.base, releaseApi: fp.base + '/release', secretPath,
-        claimPollMs: 10, spawnAgent: exe => { const p = fakeAgent(); spawned.push(exe); return p; }, openUrl: () => undefined });
-    assert.deepEqual(pm.status(), { agentInstalled: false, agentRunning: false, linked: false, claimUrl: undefined, message: undefined });
+        claimPollMs: 10, spawnAgent: (exe, args) => { const p = fakeAgent(); spawned.push([exe, args, p]); return p; }, openUrl: () => undefined });
+    const st0 = pm.status();
+    assert.equal(st0.agentInstalled, false);
+    assert.equal(st0.linked, false);
+    assert.equal(st0.agentRunning, false);
     await pm.install();
     assert.equal(fs.readFileSync(pm.exe, 'utf8'), 'fake-playit-agent');
+    assert.match(path.basename(pm.exe), /^playitd/);                       // CLI 가 아니라 데몬
+    const ver = JSON.parse(fs.readFileSync(path.join(d, 'agent', 'version.json'), 'utf8'));
+    assert.match(ver.asset, /^playit(d-windows|-linux|-macos)/);
+    assert.equal(spawned.length, 0);                                       // 계정 연결 전에는 켜지 않음
     const urls = [];
     pm.on('status', s => s.claimUrl && urls.push(s.claimUrl));
     await pm.claim();
+    // 계정 연결 직후 데몬을 바로 켠다(대시보드 Online) — 우리 키 파일과 전용 IPC 이름으로
+    assert.equal(spawned.length, 1);
+    const [, args, agent] = spawned[0];
+    assert.deepEqual(args.slice(0, 2), ['--secret-path', secretPath]);
+    assert.equal(args[2], '--socket-path');
+    assert.match(args[3], /integrated-studio-playitd|playitd\.sock/);
+    assert.equal(pm.status().agentOnline, false);
+    agent.say('2026-11-28T00:00:00Z  INFO playitd: Starting playitd\n2026-11-28T00:00:01Z  INFO playitd: playit con');
+    agent.say('nected; tunnels loaded agent_id=x tunnel_count=0\n');         // 조각으로 와도 줄 단위로 읽음
+    assert.equal(pm.status().agentOnline, true);
+    assert.match(pm.status().message, /온라인/);
+    const logText = fs.readFileSync(pm.status().logPath, 'utf8');
+    for (const step of ['계정 연결 시작', '계정 연결 상태: UserAccepted', '키 교환 완료', '에이전트 시작', 'playit connected']) {
+        assert.ok(logText.includes(step), step);                            // 단계별 기록
+    }
     assert.match(urls[0], /^https:\/\/playit\.gg\/claim\/[0-9a-f]{10}$/);
     assert.equal(readSecret(secretPath), fp.state.secret);
     assert.equal(pm.status().linked, true);
@@ -190,11 +212,22 @@ test('playit: 받기(sha256 검증)·계정 연결·서버별 고정 터널·에
     assert.deepEqual(created.origin, { type: 'default', data: { local_ip: '127.0.0.1', local_port: 25565 } });
     pm.acquire('a');
     pm.acquire('b');
-    assert.equal(spawned.length, 1);
+    assert.equal(spawned.length, 1);                                       // 이미 켜져 있으면 그대로
     pm.release('a');
-    assert.equal(pm.status().agentRunning, true);
     pm.release('b');
-    assert.equal(pm.status().agentRunning, false);                   // 아무도 안 쓰면 끈다
+    assert.equal(pm.status().agentRunning, true);                          // 서버가 안 써도 켜 둔다(Online 유지)
+    // 예기치 않게 꺼지면 다시 켠다
+    agent.crash(1);
+    assert.equal(pm.status().agentRunning, false);
+    assert.match(pm.status().message, /PLAYIT-1.*다시 켭니다/);
+    await wait(() => spawned.length === 2, 4000);
+    assert.equal(spawned.length, 2);
+    // 데몬이 키를 거부하면 연결 해제
+    spawned[1][2].say('WARN playitd: configured agent secret is no longer valid error=x\n');
+    assert.equal(pm.status().linked, false);
+    assert.equal(pm.status().agentRunning, false);
+    assert.match(pm.status().message, /PLAYIT-401/);
+    pm.stopAgent();
     await fp.close();
 });
 

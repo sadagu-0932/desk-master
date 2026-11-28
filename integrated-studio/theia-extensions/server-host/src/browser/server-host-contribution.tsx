@@ -14,6 +14,8 @@ import { ImportWidget } from './import-widget.js';
 import { ServerHostCommands } from './server-host-commands.js';
 import { ChoiceDialog, DdnsDialog, EulaDialog, ModCheckDialog, OpenServerDialog } from './server-host-dialogs.js';
 import { QuickInputService } from '@theia/core/lib/browser/quick-input';
+import { OpenerService, open } from '@theia/core/lib/browser/opener-service';
+import { FileUri } from '@theia/core/lib/common/file-uri';
 
 @injectable()
 export class ServerHostContribution extends AbstractViewContribution<ServerHostWidget> implements FrontendApplicationContribution {
@@ -25,6 +27,7 @@ export class ServerHostContribution extends AbstractViewContribution<ServerHostW
     @inject(WidgetManager) protected readonly widgets: WidgetManager;
     @inject(ApplicationShell) protected readonly appShell: ApplicationShell;
     @inject(QuickInputService) protected readonly quickInput: QuickInputService;
+    @inject(OpenerService) protected readonly openers: OpenerService;
 
     constructor() {
         super({
@@ -59,6 +62,13 @@ export class ServerHostContribution extends AbstractViewContribution<ServerHostW
         registry.registerCommand(ServerHostCommands.PLAYIT_VERIFY, { execute: () => this.guard(async () => {
             const st = await this.store.service.playitVerify();
             this.messages.info(st.message ?? (st.linked ? 'playit 계정이 연결돼 있습니다.' : 'playit 계정이 연결돼 있지 않습니다.'));
+        }) });
+        registry.registerCommand(ServerHostCommands.PLAYIT_LOG, { execute: () => this.guard(async () => {
+            const st = await this.store.service.playitStatus();
+            if (!st.logPath) {
+                return;
+            }
+            await open(this.openers, FileUri.create(st.logPath));
         }) });
         registry.registerCommand(ServerHostCommands.JAVA_INSTALL, { execute: () => this.guard(() => this.javaInstall()) });
     }
@@ -241,10 +251,11 @@ export class ServerHostContribution extends AbstractViewContribution<ServerHostW
     protected async playitSetup(): Promise<void> {
         let st = await this.store.service.playitStatus();
         if (!st.agentInstalled) {
-            const ok = await new ChoiceDialog('playit 준비',
+            const ok = await new ChoiceDialog(st.outdated ? 'playit 에이전트 바꾸기' : 'playit 준비',
                 <div><p>playit 은 공유기 설정 없이 고정 주소를 주는 중계 서비스입니다(무료 요금제 있음, 조건은 playit.gg 에서 확인).</p>
                     <p>공식 배포처(GitHub playit-cloud/playit-agent 최신 릴리스)에서 에이전트를 받아 앱 데이터 폴더에 둡니다.
-                        받은 파일은 GitHub 이 준 sha256 으로 검증합니다. 서버를 열고 닫을 때 자동으로 켜고 끕니다.</p>
+                        받은 파일은 GitHub 이 준 sha256 으로 검증합니다. 계정을 연결하면 앱이 켜져 있는 동안 에이전트를 켜 둡니다
+                        (playit.gg 대시보드에서 Online).</p>
                     <p className='sh-muted'>중계라 핑이 조금 오를 수 있고, 일부 통신사에서 막힐 수 있습니다.</p></div>,
                 [{ id: 'ok', label: '받기', primary: true }]).open();
             if (!ok) {
@@ -257,7 +268,8 @@ export class ServerHostContribution extends AbstractViewContribution<ServerHostW
             st = await this.store.service.playitClaim();
         }
         if (st.linked && st.agentInstalled) {
-            this.messages.info('playit 준비가 끝났습니다. 이제 UPnP 가 안 되면 자동으로 playit 주소를 엽니다.');
+            this.messages.info('playit 준비가 끝났습니다. 에이전트가 playit.gg 에 연결되면 패널에 "에이전트 온라인"이 뜹니다. '
+                + '이제 UPnP 가 안 되면 자동으로 playit 주소를 엽니다.');
         }
     }
 

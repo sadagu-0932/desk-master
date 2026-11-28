@@ -268,6 +268,18 @@ Theia 확장은 TypeScript로 작성한다. Python 쪽은 `sidecar/` 아래에�
   - playit 연결 풀림: API 가 키를 거부하면(401·403·Auth) 키 파일을 `playit.toml.invalid-<시각>` 으로 옮기고 에이전트를 꺼 '연결 안 됨'으로 →
     [playit 다시 연결](`claim(force)`, 쓰던 서버가 있으면 새 키로 에이전트 다시 켬)·[연결 확인](`verify`, 앱을 켤 때도 한 번). 오류 코드 PLAYIT-401.
   - 전용 서버 카드 [폴더](`ds_open_folder`).
+- **playit "Agent is offline" 고침**(사용자 질문 2026-11-28, playit-agent 2.0.2 소스 bddcbed 로 비교):
+  - 계정 연결(claim/setup → claim/exchange → `secret_key` TOML 저장, `Agent-Key` 헤더)은 공식과 같았다. 제어 채널·ping·데이터 중계는 공식 데몬이 하므로
+    프로토콜을 직접 만들지 않는다.
+  - 원인 ① 계정 연결 뒤 에이전트를 켜지 않음(서버가 playit 주소를 열 때만) ② 2.0 의 `playit.exe` 는 CLI 라 공식 Windows 서비스가 있으면 그쪽(다른 키)에 붙음
+    ③ 에이전트 출력 pipe 를 읽지 않아 버퍼가 차면 멈출 수 있음.
+  - 지금: 데몬 자산 `playitd-windows-x86_64-signed.exe`(Linux `playit-linux-*` = 데몬, 2.0.2 릴리스에 있는 것 확인)를 받아
+    `--secret-path <키> --socket-path \\.\pipe\integrated-studio-playitd-<pid>` 로 실행. 계정이 연결돼 있으면 앱이 켜진 동안 계속 켜 둠(앱 시작·연결 직후 켬,
+    서버가 안 써도 끄지 않음, 앱 종료·연결 해제 때만 끔), 꺼지면 2초부터 최대 60초 간격으로 다시 켬. 출력은 줄 단위로 읽어
+    "playit connected; tunnels loaded" = 온라인(패널 "에이전트 온라인"), 키 거부 = 연결 해제(PLAYIT-401), 에이전트 수 초과 = PLAYIT-LIMIT,
+    "failed to start playit agent" = PLAYIT-CONNECT. 모든 단계(받기·계정 연결 상태·키 교환·시작 인자·데몬 출력·종료 코드·API 실패)는
+    `<앱 데이터>/server-host/playit/agent.log` 와 서버 콘솔에, 패널 [기록 보기]. 예전 `playit.exe` 만 있으면 "새로 받아야 함" → [playit 준비].
+  - 실제 데몬 실행은 이 개발 환경에서 막혀 시험하지 못함(가짜 데몬 출력으로 시험). Windows 에서 확인 필요.
   - 시험: `tests/test_server_tools.py`, server-host `npm test` 20개(연결 풀림·다른 방식·오류 코드 추가), Windows 스모크(방화벽 PowerShell·자바 찾기).
 ### M9. 패키징 (내 PC용)
 - electron-builder로 Windows 설치 파일 또는 압축 실행판을 만든다. **배포하지 않는다** — 개인 사용 전용.

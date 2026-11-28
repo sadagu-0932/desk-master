@@ -136,8 +136,10 @@ export class HostManager extends EventEmitter {
         this.lan?.on('change', () => this.changed());
         this.lan?.start();
         this.poller = setInterval(() => this.poll().catch(() => undefined), opts.pollMs ?? 10_000);
+        this.playit?.on('log', (line: string) => this.logAll('playit', `playit: ${line}`));
         if (this.playit?.status().linked) {
-            this.playit.verify().catch(() => undefined);     // 켤 때 한 번: 연결이 풀렸으면 바로 '다시 연결'이 보이게
+            // 앱을 켜면 에이전트도 켠다(대시보드 Online 유지). 연결이 풀렸으면 verify 가 '다시 연결'로 바꾼다
+            this.playit.verify().then(st => st.linked && this.playit!.ensureRunning()).catch(() => undefined);
         }
     }
 

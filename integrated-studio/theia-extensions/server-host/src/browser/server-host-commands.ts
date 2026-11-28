@@ -17,5 +17,6 @@ export namespace ServerHostCommands {
     export const FIREWALL: Command = { id: 'studio.serverHost.firewall' };
     export const PLAYIT_RELINK: Command = { id: 'studio.serverHost.playitRelink', category: CATEGORY, label: 'playit 계정 다시 연결' };
     export const PLAYIT_VERIFY: Command = { id: 'studio.serverHost.playitVerify', category: CATEGORY, label: 'playit 연결 확인' };
+    export const PLAYIT_LOG: Command = { id: 'studio.serverHost.playitLog', category: CATEGORY, label: 'playit 에이전트 기록 보기' };
     export const JAVA_INSTALL: Command = { id: 'studio.java.install', category: CATEGORY, label: 'Java 25 JDK 설치' };
 }

@@ -100,6 +100,7 @@ export async function fakePlayit({ agentBytes = Buffer.from('fake-playit-agent')
             if (req.url === '/release') {
                 return send(200, { tag_name: 'v2.0.2', assets: [
                     { name: 'playit-windows-x86_64-signed.exe', browser_download_url: `${base}/dl`, digest: `sha256:${digest}` },
+                    { name: 'playitd-windows-x86_64-signed.exe', browser_download_url: `${base}/dl`, digest: `sha256:${digest}` },
                     { name: 'playit-linux-amd64', browser_download_url: `${base}/dl`, digest: `sha256:${digest}` },
                     { name: 'playit-linux-aarch64', browser_download_url: `${base}/dl`, digest: `sha256:${digest}` },
                     { name: 'playit-macos-universal.tar.gz', browser_download_url: `${base}/dl`, digest: `sha256:${digest}` },
@@ -141,7 +142,14 @@ export async function fakePlayit({ agentBytes = Buffer.from('fake-playit-agent')
 export function fakeAgent() {
     const p = new EventEmitter();
     p.exitCode = null;
+    p.stdout = new EventEmitter();
+    p.stderr = new EventEmitter();
+    p.stdout.setEncoding = () => p.stdout;
+    p.stderr.setEncoding = () => p.stderr;
+    /** 데몬 표준 출력 흉내(조각으로 나눠 보내도 줄 단위로 읽는지) */
+    p.say = text => { p.stdout.emit('data', text); };
     p.kill = () => { p.exitCode = 0; p.emit('exit', 0); };
+    p.crash = code => { p.exitCode = code; p.emit('exit', code); };
     return p;
 }
 

@@ -140,6 +140,12 @@ export interface PlayitStatus {
     agentRunning: boolean;
     /** 계정 연결(비밀키) 됨 */
     linked: boolean;
+    /** 에이전트가 playit.gg 에 연결됨(대시보드 Online) — 데몬 로그 "playit connected" 로 안다 */
+    agentOnline?: boolean;
+    /** 예전 앱이 받은 playit.exe(CLI)만 있어 데몬(playitd)으로 바꿔 받아야 함 */
+    outdated?: boolean;
+    /** 단계별 기록 파일 */
+    logPath?: string;
     claimUrl?: string;
     message?: string;
 }

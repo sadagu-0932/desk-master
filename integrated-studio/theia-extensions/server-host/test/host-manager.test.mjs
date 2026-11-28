@@ -83,8 +83,9 @@ test('B: e4mc 없음 → UPnP, CGNAT 면 → playit 고정 주소, 이유가 남
     assert.equal(igd.mappings.size, 0);
     assert.equal(playit.status().agentRunning, true);
     await m.stopServer(s.id);
-    assert.equal(playit.status().agentRunning, false);                // 닫으면 에이전트도 끔
+    assert.equal(playit.status().agentRunning, true);                 // 서버를 닫아도 에이전트는 켜 둔다(대시보드 Online 유지)
     await m.dispose();
+    assert.equal(playit.status().agentRunning, false);                // 앱을 끄면 끈다
     await fp.close();
 });
 
